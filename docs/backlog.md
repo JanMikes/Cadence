@@ -1,0 +1,109 @@
+# Cadence — Backlog
+
+Our build backlog, phased. Source spec: [`platform-definition.md`](platform-definition.md).
+Checkboxes = todos. Phase 1 is detailed; later phases are intentionally lighter until we get there.
+
+Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
+
+---
+
+## Phase 0 — Foundation
+- [ ] `git init` the project; set up Bun + TypeScript + Vite + Tailwind + shadcn/ui scaffold
+- [ ] Bun HTTP + WebSocket gateway skeleton (serves built frontend + API + WS)
+- [ ] Storage: per-task **markdown** files under `~/.cadence/` + **SQLite index** (`bun:sqlite` + Drizzle)
+- [ ] File watcher: reindex `task.md` frontmatter → SQLite (index rebuildable from files)
+- [ ] Schema (index): projects, fleets, tasks, sessions, deps, events, suggestions (+ provenance)
+- [ ] Settings store (global defaults: model, permission mode, delivery mode, global systemPrompt)
+- [ ] Design tokens: dark dev theme, monospace accents, spacing scale, **labeled-icon button** primitive
+
+## Phase 1 — Task core + manual spawn (MVP — no autonomy yet)
+**Goal: prove the spawn / stream / handoff loop on real tasks while I drive.**
+- [ ] **Quick-capture**: global input (+ hotkey) → new task in Inbox
+- [ ] **Projects** CRUD incl. `rootPath`, color, default model/permission/delivery, `systemPrompt`
+- [ ] **Claude-assisted project import**: scan `~/.claude/projects` dirs → background session
+      enriches each (git remote, stack, name, description) → I tick which become Projects
+- [ ] **Board**: kanban by lifecycle status; drag between columns; priority + deadline shown
+- [ ] **Global search** (tasks) + ⌘K command palette via SQLite **FTS5**
+- [ ] **Task detail**: title/body, project assign, priority, deadline, estimate, labels
+- [ ] **Free-form context channel** on a task (`contextNotes`, append anytime) — always visible
+- [ ] **Manual spawn**: "Run Claude on this task" → spawn warm session in the task's `cwd`
+      (`-p --input-format stream-json --output-format stream-json --verbose --session-id … --include-partial-messages`)
+- [ ] **Context composition** v1: compose global+project+task context into `--append-system-prompt`
+- [ ] **Permission mode selector** per session/task: Auto (default) · Manual · Dangerous
+      (resolved task ?? project ?? global); current mode shown on the session tile (§9.1)
+- [ ] **Live transcript stream**: gateway parses stdout events → WS → UI (typing, tool cards, result/cost)
+- [ ] **Send follow-up** messages to a warm session from the UI (the conversation loop)
+- [ ] **Sessions view**: live tiles from the liveness oracle (`~/.claude/sessions/*`) + busy/idle
+- [ ] **Transcript reader** for past sessions (tail `projects/**/*.jsonl`, render the DAG)
+- [ ] **One-click terminal launch**: copy-paste command **+** "Open in iTerm2/Terminal/…" button
+      (gateway runs via `open`/`osascript`); preferred terminal app in Settings
+- [ ] **Subagent observability** in session view: nest sidechains (`isSidechain`/`parent_tool_use_id`/`SubagentStop`)
+- [ ] **Terminal handoff**: "Open in terminal" → show `cd <cwd> && claude --resume <id>`; reflect
+      terminal-started sessions back into the app
+- [ ] Cost/usage shown per session (from `result` events)
+- [ ] **Ambient usage bar**: subscription windows (5h session + weekly) from `rate_limit_info` + `stats-cache.json`
+- [ ] **Notifications**: in-app badges + OS notifications (Web Notifications API) for ❓ / delivered
+- [ ] **Suggestion pattern** primitive: Accept/Edit/Override control + per-field provenance (§10.2)
+
+## Phase 2 — Autonomy: triage-on-capture + refinement loop
+**Goal: tasks arrive pre-refined; I only answer what's needed.**
+- [ ] Agent runner abstraction (one-shot `-p --resume` workers + role selection + JSON output parse)
+- [ ] **Triage** agent on capture → project/priority/deadline/labels/restatement
+- [ ] **Sufficiency gate**: Triage/Discovery may return `insufficient` → **Needs-Feedback (too vague)**
+- [ ] **Discovery** agent → spec, acceptance criteria, affected files, approaches, unknowns
+- [ ] **Questioner** agent → ranked **Q&A cards**
+- [ ] **Needs-Feedback UI**: ❓ badge, Q&A cards (text / choice / boolean), "give me more" cards
+- [ ] Answer Q&A **and** free-form context both re-trigger refinement
+- [ ] Lifecycle state machine enforced server-side; status timeline on the task
+- [ ] Autonomy controls in Settings (per-project enable/disable; spend guardrails)
+- [ ] **Agent Library**: reusable subagent defs injected per phase via `--agents` (§7.3)
+- [ ] Discovery fans out parallel read-only **explorer** subagents → synthesize spec (§7.2)
+- [ ] **Deadline-aware prioritization**: urgency = f(deadline, priority); surface overdue/at-risk
+- [ ] **Daily Digest / "Today"**: interactive morning plan (deadline-first) → committed daily goal
+- [ ] Daily Digest **gamification**: progress ring, streaks, personalized completion note
+- [ ] Daily Digest **evening recap** → `~/.cadence/digests/<date>.md` → seeds tomorrow
+
+## Phase 3 — Execution: PLAY → implement → verify → deliver
+**Goal: green PLAY turns a Ready task into delivered work.**
+- [ ] **Ready (▶)** state + PLAY button
+- [ ] **Planner** agent (plan mode) → plan shown for approval
+- [ ] **git worktree per task** provisioning + branch naming
+- [ ] **Implementer** agent in the worktree (permission mode per task)
+- [ ] **Verifier** agent → tests/build/lint + acceptance-criteria check → pass/fail
+- [ ] Verifier fans out **diverse reviewer** subagents (correctness/security/tests/conventions) → aggregate (§7.2)
+- [ ] **Delivery** agent + delivery-mode resolution (`branch_summary` / `auto_pr` / `apply_in_place`)
+- [ ] **Review** screen: in-app diff + summary + verify results; merge / request-changes
+- [ ] Interrupt / stop a running session from the UI
+- [ ] **Manual approve mode**: in-app approve/deny prompts via SDK `canUseTool` (§9.1)
+- [ ] **Dangerous mode guardrail**: confirm-to-enable + require/encourage worktree isolation;
+      per-project auto-mode rules (allow / soft_deny / hard_deny)
+
+## Phase 4 — Multi-repo, scheduling, analytics, polish
+- [ ] **Fleets**: multi-project tasks; sessions across multiple working dirs; per-repo sub-results
+- [ ] Scheduled / background sweep mode (optional autonomy while away)
+- [ ] Dependencies graph (`blocks` / `blockedBy`), subtasks
+- [ ] Cost & throughput analytics (per project / week)
+- [ ] Permission UX via Agent SDK `canUseTool` (approve/deny in-app)
+- [ ] Notifications (task needs feedback / delivered)
+- [ ] **Extend search to transcripts** (FTS5 over `projects/**/*.jsonl` text) + saved filters
+- [ ] Calendar / deadline view
+
+### Phase 5 — Self-improving layer (memory & proactivity)
+- [ ] **Memory layer** (§8.1): global `~/.cadence/memory/` + per-project memory + `MEMORY.md` + `communication.md`
+- [ ] **Reflector / Librarian** job: distill Accept/Edit/Override + outcomes → memory updates
+- [ ] **Self-monitoring analytics**: suggestion provenance, verify pass-rate, rollovers, staleness
+- [ ] **Proactive proposals** via notifications (stale, merge, recalibrate, "what I learned")
+- [ ] **"What Cadence learned" feed**: reviewable / revertable memory changes
+
+---
+
+## Cross-cutting (every phase)
+- [ ] **UX clarity rules** (platform-definition §10.1): labeled icon buttons, self-explanatory
+      states, no jargon, visible system status, undo where possible
+- [ ] **Propose-and-confirm everywhere** (§10.2): Claude suggests defaults + rationale;
+      Accept/Edit/Override; field provenance; auto-apply high-confidence + low-risk
+- [ ] **Background Claude jobs** (§8): import enrichment, inbox grooming, auto-estimate, capture
+      cleanup, daily digest, stale-task nudge — added as cheap one-shots where they help
+- [ ] Keyboard-first navigation (it's a daily driver)
+- [ ] Localhost-only binding + basic auth gate (transcripts are plaintext/sensitive)
+- [ ] Resilience: detect dead pids / stale oracle files; never double-attach a session_id

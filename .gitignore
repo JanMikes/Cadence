@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+
+# Local app data / SQLite (Cadence stores data under ~/.cadence, but ignore any local copies)
+*.db
+*.sqlite
+*.sqlite3
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS / editor cruft
+.DS_Store
+.vscode/
+.idea/
+*.swp
