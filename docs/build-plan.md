@@ -1,0 +1,208 @@
+# Cadence — Build Plan & Progress Ledger
+
+> **This file is the SINGLE SOURCE OF TRUTH for build progress.** A fresh Claude Code session reads
+> it (after `CLAUDE.md`, `docs/platform-definition.md`, `docs/backlog.md`), reconciles it against the
+> actual repo, then continues building. The bootstrap prompt is in
+> [`build-prompt.md`](build-prompt.md).
+>
+> Meta: this build loop (markdown ledger = truth · reconcile · atomic verified steps · journal) is
+> literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
+
+## Status snapshot  ← the building agent keeps this current
+- **Current phase:** Phase 0 — Foundation
+- **Last completed step:** none (fresh repo, docs only — not yet scaffolded)
+- **Next step:** 0.1
+- **Blockers:** none
+- **Last updated:** (set this when you touch the ledger)
+
+## Rules for the building agent (the idempotent loop)
+1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md` (spec, the behavior source of truth),
+   `docs/backlog.md`, and this file.
+2. **Reconcile** — verify the snapshot against reality: `git log --oneline`, files present,
+   `bun test` / `bun run build`. The repo + git history WIN; fix the ledger if they disagree. If there
+   is no `package.json` yet (docs only), the build hasn't started → next step is 0.1.
+3. **Select** the FIRST unchecked step in the lowest incomplete phase (respect order & deps).
+4. **Implement** that ONE step per the spec and `CLAUDE.md` conventions. Small, focused diff; add a
+   smoke test for new logic.
+5. **Verify** with the step's *Verify* line + `bun test` + `bun run build`. It MUST pass. If you
+   can't make it pass, do not check the box — record a blocker and stop.
+6. **Commit** just that step: `build(<phase>.<step>): <summary>`.
+7. **Record** — check the box, append a Progress Journal entry (what / decisions / deviations / notes
+   for next session), update the Status snapshot.
+8. **Continue** to the next step. You may run many steps and cross phase boundaries. You MAY stop at
+   any committed+journaled boundary.
+9. **Never** check an unverified box. **Never** guess an ambiguous product decision — record it under
+   Blockers and stop for the human.
+
+## Conventions
+- Stack & structure per `CLAUDE.md` (Bun · `bun:sqlite`+Drizzle+FTS5 · Bun HTTP+WS gateway · React+
+  Vite+Tailwind+shadcn/ui+xterm.js+TanStack Query). One step ≈ one commit.
+- App data lives under `~/.cadence/` — never commit it (gitignored).
+- `bun test` stays green and the app boots at every commit.
+- Honor UX clarity rules (labeled icon buttons, plain language) and "propose, don't impose".
+
+## How to run & verify
+- **Run the app:** `bun install` → `bun run dev` (boots the gateway + Vite) → open the printed
+  `localhost` URL.
+- **Automated checks (every commit):** `bun test` (unit/smoke) and `bun run build` (prod build) must
+  both pass.
+- **Per step:** perform the step's *Verify* line.
+- **Per phase:** run the *Acceptance check (manual)* at the end of the phase and confirm **every**
+  expected result before the phase is "done".
+- Verification is **not optional** — an unverified step is an unfinished step. If a check can't pass,
+  it's a blocker: record it and stop.
+
+---
+
+## Phase 0 — Foundation
+Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watcher + design base.
+
+- [ ] **0.1 Repo scaffold.** Root Bun + strict TypeScript. Folders `server/` (gateway), `web/`
+  (Vite+React+TS), `shared/` (types). Root scripts `dev`, `build`, `test`.
+  - Verify: `bun install` clean; `bun run dev` boots gateway + Vite; a placeholder page loads.
+- [ ] **0.2 SQLite + Drizzle.** drizzle + drizzle-kit. Index schema: `projects`, `fleets`, `tasks`,
+  `task_deps`, `sessions`, `events`, `suggestions`. Migration creates `~/.cadence/cadence.db`.
+  - Verify: migration runs; `bun test` inserts+selects one row per table.
+- [ ] **0.3 FTS5 search table.** FTS5 virtual table over task text (transcripts later); sync hooks
+  stubbed.
+  - Verify: insert a task, FTS query returns it.
+- [ ] **0.4 Storage layer (markdown ⇄ index).** Bootstrap `~/.cadence/` (dirs + `settings.json`).
+  Helpers to read/write a task folder (`task.md` frontmatter+body, `context.md`, `qa.md`, …),
+  project/fleet markdown, and reindex `task.md` → SQLite.
+  - Verify: write a task folder, reindex; DB row matches frontmatter (round-trip test).
+- [ ] **0.5 File watcher.** Watch `~/.cadence/**` → reindex changed `task.md` into SQLite (+FTS).
+  - Verify: edit a `task.md` on disk → DB + FTS update (watcher-event test).
+- [ ] **0.6 Gateway HTTP+WS skeleton.** REST router (`/api/health` + stubs), WS hub (broadcast),
+  serves built `web/`. Typed API contract in `shared/`.
+  - Verify: `GET /api/health` ok; WS connect receives a broadcast; prod build is served.
+- [ ] **0.7 Design base.** Tailwind + shadcn/ui; dark dev theme tokens; the **LabeledIconButton**
+  primitive (icon REQUIRES a label) + app shell (left-nav placeholder).
+  - Verify: themed shell renders; an example shows LabeledIconButton with icon+label.
+
+**Acceptance check (manual):**
+1. `bun run dev` → the themed app shell loads at localhost (dark dev theme, left-nav placeholder).
+2. The page shows data fetched from the gateway (e.g. a health indicator) — gateway ↔ web works.
+3. `~/.cadence/cadence.db` exists with migrated tables (`sqlite3 ~/.cadence/cadence.db .tables`).
+4. Editing a placeholder `task.md` under `~/.cadence/tasks/` updates the DB (watcher reindexes).
+5. `bun test` and `bun run build` are both green.
+Then stop and report.
+
+## Phase 1 — Task core + manual spawn (MVP)
+Goal: capture → board → assign → manually spawn a Claude session in the task's repo → live stream →
+converse → terminal handoff. No autonomy yet.
+
+- [ ] **1.1 Task model + quick-capture → Inbox.** Persistent capture input → `~/.cadence/tasks/<id>/
+  task.md` + index; shows in Inbox.
+  - Verify: capture a task; file + DB row exist; reload shows it.
+- [ ] **1.2 Board + task detail + context channel.** Kanban by status; detail (body, priority,
+  deadline, estimate, labels); always-on free-form `context.md` editor.
+  - Verify: drag across columns (status persists); add a context note (appends to `context.md`).
+- [ ] **1.3 Projects CRUD.** Create/list/edit projects (rootPath, color, default model/permission/
+  delivery, systemPrompt) → `projects/<slug>.md` + index; assign a task to a project.
+  - Verify: create a project; assign a task; cwd resolves to rootPath.
+- [ ] **1.4 Spawn infra (warm session).** `openSession` (verified pattern: `claude -p --input-format
+  stream-json --output-format stream-json --verbose --include-partial-messages --session-id <uuid>
+  --permission-mode <mode>` in the task cwd). Parse stdout NDJSON → typed events → WS; track session
+  in DB.
+  - Verify: spawn on a task; receive `system/init` + `result`; DB session row + cost recorded.
+- [ ] **1.5 Live transcript UI + follow-up.** Render events (token typing via `text_delta`, tool-use
+  cards, `result`+cost); input sends follow-up messages to the warm process.
+  - Verify: send a message → streamed reply; a 2nd retains context; cost shown.
+- [ ] **1.6 Context composition v1.** Compose Global → Project → Task (spec/context/qa) into
+  `--append-system-prompt` at spawn.
+  - Verify: a project systemPrompt marker visibly affects behavior.
+- [ ] **1.7 Permission mode selector.** Auto (default) / Manual / Dangerous per session+task
+  (resolved task ?? project ?? global); mode shown on tile; Dangerous needs confirm.
+  - Verify: each mode maps to the right `--permission-mode`; Dangerous prompts a confirm.
+- [ ] **1.8 Sessions view + past-transcript reader + sidechains.** Live tiles from `~/.claude/
+  sessions/*` (status/busy, verify pid alive); read past `projects/**/*.jsonl` (render the parentUuid
+  DAG); nest `isSidechain` subagent activity.
+  - Verify: a running session shows busy/idle; a past session renders; a subagent run nests.
+- [ ] **1.9 Terminal handoff.** Per session: copy `cd <cwd> && claude --resume <id>` + one-click
+  "Open in <terminal>" (gateway runs `open`/`osascript`); preferred terminal in Settings.
+  - Verify: button opens the configured terminal at cwd running resume; copy works.
+- [ ] **1.10 Claude-assisted project import.** Scan `~/.claude/projects` dirs; background `claude -p`
+  enriches each (remote/stack/name/desc); checklist → create selected.
+  - Verify: detects real dirs; proposes; creates the ticked ones.
+- [ ] **1.11 Usage bar + cost.** Ambient subscription-window bar (5h+weekly from `rate_limit_info` +
+  `stats-cache.json`); per-session/task cost.
+  - Verify: bar reflects usage; cost accrues per session.
+- [ ] **1.12 Notifications.** In-app badges + Web Notifications API (needs-feedback / delivered).
+  - Verify: a needs-input event raises a badge + desktop notification.
+- [ ] **1.13 Global search + ⌘K palette.** FTS5 over tasks; palette for jump-to + actions.
+  - Verify: search finds a task by body text; ⌘K jumps to it.
+- [ ] **1.14 Suggestion primitive.** Accept/Edit/Override control + per-field provenance
+  (suggested→confirmed), reusable.
+  - Verify: a field shows a suggestion; Accept confirms; Override records provenance.
+
+**Acceptance check (manual):**
+1. Quick-capture a task → it appears in the Inbox and `~/.cadence/tasks/<id>/task.md` exists.
+2. Create a project with a real `rootPath`; assign the task to it.
+3. Spawn a Claude session on the task → it streams live (token typing, a tool card, a result + cost).
+4. Send a follow-up message → context is retained across turns.
+5. Switch permission mode to Manual → a tool action prompts approve/deny in-app.
+6. Use the one-click button → the session opens in your terminal (resumes the same session id).
+7. ⌘K search finds the task by a word from its body.
+8. `bun test` and `bun run build` are both green.
+Then stop and report.
+
+## Phase 2 — Autonomy: triage-on-capture + refinement loop
+(Derives from backlog Phase 2. Detail these into atomic steps when you reach the phase.)
+- [ ] 2.1 Agent runner: one-shot `-p --resume` worker + role selection + JSON-output parsing + status mapping.
+- [ ] 2.2 Agent library: reusable subagent defs injected via `--agents` (explorer, reviewers…).
+- [ ] 2.3 Triage agent on capture (→ project/priority/deadline/labels/restatement, or `insufficient`).
+- [ ] 2.4 Discovery agent (+ parallel explorer subagents) → spec/criteria/unknowns, or `insufficient`.
+- [ ] 2.5 Questioner agent → ranked Q&A cards; Needs-Feedback UI (Q&A + "too vague" cards).
+- [ ] 2.6 Lifecycle state machine enforced server-side + status timeline.
+- [ ] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
+- [ ] 2.8 Daily Digest: interactive morning plan → committed daily goal.
+- [ ] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
+- [ ] 2.10 Autonomy settings (per-project enable/disable).
+
+**Acceptance check (manual):** capture a task → triage auto-fills project/priority/deadline; refine
+produces a spec + Q&A; answering Q&A (or adding context) advances it to Ready; an over-vague task
+lands in Needs-Feedback ("too vague"); the Daily Digest proposes a deadline-ordered plan you can edit.
+
+## Phase 3 — Execution: PLAY → implement → verify → deliver
+- [ ] 3.1 Ready state + PLAY button.
+- [ ] 3.2 Planner (plan mode) → approvable plan.
+- [ ] 3.3 git worktree per task provisioning + branch naming.
+- [ ] 3.4 Implementer in the worktree (permission mode per task).
+- [ ] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
+- [ ] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
+- [ ] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
+- [ ] 3.8 Manual-approve mode (`canUseTool`) + Dangerous-mode guardrail (confirm + worktree).
+
+**Acceptance check (manual):** press PLAY on a Ready task → plan → implement in a worktree → verify
+passes → delivery produces the configured output (branch/PR/in-place); the Review screen shows the
+diff + summary; Manual mode gates each tool call; Dangerous requires explicit confirmation.
+
+## Phase 4 — Multi-repo, analytics, polish
+- [ ] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
+- [ ] 4.2 Dependencies graph + subtasks.
+- [ ] 4.3 Cost & throughput analytics.
+- [ ] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
+- [ ] 4.5 Calendar / deadline view.
+- [ ] 4.6 Scheduled / background sweep mode.
+- [ ] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey.
+
+**Acceptance check (manual):** a fleet task spawns sessions across multiple repos with per-repo
+sub-results; analytics show per-project throughput + cost; transcript search returns matches across
+sessions; the calendar shows deadlines.
+
+## Phase 5 — Self-improving layer
+- [ ] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
+- [ ] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
+- [ ] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
+- [ ] 5.4 Proactive proposals via notifications.
+- [ ] 5.5 "What Cadence learned" feed (review / revert).
+
+**Acceptance check (manual):** correcting a suggestion updates memory; a later run reflects the
+learning; a proactive proposal arrives as a notification; the "what Cadence learned" feed lets you
+review and revert a memory entry.
+
+---
+
+## Progress Journal (append-only — newest at bottom)
+<!-- Each entry: date · phase.step · what you did · decisions · deviations · notes for next session. -->
+- _(empty — the first building session appends here)_

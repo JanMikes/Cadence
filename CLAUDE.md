@@ -19,6 +19,10 @@ steer in real time. No cloud, no external API, no Docker, no other users. Everyt
 3. 🤖 **[docs/agent-prompts.md](docs/agent-prompts.md)** — draft prompts for each pipeline stage.
 4. 🔧 **[docs/claude-code-control-surfaces.md](docs/claude-code-control-surfaces.md)** — verified
    technical reference for spawning/monitoring Claude Code (binary `v2.1.165`, `~/.claude/` files).
+5. 🏗️ **[docs/build-plan.md](docs/build-plan.md)** — the **build ledger**: ordered steps,
+   verification, per-phase acceptance checks, and the progress journal (source of truth for *build*
+   progress). 🤖 **[docs/build-prompt.md](docs/build-prompt.md)** — the idempotent bootstrap prompt a
+   fresh session uses to continue the build from where it stopped.
 
 ## Entities
 
