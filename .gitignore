@@ -11,10 +11,21 @@ out/
 *.sqlite
 *.sqlite3
 
-# Env & secrets
+# Env & secrets — NEVER commit
 .env
 .env.*
 !.env.example
+*.key
+*.pem
+*.p12
+id_rsa*
+*.secret
+secrets/
+*.local.json
+
+# App/runtime data must never enter the repo (it lives in ~/.cadence)
+/.cadence/
+.cadence/
 
 # Logs
 *.log

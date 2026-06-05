@@ -59,6 +59,12 @@ never check a box you didn't verify; never invent product behavior (if the spec 
 it's a blocker for the human); keep `bun test` green and the app booting at every commit; honor the UX
 clarity rules and "propose, don't impose" from the spec.
 
+SECURITY (critical): the repo is PUBLIC-safe — generic code + docs ONLY. NEVER commit secrets,
+credentials, `.env` files, or confidential/client data; read secrets from env/keychain at runtime and
+never hardcode them. ALL task/runtime data belongs in `~/.cadence/`, never in the repo. Use only
+fictional placeholder names (`ProjectA`, `Acme`) in code/docs/tests. Scan every diff before committing
+and REFUSE the commit if it contains a secret or a real client/project identifier.
+
 Begin at STEP 1 now.
 ```
 

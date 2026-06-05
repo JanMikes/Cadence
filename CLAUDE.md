@@ -53,6 +53,9 @@ for multi-repo tasks) · **Task** (the core entity — tracked from capture to d
 - **Cadence learns** — markdown memory + Reflector + proactive proposals; self-improving, reviewable.
 - **Permission modes** — Auto (default) · Manual (approve in-app) · Dangerous (skip all); per task/project/global.
 - **Global search** — full-text (SQLite FTS5) across tasks + transcripts + memory; ⌘K palette.
+- **Security (critical)** — repo is public-safe: only generic code + docs; **all task/runtime data in
+  `~/.cadence/`**, secrets in the OS keychain, fictional names in examples, pre-commit secret scan. See
+  platform-definition §13.
 
 ## Design north star
 

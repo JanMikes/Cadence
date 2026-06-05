@@ -54,6 +54,10 @@ saved locally (markdown files + a SQLite index + the existing `~/.claude/` files
     distilling my corrections and outcomes into durable lessons (communication style, routing,
     project gotchas) and occasionally proposing improvements — self-improving, self-monitoring,
     self-proposing, always reviewable. (See §8.1.)
+14. **Nothing confidential in the repo.** The repository holds only generic app code + docs — never
+    secrets, credentials, or client/task data. **All runtime data lives outside the repo in
+    `~/.cadence/`**; integration secrets live in the OS keychain. Treat the repo as public-safe at
+    all times. (See §13.)
 
 ## 3. Decisions log (locked 2026-06-06)
 
@@ -256,7 +260,7 @@ better over time — autonomous self-improving, self-monitoring, self-proposing.
   tasks. That's the raw signal.
 - **Self-improving (the Reflector).** A lightweight Reflector/Librarian background job distills
   durable lessons from my corrections + outcomes and writes/updates memory: "Jan reroutes
-  GoParking→Locke — learn it", "delivery needs the DB up — remember", "he trims my priorities up by
+  ProjectA→ProjectB — learn it", "delivery needs the DB up — remember", "he trims my priorities up by
   one — recalibrate". My **feedback is the highest-signal training data.**
 - **Self-proposing (proactive, occasional).** Cadence reaches out via in-app / OS notifications with
   proposals, not noise: "5 stale tasks — archive?", "these 3 share a root cause — merge?", "I learned
@@ -346,7 +350,7 @@ evening recap that celebrates it. The heart of "encourage, don't nag" (Principle
   prominently. (Principle 12.)
 - **Gamified encouragement (tasteful, dev-style — not childish).** A daily-goal progress ring
   ("3/5"), a **streak** of days the plan was met, a momentum signal. On completion Claude writes a
-  *personalized* note from what I actually shipped ("cleared the Fontai deadline + 2 GoParking fixes
+  *personalized* note from what I actually shipped ("cleared the ProjectA deadline + 2 ProjectB fixes
   — strong day"). Positive reinforcement only; rollover framed constructively, never guilt. Honors
   the clarity rules (§10.1).
 - **Evening recap → tomorrow.** At day's end Claude summarizes done / shipped / rolled-over and seeds
@@ -367,3 +371,22 @@ later for `canUseTool`. See `claude-code-control-surfaces.md` for the verified m
 See [`backlog.md`](backlog.md). Phase 1 = task core + manual spawn (no autonomy). Phase 2 = triage-
 on-capture + refinement/Q&A loop. Phase 3 = PLAY→implement→verify→deliver. Phase 4 = fleets/multi-
 repo, scheduling, analytics, optional Tauri wrap.
+
+## 13. Security & data boundaries
+Single-user local tool, but the **repo is treated as public-safe** — it must never contain anything
+confidential. (Principle 14.)
+- **Hard boundary.** Repo = generic application code + docs only. **All runtime data** (tasks,
+  session transcripts, memory, digests, project configs, daily plans) lives in **`~/.cadence/`**,
+  outside the repo, and is `.gitignore`-protected even if symlinked in.
+- **Secrets in the keychain.** Integration tokens (GitHub, Toggl, …) live in the **macOS Keychain**
+  (via `security`), never as plaintext in `~/.cadence/settings.json` and never in the repo. Settings
+  reference a keychain item id, not the secret itself.
+- **Redact before composing context.** Strip tokens/secrets from anything we pass into a Claude
+  session's prompt or `--append-system-prompt`.
+- **Commit guard.** A **pre-commit secret scan** (e.g. gitleaks or a grep guard) + a hardened
+  `.gitignore` (`.env*`, `*.key`, `*.pem`, `secrets/`, `/.cadence/`) block accidental commits. The
+  build agent is instructed never to commit secrets or client identifiers (see build-prompt rules).
+- **Examples are fictional.** Docs/examples use placeholder names (`ProjectA`, `Acme`) — never real
+  client/project names.
+- **Local-only surface.** The web UI binds to localhost and is auth-gated; `~/.claude/` and
+  `~/.cadence/` are plaintext on disk, so the machine itself is the trust boundary.

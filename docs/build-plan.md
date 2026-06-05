@@ -57,6 +57,12 @@
 ## Phase 0 — Foundation
 Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watcher + design base.
 
+- [ ] **0.0 Repo safety.** Harden `.gitignore` (`.env*`, `*.key`, `*.pem`, `secrets/`, `/.cadence/`);
+  add a **pre-commit secret scan** (gitleaks or a grep guard) that blocks commits containing secrets
+  or real client identifiers; add a short `SECURITY.md` (no confidential data in the repo; runtime
+  data lives in `~/.cadence/`; secrets in the OS keychain; examples use fictional names). See
+  platform-definition §13.
+  - Verify: the hook REJECTS a test commit containing a fake `API_KEY=sk-test123`; PASSES a clean commit.
 - [ ] **0.1 Repo scaffold.** Root Bun + strict TypeScript. Folders `server/` (gateway), `web/`
   (Vite+React+TS), `shared/` (types). Root scripts `dev`, `build`, `test`.
   - Verify: `bun install` clean; `bun run dev` boots gateway + Vite; a placeholder page loads.
