@@ -290,6 +290,22 @@ export interface AnalyticsSummary {
   throughput: ThroughputDay[];
 }
 
+/** Self-monitoring signals (§8.1): the raw data the Reflector learns from. */
+export interface SelfMonitor {
+  provenance: {
+    suggested: number;
+    confirmed: number;
+    edited: number;
+    overridden: number;
+    dismissed: number;
+  };
+  /** confirmed / resolved (accepted as-is vs any resolution); null if none resolved. */
+  acceptanceRate: number | null;
+  verify: { passed: number; failed: number; passRate: number | null };
+  rollovers: number; // tasks rolled over across all evening recaps
+  staleTasks: number; // currently idling past the sweep threshold
+}
+
 // ------------------------------------------------------------------------ fleets
 // A named, ordered set of projects for multi-repo tasks (spec §4). Member slugs
 // live in the fleet's markdown; the index holds the scalar fields.

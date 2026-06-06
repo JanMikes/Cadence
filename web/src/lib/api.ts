@@ -20,6 +20,7 @@ import type {
   QAChannel,
   SavedSearch,
   SearchHit,
+  SelfMonitor,
   Session,
   SpawnSessionInput,
   Suggestion,
@@ -165,6 +166,10 @@ export function getAnalytics(): Promise<AnalyticsSummary> {
 
 export function getSweep(): Promise<SweepReport> {
   return fetch("/api/sweep").then(json<SweepReport>);
+}
+
+export function getSelfMonitor(): Promise<SelfMonitor> {
+  return fetch("/api/self-monitor").then(json<SelfMonitor>);
 }
 
 export function getMemory(): Promise<MemoryFile[]> {

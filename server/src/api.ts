@@ -38,6 +38,7 @@ import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
 import { listMemoryFiles, readProjectMemory, writeMemoryFile, writeProjectMemory } from "./memory";
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from "./searches";
+import { computeSelfMonitor } from "./selfmonitor";
 import { runSweep } from "./sweep";
 import { searchTranscripts } from "./transcript-search";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
@@ -433,6 +434,10 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/sweep" && method === "GET") {
     return Response.json(runSweep(ctx.db, Date.now()));
+  }
+
+  if (pathname === "/api/self-monitor" && method === "GET") {
+    return Response.json(computeSelfMonitor(ctx.db));
   }
 
   if (pathname === "/api/memory" && method === "GET") {

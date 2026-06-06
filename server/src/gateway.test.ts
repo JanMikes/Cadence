@@ -596,6 +596,19 @@ test("GET /api/sweep returns a proactive findings report", async () => {
   expect(Array.isArray(report.findings)).toBe(true);
 });
 
+test("GET /api/self-monitor returns provenance + verify + rollovers", async () => {
+  const m = (await fetch(`${gw.url}/api/self-monitor`).then((r) => r.json())) as {
+    provenance: { confirmed: number };
+    verify: { passRate: number | null };
+    rollovers: number;
+    staleTasks: number;
+  };
+  expect(typeof m.provenance.confirmed).toBe("number");
+  expect("passRate" in m.verify).toBe(true);
+  expect(typeof m.rollovers).toBe("number");
+  expect(typeof m.staleTasks).toBe("number");
+});
+
 test("GET /api/analytics returns cost/throughput/status aggregates", async () => {
   await createViaApi("Analytics task");
   const a = (await fetch(`${gw.url}/api/analytics`).then((r) => r.json())) as {

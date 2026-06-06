@@ -1,7 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3 } from "lucide-react";
-import { getAnalytics } from "../../lib/api";
+import { getAnalytics, getSelfMonitor } from "../../lib/api";
 import { statusLabel } from "../../lib/status";
+
+function pct(n: number | null): string {
+  return n == null ? "—" : `${Math.round(n * 100)}%`;
+}
+
+/** Self-monitoring signals (§8.1) — the data the Reflector learns from. */
+function SelfMonitorSection() {
+  const m = useQuery({ queryKey: ["self-monitor"], queryFn: getSelfMonitor });
+  const d = m.data;
+  if (!d) return null;
+  const p = d.provenance;
+  return (
+    <section className="mt-8">
+      <h2 className="text-sm font-medium">Self-monitoring</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">The signal Cadence learns from (§8.1).</p>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Suggestion accept rate" value={pct(d.acceptanceRate)} />
+        <Stat label="Verify pass-rate" value={pct(d.verify.passRate)} />
+        <Stat label="Rollovers" value={String(d.rollovers)} />
+        <Stat label="Stale tasks" value={String(d.staleTasks)} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        {(["confirmed", "edited", "overridden", "dismissed", "suggested"] as const).map((k) => (
+          <span key={k} className="rounded-md bg-muted px-2 py-1 text-muted-foreground">
+            {k}: <span className="font-medium text-foreground">{p[k]}</span>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 /**
  * Cost & throughput analytics (spec §10): per-project tasks/done/sessions/cost,
@@ -85,6 +116,8 @@ export function Analytics() {
               ))}
             </div>
           </section>
+
+          <SelfMonitorSection />
         </>
       ) : null}
     </div>
