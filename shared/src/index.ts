@@ -205,6 +205,33 @@ export interface OpenTerminalResult {
   command: string;
 }
 
+/** A discovered project directory (from ~/.claude/projects) proposed for import. */
+export interface ImportCandidate {
+  cwd: string;
+  name: string;
+  gitRemote: string | null;
+  gitBranch: string | null;
+  isGitRepo: boolean;
+  alreadyImported: boolean;
+}
+
+export interface ImportSelection {
+  cwd: string;
+  name: string;
+  gitRemote?: string | null;
+  systemPrompt?: string;
+}
+
+export interface ImportRequest {
+  selections: ImportSelection[];
+}
+
+/** Claude-enrichment of a candidate (one-shot `claude -p`). */
+export interface EnrichResult {
+  description: string | null;
+  stack: string | null;
+}
+
 /** A live Claude Code process from the liveness oracle (~/.claude/sessions/<pid>.json). */
 export interface LiveSession {
   pid: number;

@@ -2,7 +2,10 @@ import type {
   ContextChannel,
   CreateProjectInput,
   CreateTaskInput,
+  EnrichResult,
   GlobalSettings,
+  ImportCandidate,
+  ImportSelection,
   LiveSession,
   OpenTerminalResult,
   Project,
@@ -83,6 +86,26 @@ export function updateProject(slug: string, patch: UpdateProjectInput): Promise<
     headers: JSON_HEADERS,
     body: JSON.stringify(patch),
   }).then(json<Project>);
+}
+
+export function getImportCandidates(): Promise<ImportCandidate[]> {
+  return fetch("/api/import/candidates").then(json<ImportCandidate[]>);
+}
+
+export function importProjects(selections: ImportSelection[]): Promise<Project[]> {
+  return fetch("/api/import", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ selections }),
+  }).then(json<Project[]>);
+}
+
+export function enrichCandidate(cwd: string): Promise<EnrichResult> {
+  return fetch("/api/import/enrich", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ cwd }),
+  }).then(json<EnrichResult>);
 }
 
 export function getTaskSessions(taskId: string): Promise<Session[]> {

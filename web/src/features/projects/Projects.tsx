@@ -9,6 +9,7 @@ import { FolderGit2, Plus, Save, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { createProject, getProjects, updateProject } from "../../lib/api";
+import { ImportProjects } from "./ImportProjects";
 
 const PERMISSION_LABELS: Record<string, string> = {
   auto: "Auto",
@@ -78,6 +79,8 @@ export function Projects() {
           <p className="mt-2 text-xs text-red-400">Couldn’t create — is the gateway running?</p>
         ) : null}
       </section>
+
+      <ImportProjects />
 
       <ul className="mt-6 flex flex-col gap-2">
         {projects.isLoading ? <li className="text-sm text-muted-foreground">Loading…</li> : null}

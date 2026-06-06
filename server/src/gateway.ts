@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
+import { claudeEnrich } from "./import";
 import { SpawnManager } from "./sessions";
 import { bootstrap } from "./store/store";
 import { openInTerminal } from "./terminal";
@@ -23,6 +24,8 @@ export interface GatewayOptions {
   startWatcher?: boolean;
   /** Override the terminal launcher (tests pass a mock to avoid opening windows). */
   openTerminal?: (app: string, command: string) => void;
+  /** Override the import enricher (tests pass a mock to avoid a real claude call). */
+  enrich?: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
 }
 
 export interface Gateway {
@@ -75,6 +78,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
           hub,
           spawn: spawnManager,
           openTerminal: opts.openTerminal ?? openInTerminal,
+          enrich: opts.enrich ?? claudeEnrich,
         });
       }
 

@@ -11,6 +11,7 @@ import {
 } from "@cadence/shared";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
+import { importProjects, scanClaudeProjects } from "./import";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { appendContext, readContext, readSettings, writeSettings } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
@@ -33,6 +34,8 @@ export interface ApiContext {
   spawn: SpawnManager;
   /** Launch a terminal app running `command` (injectable for tests). */
   openTerminal: (app: string, command: string) => void;
+  /** Enrich an import candidate via a one-shot claude (injectable for tests). */
+  enrich: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -134,6 +137,34 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/live-sessions" && method === "GET") {
     return Response.json(readLiveSessions());
+  }
+
+  if (pathname === "/api/import/candidates" && method === "GET") {
+    return Response.json(scanClaudeProjects(ctx.db));
+  }
+
+  if (pathname === "/api/import/enrich" && method === "POST") {
+    let body: { cwd?: string };
+    try {
+      body = (await req.json()) as { cwd?: string };
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    if (!body?.cwd) return badRequest("cwd is required");
+    return Response.json(await ctx.enrich(body.cwd));
+  }
+
+  if (pathname === "/api/import" && method === "POST") {
+    let body: { selections?: unknown };
+    try {
+      body = (await req.json()) as { selections?: unknown };
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    const selections = Array.isArray(body?.selections) ? body.selections : [];
+    const created = importProjects(ctx.db, selections);
+    if (created.length) ctx.hub.broadcast({ type: "event", name: "projects:imported" });
+    return Response.json(created, { status: 201 });
   }
 
   if (pathname === "/api/settings") {

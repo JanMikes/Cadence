@@ -29,6 +29,7 @@ beforeAll(() => {
     db,
     startWatcher: false,
     openTerminal: (app, command) => terminalLaunches.push({ app, command }),
+    enrich: async (cwd) => ({ description: `mock description for ${cwd}`, stack: "bun" }),
   });
 });
 
@@ -99,6 +100,27 @@ test("PATCH /api/tasks/:id moves a task across statuses (board drag)", async () 
   // persisted: a fresh GET reflects it
   const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
   expect(after.status).toBe("ready");
+});
+
+test("project import: candidates list, enrich (mocked), and create selected", async () => {
+  const candidates = await fetch(`${gw.url}/api/import/candidates`).then((r) => r.json());
+  expect(Array.isArray(candidates)).toBe(true);
+
+  const enriched = (await fetch(`${gw.url}/api/import/enrich`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cwd: "/tmp/some-repo" }),
+  }).then((r) => r.json())) as { description: string; stack: string };
+  expect(enriched.description).toContain("mock description");
+  expect(enriched.stack).toBe("bun");
+
+  const created = (await fetch(`${gw.url}/api/import`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ selections: [{ cwd: "/tmp/imported-repo", name: "Imported Repo" }] }),
+  }).then((r) => r.json())) as Array<{ rootPath: string; name: string }>;
+  expect(created).toHaveLength(1);
+  expect(created[0]).toMatchObject({ rootPath: "/tmp/imported-repo", name: "Imported Repo" });
 });
 
 test("settings: GET defaults, PATCH preferredTerminal", async () => {

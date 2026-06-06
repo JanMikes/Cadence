@@ -63,6 +63,11 @@ export function getProjectById(db: Db, id: string): Project | null {
   return row ? toProject(row) : null;
 }
 
+export function getProjectByRootPath(db: Db, rootPath: string): Project | null {
+  const row = db.select().from(projects).where(eq(projects.rootPath, rootPath)).get();
+  return row ? toProject(row) : null;
+}
+
 export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): Project | null {
   if (!existsSync(paths.projectFile(slug))) return null;
   const { data, body } = readProject(slug);
