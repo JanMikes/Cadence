@@ -9,20 +9,14 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 4.6 (Scheduled / background sweep mode) — Phase 4 substantive work done + accepted
-- **Next step:** 4.7 (optional) Tauri wrap — **DECISION PENDING (see Blockers); loop paused for input**
+- **Current phase:** Phase 5 — Self-improving layer. **Phase 4 COMPLETE (7/7; 4.7 out of scope).**
+- **Last completed step:** 4.6 (sweep) + Phase 4 accepted; 4.7 marked out of scope (Jan, 2026-06-07)
+- **Next step:** 5.1 (Memory layer — global + per-project markdown + MEMORY.md + communication.md → context)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
   real-claude smoke. Autonomy stays OFF by default.
-- **Blockers:** **4.7 (optional) Tauri wrap — needs a human decision.** A real Tauri wrap (native
-  menubar + OS-global hotkey) requires a **Rust/Tauri toolchain** that this build's verification gates
-  (`bun test` + `bun run build`) cannot exercise, so the step can't be VERIFIED under the loop's hard
-  rules; it's also explicitly **optional** and the locked decision is **web-first, Tauri-wrappable
-  *later* (additive)**. Options for Jan: (a) **defer 4.7** and treat Phase 4 as complete → proceed to
-  Phase 5 (Self-improving layer); (b) have me add an **unbuilt Tauri scaffold** (config + Rust shell)
-  knowing it can't be verified here; (c) declare it **out of scope** (web-first stands). Recommend (a).
+- **Blockers:** none (4.7 Tauri wrap resolved → out of scope; web-first stands).
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
   agent (no real model/cost); real-agent smokes are offered, not auto-run.
@@ -292,7 +286,8 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 - [x] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [x] 4.5 Calendar / deadline view.
 - [x] 4.6 Scheduled / background sweep mode.
-- [ ] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey.
+- [x] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey. — **OUT OF SCOPE** (Jan's call,
+  2026-06-07): web-first stands; the Tauri wrap remains a later/additive option, not part of this build.
 
 **Acceptance check (manual):** a fleet task spawns sessions across multiple repos with per-repo
 sub-results; analytics show per-project throughput + cost; transcript search returns matches across
@@ -991,3 +986,7 @@ review and revert a memory entry.
   explicitly **optional** with a locked **web-first / Tauri-later (additive)** decision. Rather than
   commit unverifiable native scaffolding or silently skip an explicit backlog item, I'm ending the loop
   and surfacing the choice (defer → Phase 5 [recommended] / add an unbuilt scaffold / out-of-scope).
+- **2026-06-07 · 4.7 resolved → OUT OF SCOPE; Phase 4 COMPLETE.** Jan chose out-of-scope for the
+  optional Tauri wrap — web-first stands; a native menubar/OS-global-hotkey wrap remains a later,
+  additive option, not part of this build. Phase 4 (7/7) is complete and accepted (4.1–4.6 substantive,
+  4.7 out of scope). Loop resumes into **Phase 5 — Self-improving layer** at 5.1 (Memory layer).
