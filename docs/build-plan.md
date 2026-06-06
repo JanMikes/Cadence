@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.6 (Lifecycle state machine + status timeline)
-- **Next step:** 2.7 (Deadline-aware prioritization — urgency = f(deadline, priority))
+- **Last completed step:** 2.7 (Deadline-aware prioritization)
+- **Next step:** 2.8 (Daily Digest: interactive morning plan → committed daily goal)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -220,7 +220,7 @@ Then stop and report.
     capture → triage → discovery(unknowns) → questioner → Needs-Feedback with a Q&A card → GET qa → POST
     answers → Ready; `bun run build` green. The refinement loop is complete (the Phase-2 acceptance flow).
 - [x] 2.6 Lifecycle state machine enforced server-side + status timeline.
-- [ ] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
+- [x] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
 - [ ] 2.8 Daily Digest: interactive morning plan → committed daily goal.
 - [ ] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
 - [ ] 2.10 Autonomy settings (per-project enable/disable).
@@ -685,3 +685,15 @@ review and revert a memory entry.
   shared type. Tests: lifecycle unit (6 — canonical path, parking, reopen rules, no-op/unknown),
   gateway 409-rejection (cancelled→verifying) + timeline records two events, web SSR null-until-load.
   Verify: 110 pass (×2 stable), `bun run build` green, secret scan clean.
+- **2026-06-06 · 2.7 Deadline-aware prioritization.** New `server/src/prioritize.ts` — pure,
+  `now`-injected so the Daily Digest (2.8) and the board share one truth. `urgency = deadlineBand +
+  priorityWeight`: bands {overdue 50, ≤1d 40, ≤3d 30, ≤7d 20, ≤14d 10, far 5, none 0} are spaced by
+  10 so priority (P0..P3 → 3..0, null 0.5; named levels handled too) only ever breaks ties *within* a
+  band — deadlines dominate (Principle 12: an overdue P3 outranks a next-week P0). `urgencyTier`
+  (overdue|due_soon|upcoming|none) drives badges; `sortByUrgency` is most-urgent-first with
+  newest-first as a stable tiebreak. `listTasks` gained a `sort:"urgency"` option and now annotates
+  every task with `urgency`/`urgencyTier` (request-time, not persisted — added as optional fields on
+  the shared `Task` DTO); `getTaskDetail` annotates too. `GET /api/tasks?sort=urgency`. Web: the Board
+  fetches `sort=urgency` (urgent cards rise within each status column) and shows an Overdue/Due-soon
+  badge; `getTasks` now takes `{status,sort}` (Inbox updated). Tests: prioritize unit (5) + gateway
+  ordering (overdue-low ranks above far-off-urgent). Verify: 116 pass (×2 stable), build green, scan clean.
