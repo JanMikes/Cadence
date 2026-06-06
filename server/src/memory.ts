@@ -44,6 +44,21 @@ export function writeProjectMemory(slug: string, content: string): void {
   writeFileSync(paths.projectMemoryFile(slug), content.endsWith("\n") ? content : `${content}\n`);
 }
 
+/** Append a bullet note to a global memory file (creating it if needed). */
+export function appendMemoryNote(name: string, note: string): void {
+  const safe = safeName(name) || "learned";
+  const existing = existsSync(paths.memoryFile(safe)) ? readFileSync(paths.memoryFile(safe), "utf8") : "";
+  const base = existing.trim() ? `${existing.trimEnd()}\n` : `# ${safe}\n\n`;
+  writeMemoryFile(safe, `${base}- ${note.trim()}\n`);
+}
+
+/** Append a bullet note to a project's memory file (creating it if needed). */
+export function appendProjectMemoryNote(slug: string, note: string): void {
+  const existing = readProjectMemory(slug);
+  const base = existing.trim() ? `${existing.trimEnd()}\n` : `# ${slug} memory\n\n`;
+  writeProjectMemory(slug, `${base}- ${note.trim()}\n`);
+}
+
 /** All global memory, concatenated for context composition (each file labeled). */
 export function readGlobalMemory(): string {
   return listMemoryFiles()

@@ -6,6 +6,7 @@ export function modelForRole(role?: string): string | undefined {
   switch (role) {
     case "triage":
     case "delivery":
+    case "reflector":
       return "claude-haiku-4-5";
     case "discovery":
     case "questioner":

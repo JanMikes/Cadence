@@ -22,6 +22,7 @@ import { runDiscovery } from "./agents/discovery";
 import { runFleetImplementer } from "./agents/fleet";
 import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
+import { runReflector } from "./agents/reflector";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
@@ -436,6 +437,12 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/memory" && method === "GET") {
     return Response.json(listMemoryFiles());
+  }
+
+  if (pathname === "/api/reflect" && method === "POST") {
+    const outcome = await runReflector(ctx.db, ctx.runAgent);
+    if (outcome.ran) ctx.hub.broadcast({ type: "event", name: "memory:updated", payload: "learned" });
+    return Response.json(outcome);
   }
 
   const memoryFileMatch = pathname.match(/^\/api\/memory\/([^/]+)$/);

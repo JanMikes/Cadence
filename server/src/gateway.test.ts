@@ -45,6 +45,8 @@ beforeAll(() => {
         json = { passed: true, checks: [{ name: "tests", passed: true }], criteria: [], issues: [] };
       } else if (opts.role === "delivery") {
         json = { summary: "Implemented and verified.", branch: null, prUrl: null };
+      } else if (opts.role === "reflector") {
+        json = { lessons: [{ scope: "global", note: "Jan bumps priorities up by one" }] };
       } else {
         json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
       }
@@ -643,6 +645,33 @@ test("GET /api/search/transcripts returns [] for an empty query", async () => {
   // a non-empty query is valid even with no matching transcripts on disk
   const hits = await fetch(`${gw.url}/api/search/transcripts?q=elasticsearch`).then((r) => r.json());
   expect(Array.isArray(hits)).toBe(true);
+});
+
+test("reflect: a correction signal → the Reflector writes a learned memory note", async () => {
+  // create + override a suggestion (a correction signal)
+  const s = (await fetch(`${gw.url}/api/suggestions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ entityType: "task", entityId: "rt1", field: "priority", value: "P2" }),
+  }).then((r) => r.json())) as { id: string };
+  await fetch(`${gw.url}/api/suggestions/${s.id}/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "override", value: "P1" }),
+  });
+
+  const outcome = (await fetch(`${gw.url}/api/reflect`, { method: "POST" }).then((r) => r.json())) as {
+    ran: boolean;
+    lessons: number;
+  };
+  expect(outcome.ran).toBe(true);
+  expect(outcome.lessons).toBeGreaterThanOrEqual(1);
+
+  const memory = (await fetch(`${gw.url}/api/memory`).then((r) => r.json())) as Array<{
+    name: string;
+    content: string;
+  }>;
+  expect(memory.find((m) => m.name === "learned")?.content).toContain("bumps priorities");
 });
 
 test("memory: PUT a global memory file, GET it back", async () => {

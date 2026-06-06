@@ -179,6 +179,12 @@ export function saveMemoryFile(name: string, content: string): Promise<MemoryFil
   }).then(json<MemoryFile>);
 }
 
+export function reflectMemory(): Promise<{ ran: boolean; lessons?: number; reason?: string }> {
+  return fetch("/api/reflect", { method: "POST" }).then(
+    json<{ ran: boolean; lessons?: number; reason?: string }>,
+  );
+}
+
 export function getApprovals(): Promise<ApprovalRequest[]> {
   return fetch("/api/approvals").then(json<ApprovalRequest[]>);
 }
