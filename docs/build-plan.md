@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.5 (Questioner agent + Q&A cards + answer loop)
-- **Next step:** 2.6 (Lifecycle state machine enforced server-side + status timeline)
+- **Last completed step:** 2.6 (Lifecycle state machine + status timeline)
+- **Next step:** 2.7 (Deadline-aware prioritization — urgency = f(deadline, priority))
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -219,7 +219,7 @@ Then stop and report.
     answering all → Ready + answers in context; QACards SSR; **END-TO-END over HTTP** (role-aware mock):
     capture → triage → discovery(unknowns) → questioner → Needs-Feedback with a Q&A card → GET qa → POST
     answers → Ready; `bun run build` green. The refinement loop is complete (the Phase-2 acceptance flow).
-- [ ] 2.6 Lifecycle state machine enforced server-side + status timeline.
+- [x] 2.6 Lifecycle state machine enforced server-side + status timeline.
 - [ ] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
 - [ ] 2.8 Daily Digest: interactive morning plan → committed daily goal.
 - [ ] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
@@ -669,3 +669,19 @@ review and revert a memory entry.
 8. ✅ `bun test` (79 pass) and `bun run build` both green.
 → MVP accepted (item 5's *in-app* approval is correctly a Phase 3.8 feature). **Stopping for a human
   smoke-test + explicit go-ahead before Phase 2 (autonomy auto-spawns real `claude` on capture).**
+- **2026-06-06 · 2.6 Lifecycle state machine + status timeline.** New `server/src/lifecycle.ts`:
+  `canTransition(from,to)` / `allowedTransitions(from)` / `isValidStatus` encoding spec §6.
+  Design choice — *permissive inside the active workflow* (single-user kanban: free movement among
+  inbox…review, plus →done/→blocked/→cancelled from any active state), but terminal/side states are
+  guarded: cancelled reopens only to inbox/ready, done only to ready/review, blocked un-parks to any
+  active state (not straight to done). Agent transitions (triage→discovery→questioner) all ride the
+  active edges so they're always valid. PATCH `/api/tasks/:id` now rejects unknown statuses (400) and
+  illegal transitions (409, body `{from,to,allowed}`) and leaves the task untouched. New
+  `server/src/events.ts` (`recordEvent`/`listTaskEvents` over the existing `events` table from 0.2);
+  `createTask` emits `status_change {from:null,to:inbox}` and `updateTask` emits one whenever status
+  actually changes — so the timeline captures *both* manual and agent moves at one chokepoint. New
+  `GET /api/tasks/:id/timeline`. Web: `StatusTimeline` component (oldest-first history, refetched via
+  the existing `["task",id]` prefix-invalidation) wired into `TaskDetail`; `getTimeline` + `TaskEvent`
+  shared type. Tests: lifecycle unit (6 — canonical path, parking, reopen rules, no-op/unknown),
+  gateway 409-rejection (cancelled→verifying) + timeline records two events, web SSR null-until-load.
+  Verify: 110 pass (×2 stable), `bun run build` green, secret scan clean.
