@@ -2,6 +2,7 @@ import { Bell, BellRing, Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { cn } from "../../lib/utils";
+import { ProposalsPanel } from "./ProposalsPanel";
 import { markAllRead, useNotifications } from "./store";
 
 const KIND_LABEL: Record<string, string> = {
@@ -44,6 +45,8 @@ export function NotificationsView({ onOpenTask }: { onOpenTask: (taskId: string)
           </span>
         )}
       </div>
+
+      <ProposalsPanel />
 
       <ul className="mt-6 flex flex-col gap-2">
         {items.length === 0 ? (

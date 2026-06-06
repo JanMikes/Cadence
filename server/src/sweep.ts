@@ -58,13 +58,14 @@ export interface SweepHandle {
 export function startSweep(
   db: Db,
   hub: WsHub,
-  opts: SweepOptions & { intervalMs?: number } = {},
+  opts: SweepOptions & { intervalMs?: number; onTick?: () => void } = {},
 ): SweepHandle {
   const intervalMs = opts.intervalMs ?? Number(process.env.CADENCE_SWEEP_MS ?? 0);
   if (!intervalMs || intervalMs <= 0) return { close() {} };
   const timer = setInterval(() => {
     const report = runSweep(db, Date.now(), opts);
     hub.broadcast({ type: "event", name: "sweep:ran", payload: report.findings.length });
+    opts.onTick?.(); // proactive-proposal emission hook (5.4)
   }, intervalMs);
   return {
     close() {

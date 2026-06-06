@@ -596,6 +596,11 @@ test("GET /api/sweep returns a proactive findings report", async () => {
   expect(Array.isArray(report.findings)).toBe(true);
 });
 
+test("GET /api/proposals returns proactive nudges (array)", async () => {
+  const proposals = await fetch(`${gw.url}/api/proposals`).then((r) => r.json());
+  expect(Array.isArray(proposals)).toBe(true);
+});
+
 test("GET /api/self-monitor returns provenance + verify + rollovers", async () => {
   const m = (await fetch(`${gw.url}/api/self-monitor`).then((r) => r.json())) as {
     provenance: { confirmed: number };

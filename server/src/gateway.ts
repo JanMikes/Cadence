@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { runAgent } from "./agents/runner";
 import { ApprovalRegistry } from "./approvals";
+import { emitProposals } from "./proposals";
 import { startSweep } from "./sweep";
 import type { AgentRunner } from "./agents/triage";
 import { handleApi } from "./api";
@@ -72,7 +73,12 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   }
 
   // Background sweep (§8) — disabled unless CADENCE_SWEEP_MS is set; off in tests.
-  const sweep = opts.startWatcher === false ? { close() {} } : startSweep(db, hub);
+  // Each tick also emits not-yet-seen proactive proposals as notifications (5.4).
+  const emittedProposals = new Set<string>();
+  const sweep =
+    opts.startWatcher === false
+      ? { close() {} }
+      : startSweep(db, hub, { onTick: () => emitProposals(db, hub, emittedProposals) });
 
   const server = Bun.serve<WsData>({
     port,

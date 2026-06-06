@@ -44,6 +44,15 @@ export interface NotifyPayload {
   taskId?: string;
 }
 
+/** A proactive, propose-don't-impose nudge (§8.1) from the sweep + self-monitor. */
+export interface Proposal {
+  id: string; // stable per kind+count, for notification dedup
+  kind: "deadline" | "stale" | "reflect" | "info";
+  title: string;
+  message: string;
+  count?: number;
+}
+
 // -------------------------------------------------------------------- entities
 // DTOs returned by the REST API — the indexed (queryable) view of each entity.
 // The markdown under ~/.cadence/ remains the source of truth (spec §5).

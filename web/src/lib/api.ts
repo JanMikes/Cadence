@@ -17,6 +17,7 @@ import type {
   MemoryFile,
   OpenTerminalResult,
   Project,
+  Proposal,
   QAChannel,
   SavedSearch,
   SearchHit,
@@ -170,6 +171,10 @@ export function getSweep(): Promise<SweepReport> {
 
 export function getSelfMonitor(): Promise<SelfMonitor> {
   return fetch("/api/self-monitor").then(json<SelfMonitor>);
+}
+
+export function getProposals(): Promise<Proposal[]> {
+  return fetch("/api/proposals").then(json<Proposal[]>);
 }
 
 export function getMemory(): Promise<MemoryFile[]> {
