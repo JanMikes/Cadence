@@ -8,6 +8,13 @@
       "when": 1780705258485,
       "tag": "0000_charming_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1780705813303,
+      "tag": "0001_tasks_fts",
+      "breakpoints": true
     }
   ]
 }
