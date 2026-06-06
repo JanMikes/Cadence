@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 3.8 (Manual-approve `canUseTool` + Dangerous guardrail) — Phase 3 done + accepted
-- **Next step:** 4.1 (Fleets — multi-project tasks; sessions across cwds; per-repo sub-results)
+- **Last completed step:** 4.1 (Fleets — multi-repo tasks; per-repo sub-results)
+- **Next step:** 4.2 (Dependencies graph + subtasks)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -280,7 +280,7 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 → Phase 3 accepted. Execution is opt-in (PLAY), isolated, gated, and mock-tested end-to-end.
 
 ## Phase 4 — Multi-repo, analytics, polish
-- [ ] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
+- [x] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
 - [ ] 4.2 Dependencies graph + subtasks.
 - [ ] 4.3 Cost & throughput analytics.
 - [ ] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
@@ -891,3 +891,19 @@ review and revert a memory entry.
   implementer dangerous-without-worktree bail + ApprovalsBar SSR. Verify: 168 pass (×2 stable), build
   green, scan clean. **Ran the Phase 3 acceptance check — all items pass (see above); Phase 3
   accepted.** Next: Phase 4 (Multi-repo, analytics, polish) starting at 4.1 (Fleets).
+- **2026-06-06 · 4.1 Fleets — multi-repo tasks; per-repo sub-results.** Built fleet CRUD on the
+  existing fleet storage: `fleets.ts` (create/list/get/getById/update + `fleetMembers` ordered
+  slug→Project resolution; member slugs stay in the fleet markdown, scalars in the index — same split
+  as task labels). `worktree.provisionWorktreeAt(rootPath, task)` was extracted from `provisionWorktree`
+  so each member repo gets its **own** isolated worktree (paths differ by repo basename, so no
+  collisions). `agents/fleet.ts` `runFleetImplementer`: requires an approved task-level plan (shared
+  across repos), fans the Implementer across each member project's repo collecting per-repo
+  `FleetSubResult` {project, cwd, branch, ran, cost}, and advances → verifying if any repo ran; bails
+  cleanly for not-a-fleet / unapproved / no-members. API: `GET/POST /api/fleets`,
+  `GET/PATCH /api/fleets/:slug`, `POST /api/tasks/:id/fleet-run`. Web: a **Fleets** view (create +
+  toggle member projects, edit membership) in the nav + ⌘K, and a **Fleet selector** in the task
+  detail (tasks were already fleet-assignable via the data model). Tests: fleets CRUD + member
+  resolution; the orchestration across **2 real git repos** (distinct worktrees per repo, → verifying)
+  + bail paths; gateway fleet CRUD + the fleet-run endpoint; Fleets SSR. Verify: 176 pass (×2 stable),
+  build green, scan clean. (Auto-fanning the full PLAY pipeline — planner/verify/deliver per repo — for
+  fleet tasks is a future refinement; 4.1 delivers the multi-repo *implement* fan-out + per-repo results.)
