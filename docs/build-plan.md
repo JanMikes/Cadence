@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.10 (Claude-assisted project import)
-- **Next step:** 1.11 (Usage bar + cost)
+- **Last completed step:** 1.11 (Usage bar + cost)
+- **Next step:** 1.12 (Notifications)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -130,7 +130,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.10 Claude-assisted project import.** Scan `~/.claude/projects` dirs; background `claude -p`
   enriches each (remote/stack/name/desc); checklist → create selected.
   - Verify: detects real dirs; proposes; creates the ticked ones.
-- [ ] **1.11 Usage bar + cost.** Ambient subscription-window bar (5h+weekly from `rate_limit_info` +
+- [x] **1.11 Usage bar + cost.** Ambient subscription-window bar (5h+weekly from `rate_limit_info` +
   `stats-cache.json`); per-session/task cost.
   - Verify: bar reflects usage; cost accrues per session.
 - [ ] **1.12 Notifications.** In-app badges + Web Notifications API (needs-feedback / delivered).
@@ -539,3 +539,17 @@ review and revert a memory entry.
   candidates/enrich(mock)/import endpoints; ImportProjects SSR. **Real-data smoke**: scan found 35 real
   candidate dirs (24 git repos w/ remotes), hyphenated names handled correctly; `bun run build` green.
   *Next:* 1.11 usage bar + cost.
+- **2026-06-06 · 1.11 Usage bar + cost.** `server/src/usage.ts` `readUsageStats()` summarizes
+  `~/.claude/stats-cache.json` (confirmed shape: `dailyActivity` [date/messageCount/sessionCount],
+  `dailyModelTokens` [date/tokensByModel], `modelUsage`, totals) → total sessions/messages, the most
+  recent day, a **7-day rolling sum**, and top models by tokens. `SpawnManager` captures the latest
+  `rate_limit_info` from live session events (`rate_limit_event`/any event carrying it) and exposes
+  `latestRateLimit()` — note `rate_limit_info` is NOT persisted to transcripts, so the 5h/weekly windows
+  are only live; the persistent bar uses stats-cache. `taskCostUsd(db, taskId)` sums a task's session
+  costs; `getTaskDetail` returns `costUsd`. API: `GET /api/usage → { stats, rateLimit }`. Web: an ambient
+  non-noisy **UsageBar** (this-week sessions/tokens/messages, top model, all-time sessions, a
+  "rate-limit info live" hint) via a new `AppShell` `topBar` slot; a per-task **Cost** row in the detail.
+  *Verified:* `bun test` (66 pass) — readUsageStats recent-day/week/top-models from a synthetic
+  stats-cache + zeros when missing; task cost = sum of session costs (and via `getTaskDetail`); UsageBar
+  SSR. **Real-data smoke**: real stats-cache → 1183 all-time sessions, this week 80 sessions / 49.7M
+  tokens, top models by tokens; `bun run build` green. *Next:* 1.12 notifications.
