@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 5 — Self-improving layer. **Phase 4 COMPLETE (7/7; 4.7 out of scope).**
-- **Last completed step:** 4.6 (sweep) + Phase 4 accepted; 4.7 marked out of scope (Jan, 2026-06-07)
-- **Next step:** 5.1 (Memory layer — global + per-project markdown + MEMORY.md + communication.md → context)
+- **Last completed step:** 5.1 (Memory layer composed into context)
+- **Next step:** 5.2 (Reflector/Librarian job — corrections + outcomes → memory)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -309,7 +309,7 @@ mocked; real git used for fleet/worktree tests).
   the locked decision is web-first/Tauri-later.**
 
 ## Phase 5 — Self-improving layer
-- [ ] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
+- [x] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
 - [ ] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
 - [ ] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
 - [ ] 5.4 Proactive proposals via notifications.
@@ -990,3 +990,14 @@ review and revert a memory entry.
   optional Tauri wrap — web-first stands; a native menubar/OS-global-hotkey wrap remains a later,
   additive option, not part of this build. Phase 4 (7/7) is complete and accepted (4.1–4.6 substantive,
   4.7 out of scope). Loop resumes into **Phase 5 — Self-improving layer** at 5.1 (Memory layer).
+- **2026-06-07 · 5.1 Memory layer composed into context.** New `memory.ts`: global memory
+  (`memory/*.md` incl. MEMORY.md + communication.md; MEMORY sorts first in the list) + per-project
+  memory (`memory/projects/<slug>.md`); read/write/list with a `safeName` path-traversal guard;
+  `readGlobalMemory` concatenates non-empty files. **`composeContext` now folds memory into every
+  agent run** — global memory after the global systemPrompt, per-project memory after the project
+  systemPrompt (so learned context layers in at the right specificity, §7.1/§8.1). shared `MemoryFile`;
+  `paths.memoryFile`/`projectMemoryDir`/`projectMemoryFile`. API: `GET /api/memory`,
+  `PUT /api/memory/:name`, `GET/PUT /api/projects/:slug/memory`. Web: a **Memory** view to edit global
+  memory files + add new ones (per-file textarea, save-when-changed) in the nav + ⌘K. Tests: memory
+  unit (safeName, global round-trip + MEMORY-first, per-project, **composeContext folds both in**) +
+  gateway PUT/GET + Memory SSR. Verify: 209 pass (×2 stable), build green, scan clean.
