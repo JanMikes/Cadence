@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 3.2 (Planner in plan mode → approvable plan)
-- **Next step:** 3.3 (git worktree per task provisioning + branch naming)
+- **Last completed step:** 3.3 (git worktree per task provisioning + branch naming)
+- **Next step:** 3.4 (Implementer in the worktree, permission mode per task)
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -254,7 +254,7 @@ available on request).
 ## Phase 3 — Execution: PLAY → implement → verify → deliver
 - [x] 3.1 Ready state + PLAY button.
 - [x] 3.2 Planner (plan mode) → approvable plan.
-- [ ] 3.3 git worktree per task provisioning + branch naming.
+- [x] 3.3 git worktree per task provisioning + branch naming.
 - [ ] 3.4 Implementer in the worktree (permission mode per task).
 - [ ] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
 - [ ] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
@@ -788,3 +788,15 @@ review and revert a memory entry.
   button + "Approved" badge + a "Planning…" placeholder while the agent drafts; shown in `TaskDetail`
   during execution phases. Tests: planner unit (4) + gateway PLAY→poll plan(2 steps)→approve + PlanView
   SSR. Verify: 138 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 3.3 git worktree per task + branch naming.** New `server/src/worktree.ts` — pure,
+  deterministic isolation infra (no Claude). `branchName` = `cadence/<slugified-title>-<id8>`
+  (readable + collision-free); `worktreePathFor` puts trees at `$CADENCE_WORKTREES` else a sibling
+  `.cadence-worktrees/` next to the repo (out of the main tree, near it — spec §5). `provisionWorktree`
+  is **idempotent**: reuses an existing path, reuses the branch if it already exists else creates it
+  off HEAD, and throws a clear message when the task has no project / no rootPath / rootPath isn't a
+  git repo. `isGitRepo` guard + `removeWorktree` cleanup; git runs via `Bun.spawnSync`. Since branch +
+  path are pure functions of (task, rootPath), the verifier/delivery later recompute the same tree —
+  no persistence needed. Tests run against a **real temp git repo** (init + commit so `worktree add`
+  has a HEAD): naming, repo detection, provision creates/lists the worktree + branch, idempotent
+  re-call, refusal on no-project/non-repo, and `CADENCE_WORKTREES` honored. Wired into the Implementer
+  in 3.4. Verify: 143 pass (×2 stable), build green, scan clean.
