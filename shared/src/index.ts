@@ -276,6 +276,8 @@ export interface GlobalSettings {
     defaultPermissionMode: string;
     defaultDeliveryMode: string;
     systemPrompt: string;
+    /** Master autonomy switch — when on, triage runs automatically on capture (Phase 2). */
+    autonomy?: boolean;
   };
   preferredTerminal: string;
 }

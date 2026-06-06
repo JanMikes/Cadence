@@ -30,6 +30,17 @@ beforeAll(() => {
     startWatcher: false,
     openTerminal: (app, command) => terminalLaunches.push({ app, command }),
     enrich: async (cwd) => ({ description: `mock description for ${cwd}`, stack: "bun" }),
+    runAgent: async () => {
+      const triage = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] };
+      return {
+        text: JSON.stringify(triage),
+        json: triage,
+        costUsd: 0,
+        sessionId: "mock",
+        isError: false,
+        raw: {},
+      };
+    },
   });
 });
 
@@ -121,6 +132,41 @@ test("project import: candidates list, enrich (mocked), and create selected", as
   }).then((r) => r.json())) as Array<{ rootPath: string; name: string }>;
   expect(created).toHaveLength(1);
   expect(created[0]).toMatchObject({ rootPath: "/tmp/imported-repo", name: "Imported Repo" });
+});
+
+test("autonomy on: capturing a task triages it in the background", async () => {
+  // default is off — a captured task stays in Inbox
+  const offTask = await createViaApi("stays in inbox");
+  await new Promise((r) => setTimeout(r, 120));
+  expect(
+    ((await fetch(`${gw.url}/api/tasks/${offTask.id}`).then((r) => r.json())) as { status: string })
+      .status,
+  ).toBe("inbox");
+
+  // turn autonomy on, then capture → triage runs (mock) and moves it to triaged
+  await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ global: { autonomy: true } }),
+  });
+  try {
+    const task = await createViaApi("triage me automatically");
+    let status = "";
+    for (let i = 0; i < 60; i++) {
+      status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as {
+        status: string;
+      }).status;
+      if (status === "triaged") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(status).toBe("triaged");
+  } finally {
+    await fetch(`${gw.url}/api/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ global: { autonomy: false } }),
+    });
+  }
 });
 
 test("GET /api/search finds a task by body text (FTS)", async () => {

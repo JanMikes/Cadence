@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
     defaultPermissionMode: "auto",
     defaultDeliveryMode: "branch_summary",
     systemPrompt: "",
+    autonomy: false, // master autonomy switch (Phase 2); off by default
   },
   preferredTerminal: "Terminal",
 };

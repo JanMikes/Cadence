@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
+import { runAgent } from "./agents/runner";
+import type { AgentRunner } from "./agents/triage";
 import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
 import { claudeEnrich } from "./import";
@@ -26,6 +28,8 @@ export interface GatewayOptions {
   openTerminal?: (app: string, command: string) => void;
   /** Override the import enricher (tests pass a mock to avoid a real claude call). */
   enrich?: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
+  /** Override the one-shot agent runner (tests pass a mock; default real claude). */
+  runAgent?: AgentRunner;
 }
 
 export interface Gateway {
@@ -79,6 +83,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
           spawn: spawnManager,
           openTerminal: opts.openTerminal ?? openInTerminal,
           enrich: opts.enrich ?? claudeEnrich,
+          runAgent: opts.runAgent ?? runAgent,
         });
       }
 

@@ -11,6 +11,7 @@ import {
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
+import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
@@ -42,6 +43,8 @@ export interface ApiContext {
   openTerminal: (app: string, command: string) => void;
   /** Enrich an import candidate via a one-shot claude (injectable for tests). */
   enrich: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
+  /** One-shot agent runner (injectable for tests; default real claude). */
+  runAgent: AgentRunner;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -71,6 +74,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
       const task = createTask(ctx.db, { title, body });
       ctx.hub.broadcast({ type: "event", name: "task:created", payload: task.id });
+      maybeTriageOnCapture(ctx, task.id); // background; no-op unless autonomy is on
       return Response.json(task, { status: 201 });
     }
     return methodNotAllowed();
@@ -350,6 +354,27 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   }
 
   return notFound(pathname);
+}
+
+/**
+ * Phase 2 autonomy: when the master switch is on, triage a freshly-captured task
+ * in the background (fire-and-forget) and broadcast the result. No-op when off,
+ * so the default install never spawns claude on capture.
+ */
+function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
+  if (!readSettings().global.autonomy) return;
+  void runTriage(ctx.db, taskId, ctx.runAgent)
+    .then((outcome) => {
+      if (!outcome.ran) return;
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      if (outcome.status === "needs_feedback") {
+        const t = getTask(ctx.db, taskId);
+        if (t) notifyOnTransition(ctx.hub, "inbox", t);
+      } else {
+        ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
+      }
+    })
+    .catch((err) => console.error(`[cadence] triage failed for ${taskId}:`, err));
 }
 
 function badRequest(message: string): Response {
