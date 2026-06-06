@@ -17,6 +17,7 @@ export function SettingsView() {
   const [delivery, setDelivery] = useState("branch_summary");
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [autonomy, setAutonomy] = useState(false);
 
   useEffect(() => {
     const s = settings.data;
@@ -26,6 +27,7 @@ export function SettingsView() {
     setDelivery(s.global.defaultDeliveryMode);
     setModel(s.global.defaultModel ?? "");
     setPrompt(s.global.systemPrompt);
+    setAutonomy(s.global.autonomy ?? false);
   }, [settings.data]);
 
   const save = useMutation({
@@ -37,6 +39,7 @@ export function SettingsView() {
           defaultDeliveryMode: delivery,
           defaultModel: model.trim() || null,
           systemPrompt: prompt,
+          autonomy,
         },
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["settings"] }),
@@ -55,6 +58,32 @@ export function SettingsView() {
       </p>
 
       <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card/40 p-4">
+          <div>
+            <div className="text-sm font-medium">Autonomy</div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              When on, Cadence triages and refines every captured task automatically (spawns Claude in
+              the background). Off by default; override per project.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autonomy}
+            aria-label="Autonomy"
+            onClick={() => setAutonomy((v) => !v)}
+            className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+              autonomy ? "bg-primary" : "bg-muted"
+            }`}
+          >
+            <span
+              className={`inline-block size-5 rounded-full bg-white transition-transform ${
+                autonomy ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Preferred terminal (for one-click handoff)
           <select value={terminal} onChange={(e) => setTerminal(e.target.value)} className={FIELD}>

@@ -28,6 +28,7 @@ interface FormValues {
   color: string;
   defaultPermissionMode: string;
   defaultDeliveryMode: string;
+  autonomy: string; // "inherit" | "on" | "off"
   systemPrompt: string;
 }
 
@@ -37,8 +38,13 @@ const EMPTY: FormValues = {
   color: "",
   defaultPermissionMode: "auto",
   defaultDeliveryMode: "branch_summary",
+  autonomy: "inherit",
   systemPrompt: "",
 };
+
+/** Map the tri-state autonomy select ⇄ the boolean|null field (null = inherit). */
+const autonomyToField = (b: boolean | null): string => (b == null ? "inherit" : b ? "on" : "off");
+const fieldToAutonomy = (s: string): boolean | null => (s === "inherit" ? null : s === "on");
 
 export function Projects() {
   const qc = useQueryClient();
@@ -53,6 +59,7 @@ export function Projects() {
         color: v.color.trim() || undefined,
         defaultPermissionMode: v.defaultPermissionMode,
         defaultDeliveryMode: v.defaultDeliveryMode,
+        autonomy: fieldToAutonomy(v.autonomy),
         systemPrompt: v.systemPrompt.trim() || undefined,
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
@@ -149,6 +156,7 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
             color: project.color ?? "",
             defaultPermissionMode: project.defaultPermissionMode,
             defaultDeliveryMode: project.defaultDeliveryMode,
+            autonomy: autonomyToField(project.autonomy),
             systemPrompt: project.systemPrompt ?? "",
           }}
           submitLabel="Save changes"
@@ -161,6 +169,7 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
               color: v.color.trim() || null,
               defaultPermissionMode: v.defaultPermissionMode,
               defaultDeliveryMode: v.defaultDeliveryMode,
+              autonomy: fieldToAutonomy(v.autonomy),
               systemPrompt: v.systemPrompt.trim() || null,
             })
           }
@@ -245,6 +254,14 @@ function ProjectFields({
               {DELIVERY_LABELS[m]}
             </option>
           ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Autonomy (auto-triage &amp; refine tasks)
+        <select value={v.autonomy} onChange={(e) => set("autonomy", e.target.value)} className={field}>
+          <option value="inherit">Inherit global</option>
+          <option value="on">On</option>
+          <option value="off">Off</option>
         </select>
       </label>
       <textarea

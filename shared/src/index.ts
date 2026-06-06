@@ -183,6 +183,8 @@ export interface Project {
   defaultModel: string | null;
   defaultPermissionMode: string;
   defaultDeliveryMode: string;
+  /** Per-project autonomy override: true = on, false = off, null = inherit global (§9.1). */
+  autonomy: boolean | null;
   systemPrompt: string | null;
   notes: string | null;
   createdAt: number;
@@ -196,6 +198,7 @@ export interface CreateProjectInput {
   defaultModel?: string;
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;
+  autonomy?: boolean | null;
   systemPrompt?: string;
   notes?: string;
 }
@@ -208,6 +211,7 @@ export interface UpdateProjectInput {
   defaultModel?: string | null;
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;
+  autonomy?: boolean | null;
   systemPrompt?: string | null;
   notes?: string | null;
 }

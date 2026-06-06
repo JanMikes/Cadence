@@ -29,6 +29,7 @@ export interface ProjectFrontmatter {
   defaultModel?: string | null;
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;
+  autonomy?: boolean | null; // per-project autonomy override (null = inherit global)
   notes?: string | null;
   // The markdown BODY is the project's systemPrompt context layer (spec §4/§7.1).
 }

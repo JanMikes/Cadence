@@ -24,7 +24,13 @@ import { listTaskEvents } from "./events";
 import { importProjects, scanClaudeProjects } from "./import";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
 import { notifyOnTransition } from "./notify";
-import { createProject, getProject, listProjects, updateProject } from "./projects";
+import {
+  createProject,
+  getProject,
+  listProjects,
+  resolveProjectAutonomy,
+  updateProject,
+} from "./projects";
 import { appendContext, readContext, readQa, readSettings, writeSettings } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
@@ -480,8 +486,11 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
         if (t) notifyOnTransition(ctx.hub, "inbox", t);
         return;
       }
-      // Triaged → auto-continue into Discovery (the refinement loop).
+      // Triaged → auto-continue into Discovery (the refinement loop) — unless the
+      // assigned project opted out of autonomy (§9.1: per-project enable/disable).
       ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
+      const triaged = getTask(ctx.db, taskId);
+      if (!resolveProjectAutonomy(ctx.db, triaged?.projectId ?? null)) return;
       const disc = await runDiscovery(ctx.db, taskId, ctx.runAgent);
       if (!disc.ran) return;
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });

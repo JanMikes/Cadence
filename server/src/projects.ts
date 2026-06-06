@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { projects } from "./db/schema";
 import { paths } from "./store/paths";
-import { readProject, reindexProject, writeProject } from "./store/store";
+import { readProject, readSettings, reindexProject, writeProject } from "./store/store";
 import type { ProjectFrontmatter } from "./store/types";
 
 function slugify(name: string): string {
@@ -40,6 +40,7 @@ export function createProject(db: Db, input: CreateProjectInput): Project {
     defaultModel: input.defaultModel ?? null,
     defaultPermissionMode: input.defaultPermissionMode ?? "auto",
     defaultDeliveryMode: input.defaultDeliveryMode ?? "branch_summary",
+    autonomy: input.autonomy ?? null,
     notes: input.notes ?? null,
   };
   writeProject(fm, input.systemPrompt ?? "");
@@ -68,6 +69,19 @@ export function getProjectByRootPath(db: Db, rootPath: string): Project | null {
   return row ? toProject(row) : null;
 }
 
+/**
+ * Effective autonomy for a task in (optionally) a project: the project's own
+ * override if set, else the global switch (§9.1, resolved project ?? global).
+ * Gates whether Cadence auto-continues the refinement pipeline.
+ */
+export function resolveProjectAutonomy(db: Db, projectId: string | null): boolean {
+  const globalOn = readSettings().global.autonomy ?? false;
+  if (!projectId) return globalOn;
+  const project = getProjectById(db, projectId);
+  if (project && project.autonomy != null) return project.autonomy;
+  return globalOn;
+}
+
 export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): Project | null {
   if (!existsSync(paths.projectFile(slug))) return null;
   const { data, body } = readProject(slug);
@@ -80,6 +94,7 @@ export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): 
   if (patch.defaultModel !== undefined) next.defaultModel = patch.defaultModel;
   if (patch.defaultPermissionMode !== undefined) next.defaultPermissionMode = patch.defaultPermissionMode;
   if (patch.defaultDeliveryMode !== undefined) next.defaultDeliveryMode = patch.defaultDeliveryMode;
+  if (patch.autonomy !== undefined) next.autonomy = patch.autonomy;
   if (patch.notes !== undefined) next.notes = patch.notes;
   const nextPrompt = patch.systemPrompt !== undefined ? (patch.systemPrompt ?? "") : body;
 
@@ -99,6 +114,7 @@ function toProject(row: typeof projects.$inferSelect): Project {
     defaultModel: row.defaultModel,
     defaultPermissionMode: row.defaultPermissionMode,
     defaultDeliveryMode: row.defaultDeliveryMode,
+    autonomy: row.autonomy ?? null,
     systemPrompt: row.systemPrompt,
     notes: row.notes,
     createdAt: row.createdAt,

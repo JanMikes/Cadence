@@ -36,6 +36,8 @@ export const projects = sqliteTable("projects", {
   defaultPermissionMode: text("default_permission_mode").notNull().default("auto"),
   // branch_summary | auto_pr | apply_in_place
   defaultDeliveryMode: text("default_delivery_mode").notNull().default("branch_summary"),
+  // per-project autonomy override (§9.1): true = on, false = off, null = inherit global
+  autonomy: integer("autonomy", { mode: "boolean" }),
   systemPrompt: text("system_prompt"),
   notes: text("notes"),
   createdAt: integer("created_at").notNull().default(now),

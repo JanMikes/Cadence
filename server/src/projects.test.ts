@@ -3,9 +3,15 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { migrateDb, openDb, type Db } from "./db/client";
-import { createProject, getProject, listProjects, updateProject } from "./projects";
+import {
+  createProject,
+  getProject,
+  listProjects,
+  resolveProjectAutonomy,
+  updateProject,
+} from "./projects";
 import { paths } from "./store/paths";
-import { bootstrap } from "./store/store";
+import { bootstrap, readSettings, writeSettings } from "./store/store";
 import { createTask, getTask, resolveTaskCwd, updateTask } from "./tasks";
 
 let db: Db;
@@ -32,6 +38,33 @@ test("createProject writes projects/<slug>.md + an index row", () => {
   expect(existsSync(paths.projectFile("acme-web"))).toBe(true);
   expect(getProject(db, "acme-web")?.systemPrompt).toBe("Be terse.");
   expect(listProjects(db).map((x) => x.slug)).toContain("acme-web");
+});
+
+test("autonomy round-trips through the index and defaults to null (inherit)", () => {
+  const p = createProject(db, { name: "Auto Proj" });
+  expect(p.autonomy).toBeNull();
+  const off = updateProject(db, p.slug, { autonomy: false });
+  expect(off?.autonomy).toBe(false);
+  expect(getProject(db, p.slug)?.autonomy).toBe(false);
+});
+
+test("resolveProjectAutonomy resolves project ?? global (§9.1)", () => {
+  const settings = readSettings();
+  writeSettings({ ...settings, global: { ...settings.global, autonomy: true } });
+
+  // unassigned → follows the global switch
+  expect(resolveProjectAutonomy(db, null)).toBe(true);
+
+  const inherit = createProject(db, { name: "Inherit" });
+  const off = createProject(db, { name: "Off", autonomy: false });
+  expect(resolveProjectAutonomy(db, inherit.id)).toBe(true); // null → inherit (global on)
+  expect(resolveProjectAutonomy(db, off.id)).toBe(false); // explicit off overrides global on
+
+  // flip global off: an explicitly-on project still opts in
+  writeSettings({ ...settings, global: { ...settings.global, autonomy: false } });
+  const on = createProject(db, { name: "On", autonomy: true });
+  expect(resolveProjectAutonomy(db, null)).toBe(false);
+  expect(resolveProjectAutonomy(db, on.id)).toBe(true);
 });
 
 test("duplicate names get unique slugs", () => {

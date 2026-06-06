@@ -228,6 +228,7 @@ export function reindexProject(db: Db, slug: string): void {
     defaultModel: data.defaultModel ?? null,
     defaultPermissionMode: data.defaultPermissionMode ?? "auto",
     defaultDeliveryMode: data.defaultDeliveryMode ?? "branch_summary",
+    autonomy: data.autonomy ?? null,
     systemPrompt: body || null,
     notes: data.notes ?? null,
   };
