@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.2 (SQLite + Drizzle: 7-table index schema + migrations)
-- **Next step:** 0.3
+- **Last completed step:** 0.3 (FTS5 search table over task text + sync triggers)
+- **Next step:** 0.4
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -69,7 +69,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
 - [x] **0.2 SQLite + Drizzle.** drizzle + drizzle-kit. Index schema: `projects`, `fleets`, `tasks`,
   `task_deps`, `sessions`, `events`, `suggestions`. Migration creates `~/.cadence/cadence.db`.
   - Verify: migration runs; `bun test` inserts+selects one row per table.
-- [ ] **0.3 FTS5 search table.** FTS5 virtual table over task text (transcripts later); sync hooks
+- [x] **0.3 FTS5 search table.** FTS5 virtual table over task text (transcripts later); sync hooks
   stubbed.
   - Verify: insert a task, FTS query returns it.
 - [ ] **0.4 Storage layer (markdown ⇄ index).** Bootstrap `~/.cadence/` (dirs + `settings.json`).
@@ -264,3 +264,18 @@ review and revert a memory entry.
   7 tables (listed); `bun test` (3 pass) round-trips one row per table in FK order, checks defaults
   (`status=inbox`, `permission=auto`, `kind=warm`, `cost=0`, `createdAt>0`) and FK enforcement;
   `bun run build` green. *Next:* 0.3 FTS5 search table over task text.
+- **2026-06-06 · reconcile/chore.** New session reconciled: repo == ledger (0.0–0.2), tests + build
+  green. Gitignored `.claude/` (held only a Claude Code `scheduled_tasks.lock` from the build loop —
+  local runtime state, never the repo). Committed as `chore:`.
+- **2026-06-06 · 0.3 FTS5 search.** Added FTS via a drizzle-kit **custom** migration
+  (`server/drizzle/0001_tasks_fts.sql`) since FTS5 virtual tables aren't expressible in the Drizzle
+  schema. Standalone `tasks_fts(task_id UNINDEXED, title, body)` with `unicode61 remove_diacritics 2`,
+  kept in sync with `tasks` by AFTER INSERT/UPDATE/DELETE triggers (robust to any writer — app
+  reindexer, migration, or direct insert). `server/src/db/search.ts`: `searchTasks(db, query, limit)`
+  ranked by `rank`, and `rebuildTaskFts(db)` for recovery. *Decisions:* triggers (DB-level) over
+  app-level sync so the index can never drift from `tasks`; "sync hooks stubbed" interpreted as the
+  higher-level markdown-reindex (0.4/0.5) + transcript/memory indexing (Phase 4), which are deferred
+  with comments. Diacritic folding chosen because task text is mixed Czech/English. *Verified:*
+  `bun test` (5 pass) — insert→search returns the task, update/delete keep FTS consistent; the real
+  `~/.cadence/cadence.db` migrates to include `tasks_fts` + 3 triggers and a live insert/search/delete
+  round-trips; `bun run build` green. *Next:* 0.4 storage layer (markdown ⇄ index).
