@@ -12,7 +12,8 @@ import {
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
-import { listSessions, listTaskSessions, type SpawnManager } from "./sessions";
+import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
+import { readLiveSessions, readTranscript } from "./transcripts";
 import { appendContext, readContext } from "./store/store";
 import {
   createTask,
@@ -126,6 +127,19 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/sessions" && method === "GET") {
     return Response.json(listSessions(ctx.db));
+  }
+
+  if (pathname === "/api/live-sessions" && method === "GET") {
+    return Response.json(readLiveSessions());
+  }
+
+  const transcriptMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/transcript$/);
+  if (transcriptMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const session = getSession(ctx.db, transcriptMatch[1] as string);
+    if (!session?.transcriptPath) return notFound(pathname);
+    const limit = Number(url.searchParams.get("limit")) || undefined;
+    return Response.json(readTranscript(session.transcriptPath, { limit }));
   }
 
   const sessionMsgMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);

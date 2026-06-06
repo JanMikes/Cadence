@@ -5,6 +5,7 @@ import { Board } from "./features/board/Board";
 import { Inbox } from "./features/inbox/Inbox";
 import { Projects } from "./features/projects/Projects";
 import { SessionPanel } from "./features/session/SessionPanel";
+import { SessionsView } from "./features/sessions/SessionsView";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { cn } from "./lib/utils";
 
@@ -58,6 +59,7 @@ export function App() {
         {view === "inbox" ? <Inbox onOpen={setSelectedId} /> : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}
+        {view === "sessions" ? <SessionsView /> : null}
         {view === "settings" ? (
           <div className="p-8 text-sm text-muted-foreground">Settings — coming soon.</div>
         ) : null}

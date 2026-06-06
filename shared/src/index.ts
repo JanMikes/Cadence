@@ -186,6 +186,32 @@ export interface ClaudeEvent {
   [key: string]: unknown;
 }
 
+/** A live Claude Code process from the liveness oracle (~/.claude/sessions/<pid>.json). */
+export interface LiveSession {
+  pid: number;
+  sessionId: string;
+  cwd: string;
+  status: string; // busy | idle | shell | …
+  kind: string; // interactive | …
+  version: string | null;
+  startedAt: number | null;
+  updatedAt: number | null;
+  /** Whether the pid is actually alive (a crash can leave a stale file). */
+  alive: boolean;
+}
+
+/** One rendered line of a past transcript (the parentUuid DAG, flattened). */
+export interface TranscriptEntry {
+  uuid: string | null;
+  parentUuid: string | null;
+  role: string; // user | assistant | system | …
+  kind: "text" | "thinking" | "tool_use" | "tool_result" | "other";
+  text: string | null;
+  toolName: string | null;
+  isSidechain: boolean; // subagent activity (nested in the UI)
+  timestamp: string | null;
+}
+
 /** The always-on free-form context channel (context.md), append-only. */
 export interface ContextChannel {
   content: string;

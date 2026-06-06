@@ -1,10 +1,9 @@
 import type { ClaudeEvent, Session } from "@cadence/shared";
 import { desc, eq } from "drizzle-orm";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
 import { openSession, type SessionHandle } from "./spawn";
+import { transcriptPathFor } from "./transcripts";
 import type { WsHub } from "./ws";
 
 /** Map a Cadence permission mode to a real claude --permission-mode (§9.1). */
@@ -19,12 +18,6 @@ export function claudePermissionMode(mode?: string): string {
     default:
       return mode ?? "default"; // allow passing a raw claude mode through
   }
-}
-
-/** ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl (control surfaces §2.1). */
-export function transcriptPathFor(cwd: string, sessionId: string): string {
-  const encoded = cwd.replace(/\//g, "-");
-  return join(homedir(), ".claude", "projects", encoded, `${sessionId}.jsonl`);
 }
 
 export function getSession(db: Db, id: string): Session | null {

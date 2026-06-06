@@ -2,11 +2,13 @@ import type {
   ContextChannel,
   CreateProjectInput,
   CreateTaskInput,
+  LiveSession,
   Project,
   Session,
   SpawnSessionInput,
   Task,
   TaskDetail,
+  TranscriptEntry,
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@cadence/shared";
@@ -85,6 +87,18 @@ export function spawnSession(taskId: string, input: SpawnSessionInput = {}): Pro
     headers: JSON_HEADERS,
     body: JSON.stringify(input),
   }).then(json<Session>);
+}
+
+export function getSessions(): Promise<Session[]> {
+  return fetch("/api/sessions").then(json<Session[]>);
+}
+
+export function getLiveSessions(): Promise<LiveSession[]> {
+  return fetch("/api/live-sessions").then(json<LiveSession[]>);
+}
+
+export function getTranscript(sessionId: string): Promise<TranscriptEntry[]> {
+  return fetch(`/api/sessions/${sessionId}/transcript`).then(json<TranscriptEntry[]>);
 }
 
 export function sendSessionMessage(sessionId: string, text: string): Promise<{ ok: boolean }> {
