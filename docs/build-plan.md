@@ -9,15 +9,19 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** Phase 5 — Self-improving layer. **Phase 4 COMPLETE (7/7; 4.7 out of scope).**
-- **Last completed step:** 5.4 (Proactive proposals via notifications)
-- **Next step:** 5.5 ("What Cadence learned" feed — review / revert) — **LAST STEP before BUILD COMPLETE**
-- **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
-  inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
-  Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
-  real-claude smoke. Autonomy stays OFF by default.
-- **Blockers:** none (4.7 Tauri wrap resolved → out of scope; web-first stands).
-- **Last updated:** 2026-06-06
+- **🎉 BUILD COMPLETE (2026-06-07).** All phases done + accepted: Phase 0 (foundation), 1 (task core +
+  manual spawn), 2 (autonomy), 3 (execution), 4 (multi-repo/analytics/polish; 4.7 Tauri out of scope),
+  5 (self-improving). **226 tests pass, `bun run build` green across shared/server/web.**
+- **Current phase:** — (build finished)
+- **Last completed step:** 5.5 ("What Cadence learned" feed) — Phase 5 done + accepted
+- **Next step:** none — ready for a real-Claude smoke + hands-on use. Open optional follow-ups: 4.7
+  Tauri wrap (deferred); full PLAY-pipeline fan-out per fleet repo (4.1 did the implement fan-out).
+- **Safety posture:** execution auto-modifies repos only on user-initiated **PLAY**, inside a per-task
+  **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous; Dangerous requires
+  isolation). Autonomy stays **OFF by default**. All agent runs were **mock-tested** through the build —
+  no real Claude usage spent; real smokes are offered, not auto-run.
+- **Blockers:** none.
+- **Last updated:** 2026-06-07
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
   agent (no real model/cost); real-agent smokes are offered, not auto-run.
 
@@ -313,11 +317,24 @@ mocked; real git used for fleet/worktree tests).
 - [x] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
 - [x] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
 - [x] 5.4 Proactive proposals via notifications.
-- [ ] 5.5 "What Cadence learned" feed (review / revert).
+- [x] 5.5 "What Cadence learned" feed (review / revert).
 
 **Acceptance check (manual):** correcting a suggestion updates memory; a later run reflects the
 learning; a proactive proposal arrives as a notification; the "what Cadence learned" feed lets you
 review and revert a memory entry.
+
+**Phase 5 — Acceptance check (run 2026-06-07):** verified via the deterministic suite (agent runs mocked).
+1. ✅ Correcting a suggestion updates memory — override a suggestion → Reflector distills it → appended
+   to `learned` memory (5.2 unit + gateway override→reflect→learned-note E2E).
+2. ✅ A later run reflects the learning — `composeContext` folds global + per-project memory into every
+   agent run (5.1 unit: composeContext contains the learned notes).
+3. ✅ A proactive proposal arrives as a notification — `buildProposals` → `emitProposals` broadcasts a
+   `notify` event (deduped) on the sweep tick; `GET /api/proposals` + ProposalsPanel surface them (5.4).
+4. ✅ The "what Cadence learned" feed reviews + reverts a memory entry — `GET /api/learned` +
+   `DELETE /api/learned/:index` + the LearnedFeed (5.5 unit + gateway revert E2E).
+5. ✅ `bun test` (226 pass) and `bun run build` both green.
+→ Phase 5 accepted. The self-improvement loop is closed: correct → Reflect → memory → every run, with
+  self-monitoring, proactive proposals, and a review/revert feed.
 
 ---
 
@@ -1033,3 +1050,21 @@ review and revert a memory entry.
   signal, empty-when-quiet, emit-once dedup) + gateway shape; fixed the NotificationsView SSR test to
   wrap a QueryClient (it now hosts ProposalsPanel). Verify: 224 pass (×2 stable), build green, scan
   clean. **Only 5.5 ("what Cadence learned" feed) remains → then BUILD COMPLETE.**
+- **2026-06-07 · 5.5 "What Cadence learned" feed (review/revert) — Phase 5 COMPLETE → BUILD COMPLETE.**
+  `memory.ts`: `listLearnedEntries` (each bullet of the `learned` file as a reviewable entry) +
+  `revertLearnedEntry` (drop the index-th bullet, keep the rest). shared `LearnedEntry`. API:
+  `GET /api/learned`, `DELETE /api/learned/:index` (404 out of range). Web: a "What Cadence learned"
+  feed atop the Memory view, each lesson with a Revert action. Tests: memory unit (ordered list, revert
+  by index, out-of-range) + gateway (GET → DELETE reverts). Verify: 226 pass (×2 stable), build green,
+  scan clean. **Ran the Phase 5 acceptance check — all items pass (see above). Phase 5 accepted.**
+- **2026-06-07 · 🎉 BUILD COMPLETE.** Every step in every phase (0–5) is checked and each phase's
+  acceptance check passed (4.7 Tauri wrap deliberately out of scope per Jan). Final state: 226 tests
+  pass, `bun run build` green across all three workspaces, working tree clean, no secrets committed.
+  Cadence runs the full arc — capture → triage/refine (Q&A) → Daily Digest planning (ring/streak/recap)
+  → PLAY → plan → implement (single- or multi-repo, isolated worktrees, per-task permission mode) →
+  verify (diverse reviewers) → deliver (branch/PR/in-place) → review/merge — with lifecycle
+  enforcement, deadline urgency + calendar, dependencies/subtasks, fleets, analytics + self-monitoring,
+  full-text + transcript search with saved filters, a background sweep, Manual-mode tool approvals,
+  the Dangerous guardrail, and a closed self-improvement loop (memory → Reflector → proactive proposals
+  → review/revert). Autonomy OFF by default; all agent work mock-tested. **Next: a human real-Claude
+  smoke + daily use; optional follow-ups noted in the Status snapshot.**
