@@ -10,10 +10,13 @@
     "dev": "bun run --filter='@cadence/server' --filter='@cadence/web' dev",
     "build": "bun run --filter='@cadence/shared' --filter='@cadence/server' --filter='@cadence/web' build",
     "typecheck": "bun run --filter='@cadence/*' typecheck",
-    "test": "bun test"
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun server/src/db/migrate.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.7.2"
   }
 }

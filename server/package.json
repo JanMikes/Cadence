@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cadence/shared": "workspace:*"
+    "@cadence/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2"
   }
 }
