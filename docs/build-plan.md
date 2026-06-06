@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 4.4 (Transcript search + saved filters)
-- **Next step:** 4.5 (Calendar / deadline view)
+- **Last completed step:** 4.5 (Calendar / deadline view)
+- **Next step:** 4.6 (Scheduled / background sweep mode)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -284,7 +284,7 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 - [x] 4.2 Dependencies graph + subtasks.
 - [x] 4.3 Cost & throughput analytics.
 - [x] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
-- [ ] 4.5 Calendar / deadline view.
+- [x] 4.5 Calendar / deadline view.
 - [ ] 4.6 Scheduled / background sweep mode.
 - [ ] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey.
 
@@ -944,3 +944,12 @@ review and revert a memory entry.
   palette open — `run` can return true to stay open), and offers "★ Save search" when a query is typed.
   Tests: searches CRUD unit + transcript-search unit (match+snippet, non-match/empty-query) + gateway
   (saved CRUD, transcript endpoint shape). Verify: 194 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 4.5 Calendar / deadline view.** Pure `lib/calendar.ts`: `monthGrid` (Monday-first
+  6×7 with adjacent-month padding for a stable rectangle), `dayKey` (local YYYY-MM-DD), `tasksByDay`
+  (group deadline-bearing tasks). Web `Calendar` view: a month grid with prev/next nav, today
+  highlighted, each task placed on its deadline day and colored by `urgencyTier` (overdue red /
+  due-soon amber), click-to-open; added to the nav (CalendarDays icon) + ⌘K. Derived entirely
+  client-side from `getTasks()` (tasks already carry deadline + urgencyTier from 2.7) — **no server
+  change**. Tests: calendar util (grid shape, leading-day padding into the previous month, day
+  grouping skipping deadline-less tasks) + Calendar SSR. Verify: 198 pass (×2 stable), build green,
+  scan clean. Phase 4: 4.6 (scheduled sweep) + the optional 4.7 (Tauri wrap) remain.
