@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.3 (Triage agent on capture — autonomy, gated off by default)
-- **Next step:** 2.4 (Discovery agent + parallel explorer subagents)
+- **Last completed step:** 2.4 (Discovery agent + explorer subagents → spec.md)
+- **Next step:** 2.5 (Questioner agent → Q&A cards; Needs-Feedback UI)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -190,7 +190,21 @@ Then stop and report.
     with all fields+restatement; insufficient→Needs-Feedback; unparseable→Inbox; gateway: autonomy OFF
     leaves capture in Inbox, autonomy ON triages in the background (mock); `bun run build` green. Default
     install never spawns claude on capture; a real triage smoke is offered, not auto-run.
-- [ ] 2.4 Discovery agent (+ parallel explorer subagents) → spec/criteria/unknowns, or `insufficient`.
+- [x] 2.4 Discovery agent (+ parallel explorer subagents) → spec/criteria/unknowns, or `insufficient`.
+  - **2026-06-06 · 2.4.** `server/src/agents/discovery.ts`: `buildDiscoveryPrompt` (agent-prompts §2),
+    `runDiscovery(db, taskId, run=runAgent)` marks the task **Refining**, runs a one-shot Sonnet agent in
+    the task's cwd (read-only `plan`) with the **explorer + dependency-mapper subagents injected via
+    `--agents`** (2.2 library), parses JSON, and `applyDiscovery`: ok+no-unknowns → **Ready** + `spec.md`
+    (problem/scope/affected-files/approaches/risks/checkable acceptance criteria/unknowns); ok+unknowns →
+    stays **Refining** (Questioner 2.5 turns them into Q&A → Needs-Feedback); insufficient →
+    **Needs-Feedback** + needFromUser in context. `store.writeSpec` added. API: `POST /api/tasks/:id/refine`;
+    the autonomy pipeline now auto-continues **capture → triage → discovery**. *Verified:* `bun test` (97
+    pass, stable ×2) — prompt references explorers; specMarkdown renders sections; ok/no-unknowns → Ready +
+    spec.md written + **explorers injected (asserted via the recording mock's `agentsJson`)**; unknowns →
+    Refining; insufficient → Needs-Feedback; refine endpoint runs discovery; autonomy ON runs the full
+    pipeline to Ready (mock); `bun run build` green. *Fixes:* test passed `status` to `createTask` (not an
+    arg) → removed; the gateway autonomy test now expects `ready` since triage→discovery chains. Real
+    discovery smoke offered, not auto-run.
 - [ ] 2.5 Questioner agent → ranked Q&A cards; Needs-Feedback UI (Q&A + "too vague" cards).
 - [ ] 2.6 Lifecycle state machine enforced server-side + status timeline.
 - [ ] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
