@@ -31,6 +31,9 @@ secrets/
 *.log
 logs/
 
+# Local tooling / runtime state (Claude Code session locks, etc.)
+.claude/
+
 # OS / editor cruft
 .DS_Store
 .vscode/
