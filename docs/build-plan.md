@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.5 (file watcher: mtime polling → reindex into SQLite + FTS)
-- **Next step:** 0.6
+- **Last completed step:** 0.6 (gateway HTTP+WS skeleton serving the built web app)
+- **Next step:** 0.7
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -78,7 +78,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
   - Verify: write a task folder, reindex; DB row matches frontmatter (round-trip test).
 - [x] **0.5 File watcher.** Watch `~/.cadence/**` → reindex changed `task.md` into SQLite (+FTS).
   - Verify: edit a `task.md` on disk → DB + FTS update (watcher-event test).
-- [ ] **0.6 Gateway HTTP+WS skeleton.** REST router (`/api/health` + stubs), WS hub (broadcast),
+- [x] **0.6 Gateway HTTP+WS skeleton.** REST router (`/api/health` + stubs), WS hub (broadcast),
   serves built `web/`. Typed API contract in `shared/`.
   - Verify: `GET /api/health` ok; WS connect receives a broadcast; prod build is served.
 - [ ] **0.7 Design base.** Tailwind + shadcn/ui; dark dev theme tokens; the **LabeledIconButton**
@@ -317,3 +317,19 @@ review and revert a memory entry.
   the message with the Write tool) for messages containing backticks/`$`/`()`. *Verified:* `bun test`
   (11 pass, ~70ms, stable across repeated runs); `watcher.live.ts` exits 0 across repeated runs;
   `bun run build` green. *Next:* 0.6 gateway HTTP+WS skeleton.
+- **2026-06-06 · 0.6 Gateway HTTP+WS.** `server/src/gateway.ts` `startGateway(opts)`: `Bun.serve` with
+  REST routing (`/api/health` → typed `HealthStatus`; other `/api/*` → JSON 404), a WS hub at `/ws`
+  (`server/src/ws.ts` `WsHub` — tracks clients, `send`/`broadcast`), and static serving of `web/dist`
+  with SPA fallback to `index.html` + a path-traversal guard (resolved path must stay under the web
+  root). On startup it wires the stack: `bootstrap()` + `openAndMigrate()` + `startWatcher()`, and the
+  watcher's `onChange` broadcasts `reindex:<kind>` events to WS clients. `shared` gained the typed WS
+  contract (`ServerMessage = hello | event`, `ClientMessage`). `index.ts` now boots the gateway, keeps
+  the friendly EADDRINUSE message, and `GatewayOptions` lets tests inject a `:memory:` db, a fixture
+  `webDir`, and `startWatcher:false`. *TS gotchas:* `Bun.serve` defaults the WS data type to `undefined`
+  — must call `Bun.serve<WsData>({...})` (one generic; the 2nd is the typed-routes map, constrained to
+  string keys) and type the ws handlers `ServerWebSocket<WsData>`; `server.port` is `number|undefined`
+  so I capture `boundPort = server.port ?? port`. *Verified:* `bun test` (16 pass) — health ok, unknown
+  `/api` 404, static SPA + deep-link fallback, traversal blocked, and **WS connect → hello then a
+  broadcast** (broadcast sent after the client sees hello, guaranteeing hub registration). Real boot on
+  a custom port serves the actual `web/dist` (index.html + hashed `/assets/*`, SPA fallback) and
+  `/api/health`; `bun run build` green. *Next:* 0.7 design base (Tailwind + shadcn + LabeledIconButton).
