@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.0 (repo safety: pre-commit secret guard + SECURITY.md)
-- **Next step:** 0.1
+- **Last completed step:** 0.1 (repo scaffold: Bun workspaces, strict TS, dev/build/test, configurable ports)
+- **Next step:** 0.2
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -63,7 +63,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
   data lives in `~/.cadence/`; secrets in the OS keychain; examples use fictional names). See
   platform-definition §13.
   - Verify: the hook REJECTS a test commit containing a fake `API_KEY=sk-test123`; PASSES a clean commit.
-- [ ] **0.1 Repo scaffold.** Root Bun + strict TypeScript. Folders `server/` (gateway), `web/`
+- [x] **0.1 Repo scaffold.** Root Bun + strict TypeScript. Folders `server/` (gateway), `web/`
   (Vite+React+TS), `shared/` (types). Root scripts `dev`, `build`, `test`.
   - Verify: `bun install` clean; `bun run dev` boots gateway + Vite; a placeholder page loads.
 - [ ] **0.2 SQLite + Drizzle.** drizzle + drizzle-kit. Index schema: `projects`, `fleets`, `tasks`,
@@ -223,3 +223,28 @@ review and revert a memory entry.
   so future `bun` calls resolve; `bun test`/`bun run build` are N/A pre-scaffold. *Verified:* hook BLOCKS
   a staged fake `API_KEY=` credential and PASSES the clean 0.0 commit. *Next:* 0.1 repo scaffold — when adding
   `package.json`, wire a `prepare` script that runs `git config core.hooksPath .githooks` automatically.
+- **2026-06-06 · 0.0 fix.** While scaffolding 0.1 the guard false-positived on `package.json`'s
+  description (`"…task-management…"` → `sk-management`). Tightened the `sk-`/assignment patterns: require a
+  non-alphanumeric boundary before the token + a value-length floor, allow hyphens in `sk-` bodies (real
+  keys like `sk-ant-…` contain them), and dropped over-generic bare `auth`/`pwd` keywords. Re-verified it
+  still blocks `API_KEY=…`, `sk-ant-…`, and `authToken: "…"` while passing `task-`/`risk-`/`disk-` prose.
+  Committed separately as `fix(0.0): …` (it's a guard fix, not scaffold).
+- **2026-06-06 · 0.1 Repo scaffold.** Root Bun monorepo with workspaces `shared/` (typed contract),
+  `server/` (Bun.serve gateway w/ `/api/health` → typed `HealthStatus`), `web/` (Vite 6 + React 19 + TS
+  placeholder, dark CSS). `tsconfig.base.json` is strict (+`noUncheckedIndexedAccess`,
+  `verbatimModuleSyntax`, `noUnused*`); each workspace extends it. Root scripts: `dev` (boots gateway +
+  Vite together via `bun run --filter`), `build` (tsc `--noEmit` × shared/server + `tsc && vite build` ×
+  web), `test` (`bun test`), `typecheck`. `prepare` auto-wires `core.hooksPath .githooks` on install.
+  *Decisions:* (a) **Ports are configurable** — `CADENCE_PORT` drives BOTH the gateway and the Vite
+  `/api` proxy (single source of truth) and `CADENCE_WEB_PORT` the dev server; `.env` supported
+  (`.env.example` tracked, real `.env` gitignored); gateway prints an actionable message + exits 1 on
+  `EADDRINUSE`. Default **4477** avoids well-known ports (4317 = OTLP, which was occupied on this machine
+  by another app). *This was prompted by user feedback mid-build:* another Claude Code instance runs a
+  different app's dev server, so ports can clash at any time. (b) Kept `web` independent of `@cadence/shared`
+  for now (server already proves the workspace link); web↔shared typed contract lands in 0.6 to avoid a
+  Vite-resolving-workspace-`.ts` edge case this early. *Verified:* `bun install` clean; `bun run build` +
+  `bun test` (1 pass) green; `bun run dev` boots both; `GET /api/health` → `{ok,app,version}`; placeholder
+  page loads (`<title>Cadence</title>`); **custom ports honored end-to-end** (gateway 4823 + web 5199 +
+  proxy chain), defaults untouched; friendly EADDRINUSE message confirmed. *Next:* 0.2 SQLite + Drizzle.
+  *Note for 0.4/0.6:* consider auto-free-port discovery (gateway scans from `CADENCE_PORT`, writes the
+  chosen port to a `~/.cadence/` runtime file the proxy reads) for fully hands-off collision avoidance.
