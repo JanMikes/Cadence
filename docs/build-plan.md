@@ -9,9 +9,9 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.6 (gateway HTTP+WS skeleton serving the built web app)
-- **Next step:** 0.7
+- **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
+- **Last completed step:** 0.7 (design base) — Phase 0 done; acceptance check passed
+- **Next step:** 1.1 (task model + quick-capture → Inbox)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -81,7 +81,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
 - [x] **0.6 Gateway HTTP+WS skeleton.** REST router (`/api/health` + stubs), WS hub (broadcast),
   serves built `web/`. Typed API contract in `shared/`.
   - Verify: `GET /api/health` ok; WS connect receives a broadcast; prod build is served.
-- [ ] **0.7 Design base.** Tailwind + shadcn/ui; dark dev theme tokens; the **LabeledIconButton**
+- [x] **0.7 Design base.** Tailwind + shadcn/ui; dark dev theme tokens; the **LabeledIconButton**
   primitive (icon REQUIRES a label) + app shell (left-nav placeholder).
   - Verify: themed shell renders; an example shows LabeledIconButton with icon+label.
 
@@ -333,3 +333,31 @@ review and revert a memory entry.
   broadcast** (broadcast sent after the client sees hello, guaranteeing hub registration). Real boot on
   a custom port serves the actual `web/dist` (index.html + hashed `/assets/*`, SPA fallback) and
   `/api/health`; `bun run build` green. *Next:* 0.7 design base (Tailwind + shadcn + LabeledIconButton).
+- **2026-06-06 · 0.7 Design base.** Tailwind v4 via `@tailwindcss/vite` + a dark dev-tool theme in
+  `web/src/index.css` (`@theme` tokens → utilities: `bg-background`, `text-muted-foreground`,
+  `bg-primary`, `border-border`). `web/src/lib/utils.ts` `cn()` (clsx + tailwind-merge). shadcn-style
+  `Button` (`components/ui/button.tsx`, cva variants default/secondary/outline/ghost/destructive + sizes).
+  **`LabeledIconButton`** primitive: required `icon` + required `label` props enforce the §10.1 rule
+  (icon buttons always carry a text label) *at the type level* — an icon-only button can't be built from
+  it. `AppShell`: themed left-nav placeholder (each item a labeled icon+text button) + content area.
+  `App` wires a gateway-health status dot (fetches `/api/health`, typed via a **type-only** import of
+  `HealthStatus` from `@cadence/shared` — erased by `verbatimModuleSyntax`, so Vite never resolves the
+  workspace `.ts` at runtime; this is how web↔shared, deferred in 0.1, is now used safely) + example
+  buttons. Icons: `lucide-react` (verified official — registry `latest` 1.17.0, maintainer `ericfennis`;
+  the 1.x scheme initially looked odd so I checked the registry before trusting it). *Gotcha:* web's
+  tsconfig needed `"bun"` added to `types` so test files' `bun:test` import typechecks under `tsc`.
+  *Verified:* `bun test` (18 pass) — SSR `renderToStaticMarkup` confirms LabeledIconButton emits icon +
+  label and AppShell emits the labeled nav + themed classes; `bun run build` green (Tailwind compiles a
+  ~12.5kB themed stylesheet); real prod boot serves the hashed CSS containing the dark tokens
+  (`#0b0d12`, `.bg-background`) and the `/api/health` data the shell consumes. *Next:* Phase 1.1.
+
+**Phase 0 — Acceptance check (run 2026-06-06):**
+1. ✅ Themed app shell — the served prod build renders the dark shell (left-nav placeholder); SSR tests
+   confirm the shell + labeled nav. *(Visual browser confirmation left for the human smoke-test.)*
+2. ✅ Page shows gateway data — `App` fetches `/api/health` (Vite proxy in dev, gateway in prod);
+   endpoint verified end-to-end.
+3. ✅ `~/.cadence/cadence.db` exists with migrated tables — 7 tables + `tasks_fts` + triggers.
+4. ✅ Editing a `task.md` updates the DB — watcher `scan()` (unit) + live timer smoke reindex
+   create/edit/delete with FTS in sync.
+5. ✅ `bun test` (18 pass) and `bun run build` both green.
+→ Phase 0 accepted; continuing to Phase 1.
