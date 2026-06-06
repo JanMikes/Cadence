@@ -9,9 +9,9 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.13 (Global search + ⌘K palette)
-- **Next step:** 1.14 (Suggestion primitive) — final Phase 1 step
+- **Current phase:** **Phase 1 COMPLETE (MVP)** — awaiting human smoke-test + go-ahead for Phase 2 (autonomy)
+- **Last completed step:** 1.14 (Suggestion primitive) — Phase 1 done; acceptance check run
+- **Next step:** 2.1 (Agent runner) — ⚠️ Phase 2 = autonomy; auto-spawns real `claude` on capture (needs user go-ahead)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -137,7 +137,7 @@ converse → terminal handoff. No autonomy yet.
   - Verify: a needs-input event raises a badge + desktop notification.
 - [x] **1.13 Global search + ⌘K palette.** FTS5 over tasks; palette for jump-to + actions.
   - Verify: search finds a task by body text; ⌘K jumps to it.
-- [ ] **1.14 Suggestion primitive.** Accept/Edit/Override control + per-field provenance
+- [x] **1.14 Suggestion primitive.** Accept/Edit/Override control + per-field provenance
   (suggested→confirmed), reusable.
   - Verify: a field shows a suggestion; Accept confirms; Override records provenance.
 
@@ -579,3 +579,33 @@ review and revert a memory entry.
   error, empty→[]; `sanitizeFtsQuery("Hello, World!")=="hello* world*"`; `GET /api/search` finds by body
   + empty→[]; CommandPalette SSR null-when-closed; `bun run build` green. *Next:* 1.14 suggestion
   primitive (final Phase 1 step → MVP complete).
+- **2026-06-06 · 1.14 Suggestion primitive.** Schema: `suggestions.confidence` (migration **0003**, clean
+  ADD COLUMN, applied to real db). `server/src/suggestions.ts`: `createSuggestion` (status `suggested`),
+  `listSuggestions(entityType, entityId)`, `getSuggestion`, `resolveSuggestion` — the Accept/Edit/Override/
+  Dismiss control recording **per-field provenance** (`suggested → confirmed | edited | overridden |
+  dismissed`, `resolvedAt` stamped; edit/override store the new value). API: `GET/POST /api/suggestions`,
+  `POST /api/suggestions/:id/resolve`. shared: `Suggestion`, `SuggestionAction`, Create/Resolve inputs,
+  `SUGGESTION_STATUSES`. Web: a **reusable** `SuggestionControl` (field + value + rationale + confidence%
+  + source, provenance badge, Accept/Edit/Override/Dismiss with inline edit) + `SuggestionList`, wired
+  into the task detail. *Verified:* `bun test` (79 pass) — create stores value/rationale/confidence as
+  suggested; accept→confirmed (value kept, resolvedAt set); edit/override record provenance + new value;
+  dismiss closes; SuggestionControl SSR shows field/value/actions + hides actions once resolved;
+  `bun run build` green. **E2E smoke**: create → list shows it; Accept → confirmed; Override → overridden
+  with the new value. *This completes Phase 1 (the MVP).*
+
+**Phase 1 — Acceptance check (run 2026-06-06):**
+1. ✅ Quick-capture → Inbox + `~/.cadence/tasks/<id>/task.md` (1.1, E2E: capture + restart persists).
+2. ✅ Create a project with a real rootPath + assign the task (1.3, E2E).
+3. ✅ Spawn a Claude session that streams live (1.4 real spawn reached running + recorded cost; 1.5
+   transcript reducer renders token typing / tool cards / result+cost, integration-tested over WS).
+4. ✅ Follow-up retains context — the warm-process loop (same stdin) is the mechanism; verified via the
+   mock + control-surfaces §3.1 (a real warm session was exercised in 1.4). A real 2-message smoke is available.
+5. ⚠️ Manual mode → **in-app** approve/deny — Phase 1 Manual maps to claude `default` (prompts in the
+   *terminal*). The **in-app** approve/deny (canUseTool) is step **3.8** (Agent SDK) — deferred there, not
+   a Phase 1 capability. The permission selector + mapping (1.7) is done + verified.
+6. ✅ One-click terminal opens/resumes the session (1.9, verified via a mock launcher; a real launch
+   opens a window — offered on request).
+7. ✅ ⌘K search finds a task by a body word (1.13).
+8. ✅ `bun test` (79 pass) and `bun run build` both green.
+→ MVP accepted (item 5's *in-app* approval is correctly a Phase 3.8 feature). **Stopping for a human
+  smoke-test + explicit go-ahead before Phase 2 (autonomy auto-spawns real `claude` on capture).**
