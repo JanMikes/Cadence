@@ -1,6 +1,7 @@
 import type { HealthStatus } from "@cadence/shared";
 import { useEffect, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
+import { Analytics } from "./features/analytics/Analytics";
 import { ApprovalsBar } from "./features/approvals/ApprovalsBar";
 import { Board } from "./features/board/Board";
 import { Today } from "./features/digest/Today";
@@ -74,6 +75,7 @@ export function App() {
         {view === "projects" ? <Projects /> : null}
         {view === "fleets" ? <Fleets /> : null}
         {view === "sessions" ? <SessionsView /> : null}
+        {view === "analytics" ? <Analytics /> : null}
         {view === "notifications" ? <NotificationsView onOpenTask={setSelectedId} /> : null}
         {view === "settings" ? <SettingsView /> : null}
       </AppShell>

@@ -1,4 +1,5 @@
 import type {
+  AnalyticsSummary,
   ApprovalRequest,
   CommitDigestInput,
   ContextChannel,
@@ -152,6 +153,10 @@ export function removeDep(taskId: string, blockerId: string): Promise<TaskDepsVi
 
 export function getSubtasks(taskId: string): Promise<Task[]> {
   return fetch(`/api/tasks/${taskId}/subtasks`).then(json<Task[]>);
+}
+
+export function getAnalytics(): Promise<AnalyticsSummary> {
+  return fetch("/api/analytics").then(json<AnalyticsSummary>);
 }
 
 export function getApprovals(): Promise<ApprovalRequest[]> {

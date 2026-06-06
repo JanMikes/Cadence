@@ -223,6 +223,33 @@ export interface UpdateProjectInput {
   notes?: string | null;
 }
 
+// --------------------------------------------------------------- analytics (§10)
+// Cost & throughput, derived from sessions (cost) + the status_change timeline.
+
+export interface ProjectAnalytics {
+  projectId: string | null;
+  projectName: string;
+  tasks: number;
+  done: number;
+  sessions: number;
+  costUsd: number;
+}
+
+export interface ThroughputDay {
+  date: string; // YYYY-MM-DD
+  completed: number; // tasks moved to done that day
+}
+
+export interface AnalyticsSummary {
+  totalCostUsd: number;
+  totalSessions: number;
+  totalTasks: number;
+  doneTasks: number;
+  byStatus: Record<string, number>;
+  byProject: ProjectAnalytics[];
+  throughput: ThroughputDay[];
+}
+
 // ------------------------------------------------------------------------ fleets
 // A named, ordered set of projects for multi-repo tasks (spec §4). Member slugs
 // live in the fleet's markdown; the index holds the scalar fields.

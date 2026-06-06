@@ -585,6 +585,20 @@ test("subtasks: PATCH parentTask, then GET subtasks lists the children", async (
   expect(subs.map((t) => t.id)).toContain(child.id);
 });
 
+test("GET /api/analytics returns cost/throughput/status aggregates", async () => {
+  await createViaApi("Analytics task");
+  const a = (await fetch(`${gw.url}/api/analytics`).then((r) => r.json())) as {
+    totalTasks: number;
+    byProject: unknown[];
+    throughput: unknown[];
+    byStatus: Record<string, number>;
+  };
+  expect(a.totalTasks).toBeGreaterThanOrEqual(1);
+  expect(Array.isArray(a.byProject)).toBe(true);
+  expect(a.throughput).toHaveLength(14);
+  expect(typeof a.byStatus).toBe("object");
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",

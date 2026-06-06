@@ -1,4 +1,14 @@
-import { Activity, Bell, Boxes, FolderGit2, Inbox, LayoutGrid, Settings, Sparkles } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  Bell,
+  Boxes,
+  FolderGit2,
+  Inbox,
+  LayoutGrid,
+  Settings,
+  Sparkles,
+} from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
@@ -9,6 +19,7 @@ export type ViewId =
   | "projects"
   | "fleets"
   | "sessions"
+  | "analytics"
   | "notifications"
   | "settings";
 
@@ -26,6 +37,7 @@ const NAV: NavItem[] = [
   { id: "projects", label: "Projects", icon: FolderGit2 },
   { id: "fleets", label: "Fleets", icon: Boxes },
   { id: "sessions", label: "Sessions", icon: Activity },
+  { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "settings", label: "Settings", icon: Settings },
 ];

@@ -24,6 +24,7 @@ import { approvePlan, runPlanner } from "./agents/planner";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
+import { computeAnalytics } from "./analytics";
 import { type ApprovalDecision, ApprovalRegistry } from "./approvals";
 import { composeContext } from "./context";
 import { addDependency, getDeps, getSubtasks, removeDependency } from "./deps";
@@ -418,6 +419,10 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/usage" && method === "GET") {
     return Response.json({ stats: readUsageStats(), rateLimit: ctx.spawn.latestRateLimit() });
+  }
+
+  if (pathname === "/api/analytics" && method === "GET") {
+    return Response.json(computeAnalytics(ctx.db));
   }
 
   if (pathname === "/api/search" && method === "GET") {
