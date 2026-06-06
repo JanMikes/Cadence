@@ -170,7 +170,7 @@ function basenameNoExt(file: string): string {
   return file.replace(/\.md$/, "");
 }
 
-function listTaskIds(): string[] {
+export function listTaskIds(): string[] {
   const dir = paths.tasksDir();
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
