@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.9 (Terminal handoff + Settings)
-- **Next step:** 1.10 (Claude-assisted project import)
+- **Last completed step:** 1.10 (Claude-assisted project import)
+- **Next step:** 1.11 (Usage bar + cost)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -127,7 +127,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.9 Terminal handoff.** Per session: copy `cd <cwd> && claude --resume <id>` + one-click
   "Open in <terminal>" (gateway runs `open`/`osascript`); preferred terminal in Settings.
   - Verify: button opens the configured terminal at cwd running resume; copy works.
-- [ ] **1.10 Claude-assisted project import.** Scan `~/.claude/projects` dirs; background `claude -p`
+- [x] **1.10 Claude-assisted project import.** Scan `~/.claude/projects` dirs; background `claude -p`
   enriches each (remote/stack/name/desc); checklist → create selected.
   - Verify: detects real dirs; proposes; creates the ticked ones.
 - [ ] **1.11 Usage bar + cost.** Ambient subscription-window bar (5h+weekly from `rate_limit_info` +
@@ -523,3 +523,19 @@ review and revert a memory entry.
   the resume command + invokes the mock launcher with the configured app (`Terminal`); settings GET
   defaults + PATCH `preferredTerminal`; Settings + HandoffButtons SSR; `bun run build` green. *Next:*
   1.10 Claude-assisted project import.
+- **2026-06-06 · 1.10 Project import.** `server/src/import.ts`: `scanClaudeProjects(db)` discovers working
+  dirs from `~/.claude/projects` — it reads each project's **real cwd + gitBranch from a transcript line**
+  (the encoded dir name is lossy for paths containing `-`, e.g. `bot-blocker-middleware`), keeps only
+  dirs still on disk, and annotates `name`/`gitRemote` (via `git config`)/`isGitRepo`/`alreadyImported`.
+  `importProjects(db, selections)` creates the picked candidates, **idempotent by rootPath**.
+  `claudeEnrich(cwd)` runs a one-shot `claude -p` for a stack/description line — **injectable** (gateway
+  `enrich` option) so tests/imports don't need a real model. API: `GET /api/import/candidates`, `POST
+  /api/import`, `POST /api/import/enrich`. Web: an "Import from Claude Code" checklist in the Projects
+  view (rescan, tick candidates with name/cwd/remote/git badge, optional per-row "Ask Claude" enrich,
+  Import selected). *Decision:* deterministic detection (transcript cwd + `git`) is the core; the
+  claude-assisted enrichment is opt-in per row, honoring the one-real-spawn boundary. *Verified:*
+  `bun test` (62 pass) — scan detects a real temp git repo via its transcript cwd (remote+branch+isGitRepo),
+  filters non-existent cwds, marks alreadyImported; import creates + is idempotent; gateway
+  candidates/enrich(mock)/import endpoints; ImportProjects SSR. **Real-data smoke**: scan found 35 real
+  candidate dirs (24 git repos w/ remotes), hyphenated names handled correctly; `bun run build` green.
+  *Next:* 1.11 usage bar + cost.
