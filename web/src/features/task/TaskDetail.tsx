@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageSquarePlus, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { appendContext, getContext, getTaskDetail, updateTask } from "../../lib/api";
+import { appendContext, getContext, getProjects, getTaskDetail, updateTask } from "../../lib/api";
 import { statusLabel } from "../../lib/status";
 
 export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () => void }) {
@@ -15,13 +15,21 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
     queryKey: ["task", taskId, "context"],
     queryFn: () => getContext(taskId),
   });
+  const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+
+  const invalidateTask = () => {
+    void qc.invalidateQueries({ queryKey: ["task", taskId] });
+    void qc.invalidateQueries({ queryKey: ["tasks"] });
+  };
 
   const setStatus = useMutation({
     mutationFn: (status: string) => updateTask(taskId, { status }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["task", taskId] });
-      void qc.invalidateQueries({ queryKey: ["tasks"] });
-    },
+    onSuccess: invalidateTask,
+  });
+
+  const setProject = useMutation({
+    mutationFn: (slug: string | null) => updateTask(taskId, { project: slug }),
+    onSuccess: invalidateTask,
   });
 
   const addNote = useMutation({
@@ -68,6 +76,23 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
                   {TASK_STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {statusLabel(s)}
+                    </option>
+                  ))}
+                </select>
+              </dd>
+
+              <dt className="text-muted-foreground">Project</dt>
+              <dd>
+                <select
+                  value={projects.data?.find((p) => p.id === task.projectId)?.slug ?? ""}
+                  onChange={(e) => setProject.mutate(e.target.value || null)}
+                  aria-label="Project"
+                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">— Unassigned —</option>
+                  {projects.data?.map((p) => (
+                    <option key={p.id} value={p.slug}>
+                      {p.name}
                     </option>
                   ))}
                 </select>

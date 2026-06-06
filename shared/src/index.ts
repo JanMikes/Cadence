@@ -91,6 +91,53 @@ export interface UpdateTaskInput {
   estimate?: number | null; // minutes
   labels?: string[];
   deliveryMode?: string | null;
+  project?: string | null; // project slug (null to unassign)
+  fleet?: string | null; // fleet slug
+}
+
+export const PERMISSION_MODES = ["auto", "manual", "dangerous"] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
+
+export const DELIVERY_MODES = ["branch_summary", "auto_pr", "apply_in_place"] as const;
+export type DeliveryMode = (typeof DELIVERY_MODES)[number];
+
+export interface Project {
+  id: string;
+  name: string;
+  slug: string;
+  color: string | null;
+  rootPath: string | null;
+  gitRemote: string | null;
+  defaultModel: string | null;
+  defaultPermissionMode: string;
+  defaultDeliveryMode: string;
+  systemPrompt: string | null;
+  notes: string | null;
+  createdAt: number;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  rootPath?: string;
+  color?: string;
+  gitRemote?: string;
+  defaultModel?: string;
+  defaultPermissionMode?: string;
+  defaultDeliveryMode?: string;
+  systemPrompt?: string;
+  notes?: string;
+}
+
+export interface UpdateProjectInput {
+  name?: string;
+  rootPath?: string | null;
+  color?: string | null;
+  gitRemote?: string | null;
+  defaultModel?: string | null;
+  defaultPermissionMode?: string;
+  defaultDeliveryMode?: string;
+  systemPrompt?: string | null;
+  notes?: string | null;
 }
 
 /** The always-on free-form context channel (context.md), append-only. */

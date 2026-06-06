@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
 import { Board } from "./features/board/Board";
 import { Inbox } from "./features/inbox/Inbox";
+import { Projects } from "./features/projects/Projects";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { cn } from "./lib/utils";
 
@@ -54,6 +55,7 @@ export function App() {
       >
         {view === "inbox" ? <Inbox onOpen={setSelectedId} /> : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
+        {view === "projects" ? <Projects /> : null}
         {view === "settings" ? (
           <div className="p-8 text-sm text-muted-foreground">Settings — coming soon.</div>
         ) : null}

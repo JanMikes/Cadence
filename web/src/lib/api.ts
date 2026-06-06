@@ -1,8 +1,11 @@
 import type {
   ContextChannel,
+  CreateProjectInput,
   CreateTaskInput,
+  Project,
   Task,
   TaskDetail,
+  UpdateProjectInput,
   UpdateTaskInput,
 } from "@cadence/shared";
 
@@ -48,4 +51,24 @@ export function appendContext(id: string, text: string): Promise<ContextChannel>
     headers: JSON_HEADERS,
     body: JSON.stringify({ text }),
   }).then(json<ContextChannel>);
+}
+
+export function getProjects(): Promise<Project[]> {
+  return fetch("/api/projects").then(json<Project[]>);
+}
+
+export function createProject(input: CreateProjectInput): Promise<Project> {
+  return fetch("/api/projects", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  }).then(json<Project>);
+}
+
+export function updateProject(slug: string, patch: UpdateProjectInput): Promise<Project> {
+  return fetch(`/api/projects/${slug}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  }).then(json<Project>);
 }

@@ -1,0 +1,72 @@
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { migrateDb, openDb, type Db } from "./db/client";
+import { createProject, getProject, listProjects, updateProject } from "./projects";
+import { paths } from "./store/paths";
+import { bootstrap } from "./store/store";
+import { createTask, getTask, resolveTaskCwd, updateTask } from "./tasks";
+
+let db: Db;
+let home: string;
+
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), "cadence-proj-"));
+  process.env.CADENCE_HOME = home;
+  bootstrap();
+  db = openDb(join(home, "cadence.db"));
+  migrateDb(db);
+});
+
+afterEach(() => {
+  delete process.env.CADENCE_HOME;
+  rmSync(home, { recursive: true, force: true });
+});
+
+test("createProject writes projects/<slug>.md + an index row", () => {
+  const p = createProject(db, { name: "Acme Web", rootPath: "/tmp/acme", systemPrompt: "Be terse." });
+
+  expect(p.slug).toBe("acme-web");
+  expect(p.defaultPermissionMode).toBe("auto");
+  expect(existsSync(paths.projectFile("acme-web"))).toBe(true);
+  expect(getProject(db, "acme-web")?.systemPrompt).toBe("Be terse.");
+  expect(listProjects(db).map((x) => x.slug)).toContain("acme-web");
+});
+
+test("duplicate names get unique slugs", () => {
+  const a = createProject(db, { name: "Acme" });
+  const b = createProject(db, { name: "Acme" });
+  expect(a.slug).toBe("acme");
+  expect(b.slug).toBe("acme-2");
+});
+
+test("updateProject patches config + systemPrompt", () => {
+  createProject(db, { name: "Acme", rootPath: "/tmp/a" });
+  const up = updateProject(db, "acme", {
+    rootPath: "/tmp/b",
+    defaultPermissionMode: "manual",
+    systemPrompt: "New prompt.",
+  });
+  expect(up?.rootPath).toBe("/tmp/b");
+  expect(up?.defaultPermissionMode).toBe("manual");
+  expect(getProject(db, "acme")?.systemPrompt).toBe("New prompt.");
+  expect(updateProject(db, "nope", { name: "x" })).toBeNull();
+});
+
+test("assign a task to a project; cwd resolves to the project rootPath", () => {
+  createProject(db, { name: "Acme", rootPath: "/tmp/acme-root" });
+  const task = createTask(db, { title: "Do a thing" });
+
+  // unassigned -> cwd falls back to the process cwd
+  expect(resolveTaskCwd(db, task.id)).toBe(process.cwd());
+
+  const assigned = updateTask(db, task.id, { project: "acme" });
+  expect(assigned).not.toBeNull();
+  expect(getTask(db, task.id)?.projectId).toBeTruthy(); // slug resolved to FK id
+  expect(resolveTaskCwd(db, task.id)).toBe("/tmp/acme-root");
+
+  // unassign
+  updateTask(db, task.id, { project: null });
+  expect(getTask(db, task.id)?.projectId).toBeNull();
+});

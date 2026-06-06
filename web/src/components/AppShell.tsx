@@ -1,8 +1,8 @@
-import { Inbox, LayoutGrid, Settings, Sparkles } from "lucide-react";
+import { FolderGit2, Inbox, LayoutGrid, Settings, Sparkles } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
-export type ViewId = "inbox" | "board" | "settings";
+export type ViewId = "inbox" | "board" | "projects" | "settings";
 
 interface NavItem {
   id: ViewId;
@@ -14,6 +14,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "board", label: "Board", icon: LayoutGrid },
+  { id: "projects", label: "Projects", icon: FolderGit2 },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

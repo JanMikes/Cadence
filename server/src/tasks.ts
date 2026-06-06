@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { tasks } from "./db/schema";
+import { getProjectById } from "./projects";
 import { paths } from "./store/paths";
 import { readTask, reindexTask, writeTask } from "./store/store";
 import type { TaskFrontmatter } from "./store/types";
@@ -72,6 +73,8 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   if (patch.estimate !== undefined) next.estimate = patch.estimate;
   if (patch.labels !== undefined) next.labels = patch.labels;
   if (patch.deliveryMode !== undefined) next.deliveryMode = patch.deliveryMode;
+  if (patch.project !== undefined) next.project = patch.project; // slug; reindex → projectId
+  if (patch.fleet !== undefined) next.fleet = patch.fleet;
   if (patch.deadline !== undefined) {
     next.deadline = patch.deadline == null ? null : new Date(patch.deadline).toISOString();
   }
@@ -80,6 +83,20 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   writeTask(next, nextBody);
   reindexTask(db, id);
   return getTaskDetail(db, id);
+}
+
+/**
+ * Resolve the working directory a Claude session for this task should run in:
+ * the assigned project's rootPath, else CADENCE_DEFAULT_CWD, else the process cwd.
+ * (Used by the spawn pipeline in 1.4.)
+ */
+export function resolveTaskCwd(db: Db, taskId: string): string {
+  const task = getTask(db, taskId);
+  if (task?.projectId) {
+    const project = getProjectById(db, task.projectId);
+    if (project?.rootPath) return project.rootPath;
+  }
+  return process.env.CADENCE_DEFAULT_CWD ?? process.cwd();
 }
 
 function toTask(row: typeof tasks.$inferSelect): Task {

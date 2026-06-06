@@ -1,12 +1,15 @@
 import {
   APP_NAME,
   type AppendContextInput,
+  type CreateProjectInput,
   type CreateTaskInput,
   type HealthStatus,
   SCHEMA_VERSION,
+  type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
 import type { Db } from "./db/client";
+import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { appendContext, readContext } from "./store/store";
 import { createTask, getTaskDetail, listTasks, updateTask } from "./tasks";
 import type { WsHub } from "./ws";
@@ -92,6 +95,49 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       appendContext(id, text);
       ctx.hub.broadcast({ type: "event", name: "task:context", payload: id });
       return Response.json({ content: readContext(id) }, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  if (pathname === "/api/projects") {
+    if (method === "GET") return Response.json(listProjects(ctx.db));
+    if (method === "POST") {
+      let input: CreateProjectInput;
+      try {
+        input = (await req.json()) as CreateProjectInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const name = typeof input?.name === "string" ? input.name.trim() : "";
+      if (!name) return badRequest("name is required");
+      const project = createProject(ctx.db, { ...input, name });
+      ctx.hub.broadcast({ type: "event", name: "project:created", payload: project.slug });
+      return Response.json(project, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const projMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
+  if (projMatch) {
+    const slug = projMatch[1] as string;
+    if (method === "GET") {
+      const project = getProject(ctx.db, slug);
+      return project ? Response.json(project) : notFound(pathname);
+    }
+    if (method === "PATCH") {
+      let patch: UpdateProjectInput;
+      try {
+        patch = (await req.json()) as UpdateProjectInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (typeof patch?.name === "string" && !patch.name.trim()) {
+        return badRequest("name cannot be blank");
+      }
+      const updated = updateProject(ctx.db, slug, patch);
+      if (!updated) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "project:updated", payload: updated.slug });
+      return Response.json(updated);
     }
     return methodNotAllowed();
   }
