@@ -1,0 +1,19 @@
+{
+  "name": "cadence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cadence — your backlog, in flow. Local task-management + autonomous-execution platform wrapping Claude Code.",
+  "workspaces": ["shared", "server", "web"],
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "dev": "bun run --filter='@cadence/server' --filter='@cadence/web' dev",
+    "build": "bun run --filter='@cadence/shared' --filter='@cadence/server' --filter='@cadence/web' build",
+    "typecheck": "bun run --filter='@cadence/*' typecheck",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.2"
+  }
+}
