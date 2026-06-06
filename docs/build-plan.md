@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 3.6 (Delivery + delivery-mode resolution)
-- **Next step:** 3.7 (Review screen: in-app diff + summary + verify results; merge / request-changes)
+- **Last completed step:** 3.7 (Review screen: diff + summary + verify; merge / request-changes)
+- **Next step:** 3.8 (Manual-approve mode `canUseTool` + Dangerous-mode guardrail) — last Phase 3 step
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -258,7 +258,7 @@ available on request).
 - [x] 3.4 Implementer in the worktree (permission mode per task).
 - [x] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
 - [x] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
-- [ ] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
+- [x] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
 - [ ] 3.8 Manual-approve mode (`canUseTool`) + Dangerous-mode guardrail (confirm + worktree).
 
 **Acceptance check (manual):** press PLAY on a Ready task → plan → implement in a worktree → verify
@@ -846,3 +846,18 @@ review and revert a memory entry.
   (resolve mode task-over-project, prompt, branch_summary vs apply_in_place) + the gateway E2E now
   asserts the served delivery summary. Verify: 156 pass (×2 stable), build green, scan clean. Phase 3:
   only the Review screen (3.7) + Manual/Dangerous guardrails (3.8) remain.
+- **2026-06-06 · 3.7 Review screen — diff + summary + verify; merge / request-changes.** New
+  `server/src/review.ts`: `taskDiff` returns the unified diff — branch-vs-base (`<base>...HEAD` +
+  working changes) from the per-task worktree for branch_summary/auto_pr, or the working tree for
+  apply_in_place; `mergeTask` does `git merge --no-ff` of the task branch into the repo's base (no-op
+  for apply_in_place). API: `GET /api/tasks/:id/diff`; `POST /review/merge` (review → done; 409 if not
+  in review or on a merge conflict, leaving the task put); `POST /review/request-changes` (review →
+  implementing + appends the note to the context channel). shared `TaskDiff` + `ReviewActionInput`.
+  Web: `ReviewPanel` (shown in `TaskDetail` when in review) — delivery summary + PR link, the verify
+  pass/fail + per-check chips, a +/-/@@-colored unified diff in a scroll box, and Merge → Done /
+  Request-changes-with-note; api `getDiff`/`getVerify`/`getDelivery`/`mergeReview`/`requestChanges`.
+  Tests: review unit against a real repo (diff surfaces a committed feature change; merge lands it on
+  `main`; apply_in_place working-tree diff) + the gateway E2E now **merges → done**, plus a
+  request-changes → implementing test asserting the note hits the context channel + ReviewPanel SSR.
+  Verify: 161 pass (×2 stable), build green, scan clean. Only 3.8 (Manual `canUseTool` + Dangerous
+  guardrail) remains in Phase 3.
