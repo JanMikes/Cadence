@@ -22,13 +22,15 @@ ALLOW_MARKER='cadence-allow-secret'
 denylist_file="${CADENCE_COMMIT_DENYLIST:-$HOME/.cadence/commit-denylist.txt}"
 
 # High-confidence, public-safe secret patterns (extended regex, case-insensitive).
+# Boundaries (^|[^A-Za-z…]) keep ordinary hyphenated words like "task-management"
+# from tripping the key rules; value-length floors avoid matching short prose.
 patterns=(
   '-----BEGIN [A-Z ]*PRIVATE KEY-----'
   'AKIA[0-9A-Z]{16}'
   'gh[pousr]_[A-Za-z0-9]{20,}'
   'xox[baprs]-[A-Za-z0-9-]{10,}'
-  '(secret|token|password|passwd|pwd|api[_-]?key|access[_-]?key|auth)["'"'"' ]*[:=][ ]*["'"'"']?[A-Za-z0-9_/+.-]{8,}'
-  'sk-[A-Za-z0-9_-]{8,}'
+  '(^|[^A-Za-z])(api[_-]?key|secret|token|passwd|password|client[_-]?secret|auth[_-]?token|access[_-]?key)["'"'"' ]*[:=][ ]*["'"'"']?[A-Za-z0-9_/+=.-]{8,}'
+  '(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}'
   'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
 )
 
