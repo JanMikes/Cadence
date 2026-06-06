@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.4 (Discovery agent + explorer subagents → spec.md)
-- **Next step:** 2.5 (Questioner agent → Q&A cards; Needs-Feedback UI)
+- **Last completed step:** 2.5 (Questioner agent + Q&A cards + answer loop)
+- **Next step:** 2.6 (Lifecycle state machine enforced server-side + status timeline)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -205,7 +205,20 @@ Then stop and report.
     pipeline to Ready (mock); `bun run build` green. *Fixes:* test passed `status` to `createTask` (not an
     arg) → removed; the gateway autonomy test now expects `ready` since triage→discovery chains. Real
     discovery smoke offered, not auto-run.
-- [ ] 2.5 Questioner agent → ranked Q&A cards; Needs-Feedback UI (Q&A + "too vague" cards).
+- [x] 2.5 Questioner agent → ranked Q&A cards; Needs-Feedback UI (Q&A + "too vague" cards).
+  - **2026-06-06 · 2.5.** `server/src/agents/questioner.ts`: `runQuestioner` turns the spec's unknowns
+    into the smallest set of **ranked Q&A cards** (id/rank/type[text|single_choice|multi_choice|boolean]/
+    text/options/why), writes `qa.md`, → **Needs-Feedback** (or Ready if none). `answerQuestions` records
+    answers in qa.md, appends answered Q&A to the context channel, and advances **Needs-Feedback → Ready**
+    when all are answered. `store.readQa/writeQa` (gray-matter frontmatter + readable body). shared:
+    `QAQuestion`/`QAChannel`. API: `GET /api/tasks/:id/qa`, `POST /api/tasks/:id/qa/answers`; the autonomy
+    pipeline chains discovery(refining) → questioner. Web: `QACards` (Needs-Feedback section) renders each
+    question by type (text / radios / checkboxes / yes-no) + Submit, in the task detail. *Fix:* js-yaml
+    can't dump `undefined` → `normalize()` omits optional keys (qa.md serialization). *Verified:*
+    `bun test` (101 pass, stable ×2) — questioner writes ranked cards → Needs-Feedback (Ready when none);
+    answering all → Ready + answers in context; QACards SSR; **END-TO-END over HTTP** (role-aware mock):
+    capture → triage → discovery(unknowns) → questioner → Needs-Feedback with a Q&A card → GET qa → POST
+    answers → Ready; `bun run build` green. The refinement loop is complete (the Phase-2 acceptance flow).
 - [ ] 2.6 Lifecycle state machine enforced server-side + status timeline.
 - [ ] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
 - [ ] 2.8 Daily Digest: interactive morning plan → committed daily goal.
