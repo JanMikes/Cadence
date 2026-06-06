@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 3.1 (Ready state + PLAY button)
-- **Next step:** 3.2 (Planner in plan mode → approvable plan)
+- **Last completed step:** 3.2 (Planner in plan mode → approvable plan)
+- **Next step:** 3.3 (git worktree per task provisioning + branch naming)
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -253,7 +253,7 @@ available on request).
 
 ## Phase 3 — Execution: PLAY → implement → verify → deliver
 - [x] 3.1 Ready state + PLAY button.
-- [ ] 3.2 Planner (plan mode) → approvable plan.
+- [x] 3.2 Planner (plan mode) → approvable plan.
 - [ ] 3.3 git worktree per task provisioning + branch naming.
 - [ ] 3.4 Implementer in the worktree (permission mode per task).
 - [ ] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
@@ -774,3 +774,17 @@ review and revert a memory entry.
   prominent green PLAY button in `TaskDetail`, shown only when the task is Ready, with a "Starting…"
   pending state and an error hint; `playTask` in the api lib. Test: gateway play (409 before Ready →
   200 → implementing → timeline entry). Verify: 132 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 3.2 Planner (plan mode) → approvable plan.** New `agents/planner.ts` following the
+  discovery template: `buildPlannerPrompt` (uses the spec + task; explicitly read-only / "do not write
+  code"), `runPlanner` (one-shot Opus, `permissionMode: "plan"`, injectable runner so tests use the
+  mock), `normalizeSteps` (drops empty-title steps and *omits undefined optional keys* so the YAML
+  frontmatter dump never trips — same guard as the Q&A normalizer), `applyPlan` (writes an *unapproved*
+  plan), `approvePlan` (flips the flag, preserving steps). Store: `readPlan`/`writePlan` over
+  `plan.md` (frontmatter `{steps,approved,notes}` + a readable body); shared `PlanStep`/`TaskPlan`.
+  **Wiring:** PLAY (3.1) now background-runs the Planner via the `task:play` hook — fire-and-forget
+  with a `task:plan` broadcast; it does *not* change task status (the task stays implementing).
+  `GET /api/tasks/:id/plan` + `POST /api/tasks/:id/plan/approve` (the human gate before the Implementer
+  in 3.4). Web: `PlanView` — ordered steps (⚠️ risky flagged, per-step files, notes) with an Approve
+  button + "Approved" badge + a "Planning…" placeholder while the agent drafts; shown in `TaskDetail`
+  during execution phases. Tests: planner unit (4) + gateway PLAY→poll plan(2 steps)→approve + PlanView
+  SSR. Verify: 138 pass (×2 stable), build green, scan clean.
