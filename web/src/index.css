@@ -1,33 +1,45 @@
-/* Minimal dark placeholder. The real Tailwind + shadcn theme lands in 0.7. */
-:root {
-  color-scheme: dark;
+@import "tailwindcss";
+
+/* Dark, calm, dev-tool theme (spec §10 "Aesthetic"). Tokens become utilities,
+   e.g. bg-background / text-foreground / border-border / bg-primary. */
+@theme {
+  --color-background: #0b0d12;
+  --color-foreground: #e6e8ee;
+
+  --color-card: #12151c;
+  --color-card-foreground: #e6e8ee;
+
+  --color-muted: #1a1f29;
+  --color-muted-foreground: #9aa3b2;
+
+  --color-accent: #1b2230;
+  --color-accent-foreground: #e6e8ee;
+
+  --color-border: #232834;
+  --color-input: #232834;
+
+  --color-primary: #6ea8fe;
+  --color-primary-foreground: #0b0d12;
+
+  --color-ring: #6ea8fe;
 }
 
-body {
-  margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  background: #0b0d12;
-  color: #e6e8ee;
-}
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
 
-main {
-  max-width: 42rem;
-  margin: 12vh auto 0;
-  padding: 0 1.5rem;
-}
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
 
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 2.25rem;
-  letter-spacing: -0.02em;
-}
-
-.tagline {
-  margin: 0 0 1.5rem;
-  color: #9aa3b2;
-}
-
-.note {
-  color: #7c8597;
-  line-height: 1.6;
+  body {
+    margin: 0;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
 }

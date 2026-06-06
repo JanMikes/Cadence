@@ -1,5 +1,6 @@
-import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 // Ports are configurable via env (single source of truth) so Cadence can dodge
 // collisions with other local dev servers running at the same time. Set
@@ -9,7 +10,7 @@ const apiPort = process.env.CADENCE_PORT ?? "4477";
 const webPort = Number(process.env.CADENCE_WEB_PORT ?? "5173");
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: webPort,
     // If the web port is taken, let Vite pick the next free one (it logs the URL).
