@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.3 (Projects CRUD + task assignment + cwd resolution)
-- **Next step:** 1.4 (Spawn infra — warm Claude session) ⚠️ first step that runs the real `claude` binary
+- **Last completed step:** 1.4 (Spawn infra — warm Claude session, verified vs real binary)
+- **Next step:** 1.5 (Live transcript UI + follow-up)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -106,7 +106,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.3 Projects CRUD.** Create/list/edit projects (rootPath, color, default model/permission/
   delivery, systemPrompt) → `projects/<slug>.md` + index; assign a task to a project.
   - Verify: create a project; assign a task; cwd resolves to rootPath.
-- [ ] **1.4 Spawn infra (warm session).** `openSession` (verified pattern: `claude -p --input-format
+- [x] **1.4 Spawn infra (warm session).** `openSession` (verified pattern: `claude -p --input-format
   stream-json --output-format stream-json --verbose --include-partial-messages --session-id <uuid>
   --permission-mode <mode>` in the task cwd). Parse stdout NDJSON → typed events → WS; track session
   in DB.
@@ -418,3 +418,24 @@ review and revert a memory entry.
   (warm stream-json session); has real side effects (a Claude Code process + cost). Per
   control-surfaces doc: `claude -p --input-format stream-json --output-format stream-json --verbose
   --include-partial-messages --session-id <uuid> --permission-mode <mode>` in the task cwd.
+- **2026-06-06 · 1.4 Spawn infra.** *User-authorized the real spawn (chose "Build + one real spawn").*
+  Shared: `Session` DTO, `SpawnSessionInput`, permissive `ClaudeEvent`. `server/src/spawn.ts`
+  `openSession` spawns the real `claude` in stream-json mode with the verified flags, parses NDJSON
+  stdout → typed events (tolerates non-JSON noise per the unversioned-schema gotcha), and returns
+  send/close/kill. A **`command` override** lets tests run a deterministic mock
+  (`server/src/testing/mock-claude.ts`, executed via `process.execPath` = bun) — no real model, no cost.
+  `server/src/sessions.ts` `SpawnManager`: inserts the session row, flips it to `running` on
+  `system/init`, accumulates `costUsd` from each `result`, broadcasts every event to WS, and keeps the
+  handle for follow-up (1.5)/close/kill; `claudePermissionMode` maps Cadence auto|manual|dangerous →
+  claude acceptEdits|default|bypassPermissions; `transcriptPathFor` computes the `~/.claude/projects`
+  path. API: `POST`/`GET /api/tasks/:id/sessions`, `GET /api/sessions`. The gateway owns one
+  `SpawnManager` and **kills live sessions on shutdown** (`index.ts` SIGINT/SIGTERM → `gateway.stop`).
+  *Verified:* `bun test` (35 pass) — mock claude: openSession parses `system/init`…`result`,
+  SpawnManager records the row, runs on init, records cost on result, done on close; `bun run build`
+  green. **Real spawn smoke** (one session, haiku, benign "say pong" prompt, isolated temp cwd, manual
+  perms→claude `default`): the live `claude` reached `status=running` and recorded a real
+  `costUsd≈0.011`; graceful shutdown terminated it (verified the smoke pid was gone, no orphan).
+  *Decisions:* mock-process testing for determinism + zero cost; the real binary exercised once for
+  end-to-end confidence. *Open item for 1.8:* the stored `transcriptPath` (cwd `/`→`-`) wasn't present
+  on disk during the brief smoke window — confirm claude's exact transcript-path encoding when building
+  the transcript reader. *Next:* 1.5 live transcript UI + follow-up.
