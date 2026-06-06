@@ -114,6 +114,49 @@ test("PATCH /api/tasks/:id moves a task across statuses (board drag)", async () 
   expect(after.status).toBe("ready");
 });
 
+test("PATCH rejects an illegal lifecycle transition (409) and leaves the task untouched", async () => {
+  const task = await createViaApi("Cannot reopen anywhere");
+  // park it: inbox → cancelled is legal
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "cancelled" }),
+  });
+  // cancelled → verifying is NOT legal (cancelled reopens only to inbox/ready)
+  const res = await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "verifying" }),
+  });
+  expect(res.status).toBe(409);
+  const body = (await res.json()) as { error: string; from: string; allowed: string[] };
+  expect(body.error).toBe("conflict");
+  expect(body.from).toBe("cancelled");
+  expect(body.allowed).toContain("ready");
+
+  // unchanged
+  const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
+  expect(after.status).toBe("cancelled");
+});
+
+test("GET /api/tasks/:id/timeline records status changes", async () => {
+  const task = await createViaApi("Track my history");
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "triaged" }),
+  });
+  const timeline = (await fetch(`${gw.url}/api/tasks/${task.id}/timeline`).then((r) => r.json())) as Array<{
+    type: string;
+    payload: { from: string | null; to: string };
+  }>;
+  const statusEvents = timeline.filter((e) => e.type === "status_change");
+  // capture (→ inbox) + the triaged transition
+  expect(statusEvents.length).toBeGreaterThanOrEqual(2);
+  expect(statusEvents[0]?.payload).toMatchObject({ from: null, to: "inbox" });
+  expect(statusEvents.at(-1)?.payload).toMatchObject({ from: "inbox", to: "triaged" });
+});
+
 test("project import: candidates list, enrich (mocked), and create selected", async () => {
   const candidates = await fetch(`${gw.url}/api/import/candidates`).then((r) => r.json());
   expect(Array.isArray(candidates)).toBe(true);

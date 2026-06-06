@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { tasks } from "./db/schema";
+import { recordEvent } from "./events";
 import { getProjectById } from "./projects";
 import { taskCostUsd } from "./sessions";
 import { paths } from "./store/paths";
@@ -29,6 +30,7 @@ export function createTask(db: Db, args: CreateTaskArgs): Task {
   reindexTask(db, id);
   const task = getTask(db, id);
   if (!task) throw new Error(`createTask: task ${id} missing after reindex`);
+  recordEvent(db, { taskId: id, type: "status_change", payload: { from: null, to: task.status } });
   return task;
 }
 
@@ -84,6 +86,7 @@ export function getTaskDetail(db: Db, id: string): TaskDetail | null {
  */
 export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDetail | null {
   if (!existsSync(paths.taskFile(id))) return null;
+  const before = getTask(db, id);
   const { data, body } = readTask(id);
 
   const next: TaskFrontmatter = { ...data, id };
@@ -103,7 +106,15 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
 
   writeTask(next, nextBody);
   reindexTask(db, id);
-  return getTaskDetail(db, id);
+  const detail = getTaskDetail(db, id);
+  if (detail && before && detail.status !== before.status) {
+    recordEvent(db, {
+      taskId: id,
+      type: "status_change",
+      payload: { from: before.status, to: detail.status },
+    });
+  }
+  return detail;
 }
 
 /**

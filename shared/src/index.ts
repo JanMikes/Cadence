@@ -386,6 +386,16 @@ export interface SubmitAnswersInput {
   answers: Record<string, string | string[]>;
 }
 
+/** A recorded event in a task's timeline (status changes, agent runs, …). */
+export interface TaskEvent {
+  id: number;
+  taskId: string | null;
+  sessionId: string | null;
+  type: string;
+  payload: unknown;
+  createdAt: number;
+}
+
 export interface AppendContextInput {
   text: string;
 }

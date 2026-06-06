@@ -21,6 +21,7 @@ import {
 import { statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
+import { StatusTimeline } from "./StatusTimeline";
 
 export function TaskDetail({
   taskId,
@@ -277,6 +278,8 @@ export function TaskDetail({
                 </div>
               </form>
             </section>
+
+            <StatusTimeline taskId={taskId} />
           </>
         ) : detail.isError ? (
           <p className="mt-6 text-sm text-red-400">Couldn’t load this task.</p>

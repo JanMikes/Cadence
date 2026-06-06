@@ -17,7 +17,9 @@ import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
+import { listTaskEvents } from "./events";
 import { importProjects, scanClaudeProjects } from "./import";
+import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
 import { notifyOnTransition } from "./notify";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { appendContext, readContext, readQa, readSettings, writeSettings } from "./store/store";
@@ -100,6 +102,18 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         return badRequest("title cannot be blank");
       }
       const before = getTask(ctx.db, id);
+      if (!before) return notFound(pathname);
+      // Enforce the lifecycle state machine (spec §6) on status changes.
+      if (typeof patch.status === "string" && patch.status !== before.status) {
+        if (!isValidStatus(patch.status)) return badRequest(`unknown status "${patch.status}"`);
+        if (!canTransition(before.status, patch.status)) {
+          return conflict(`cannot move from ${before.status} to ${patch.status}`, {
+            from: before.status,
+            to: patch.status,
+            allowed: allowedTransitions(before.status),
+          });
+        }
+      }
       const updated = updateTask(ctx.db, id, patch);
       if (!updated) return notFound(pathname);
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: updated.id });
@@ -124,6 +138,14 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       }
     }
     return Response.json(outcome);
+  }
+
+  const timelineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/timeline$/);
+  if (timelineMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = timelineMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json(listTaskEvents(ctx.db, taskId));
   }
 
   const qaMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/qa$/);
@@ -451,4 +473,7 @@ function notFound(path: string): Response {
 }
 function methodNotAllowed(): Response {
   return Response.json({ error: "method_not_allowed" }, { status: 405 });
+}
+function conflict(message: string, extra: Record<string, unknown> = {}): Response {
+  return Response.json({ error: "conflict", message, ...extra }, { status: 409 });
 }

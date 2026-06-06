@@ -17,6 +17,7 @@ import type {
   SuggestionAction,
   Task,
   TaskDetail,
+  TaskEvent,
   TranscriptEntry,
   UpdateProjectInput,
   UpdateTaskInput,
@@ -75,6 +76,10 @@ export function appendContext(id: string, text: string): Promise<ContextChannel>
 
 export function getQa(taskId: string): Promise<QAChannel> {
   return fetch(`/api/tasks/${taskId}/qa`).then(json<QAChannel>);
+}
+
+export function getTimeline(taskId: string): Promise<TaskEvent[]> {
+  return fetch(`/api/tasks/${taskId}/timeline`).then(json<TaskEvent[]>);
 }
 
 export function submitAnswers(
