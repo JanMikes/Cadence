@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 5 — Self-improving layer. **Phase 4 COMPLETE (7/7; 4.7 out of scope).**
-- **Last completed step:** 5.2 (Reflector/Librarian job — corrections → memory)
-- **Next step:** 5.3 (Self-monitoring analytics — provenance, verify pass-rate, rollovers)
+- **Last completed step:** 5.3 (Self-monitoring analytics)
+- **Next step:** 5.4 (Proactive proposals via notifications)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -311,7 +311,7 @@ mocked; real git used for fleet/worktree tests).
 ## Phase 5 — Self-improving layer
 - [x] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
 - [x] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
-- [ ] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
+- [x] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
 - [ ] 5.4 Proactive proposals via notifications.
 - [ ] 5.5 "What Cadence learned" feed (review / revert).
 
@@ -1012,3 +1012,12 @@ review and revert a memory entry.
   bail, full distill via mock with the signal reaching the prompt, prompt content) + a gateway E2E
   (create+override a suggestion → reflect → the learned note appears) — which caught that the resolve
   route is `/api/suggestions/:id/resolve`. Verify: 215 pass (×2 stable), build green, scan clean.
+- **2026-06-07 · 5.3 Self-monitoring analytics.** New `selfmonitor.ts` `computeSelfMonitor` — a pure
+  read aggregating the §8.1 learning signal: **suggestion provenance** (suggested/confirmed/edited/
+  overridden/dismissed) + an **acceptance rate** (confirmed/resolved), **verify pass-rate** (scans each
+  task's `verify.md`), **rollovers** (summed across every evening recap), and the current **stale-task**
+  count (via `runSweep`). `GET /api/self-monitor`; shared `SelfMonitor`. Web: a **Self-monitoring**
+  section in the Analytics view — accept rate, verify pass-rate, rollovers, stale + a provenance
+  breakdown. Tests: selfmonitor unit (provenance counts + acceptance rate, verify pass-rate from
+  verify.md, null/zero empty state) + gateway shape. Verify: 219 pass (×2 stable), build green, scan
+  clean. Phase 5: 5.4 (proactive proposals) + 5.5 ("what Cadence learned" feed) remain → then COMPLETE.
