@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 0.7 (design base) — Phase 0 done; acceptance check passed
-- **Next step:** 1.1 (task model + quick-capture → Inbox)
+- **Last completed step:** 1.1 (task model + quick-capture → Inbox)
+- **Next step:** 1.2 (Board + task detail + context channel)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -97,7 +97,7 @@ Then stop and report.
 Goal: capture → board → assign → manually spawn a Claude session in the task's repo → live stream →
 converse → terminal handoff. No autonomy yet.
 
-- [ ] **1.1 Task model + quick-capture → Inbox.** Persistent capture input → `~/.cadence/tasks/<id>/
+- [x] **1.1 Task model + quick-capture → Inbox.** Persistent capture input → `~/.cadence/tasks/<id>/
   task.md` + index; shows in Inbox.
   - Verify: capture a task; file + DB row exist; reload shows it.
 - [ ] **1.2 Board + task detail + context channel.** Kanban by status; detail (body, priority,
@@ -361,3 +361,21 @@ review and revert a memory entry.
    create/edit/delete with FTS in sync.
 5. ✅ `bun test` (18 pass) and `bun run build` both green.
 → Phase 0 accepted; continuing to Phase 1.
+
+- **2026-06-06 · 1.1 Task capture → Inbox.** Shared: `Task` DTO + `TASK_STATUSES`/`TaskStatus` +
+  `CreateTaskInput`. Server: `server/src/tasks.ts` (`createTask` writes `task.md` then reindexes
+  **synchronously** so the row exists immediately — the watcher is only a backstop; `listTasks`
+  newest-first; `getTask`) and `server/src/api.ts` `handleApi` (REST router: `/api/health`, GET/POST
+  `/api/tasks`, GET `/api/tasks/:id`, with 400/404/405). The gateway now delegates all `/api/*` to
+  `handleApi` and broadcasts `task:created` over WS. Web: TanStack Query provider (`main.tsx`), typed
+  `lib/api.ts`, and a `features/inbox/Inbox.tsx` (persistent quick-capture input + labeled Capture button
+  + list with loading/empty/error states); `App` renders the Inbox in the shell. *Decisions:* (a)
+  newest-first ordering uses `createdAt desc, rowid desc` — two tasks captured in the same millisecond
+  share the SQL `unixepoch()*1000` default, so the implicit `rowid` is the deterministic tiebreaker (no
+  UI jitter); caught by a flaky ordering test. (b) Capture reindexes synchronously rather than waiting
+  for the watcher poll, so the UI updates instantly. *Verified:* `bun test` (23 pass) — service writes
+  file+row+FTS, ordering/filter, POST/GET task API over the real gateway, empty-title→400, Inbox SSR
+  renders capture input+button; `bun run build` green; **E2E smoke**: POST a task → `task.md` on disk +
+  listed in Inbox; **restart the gateway → the task still shows** (persists via the DB file + the
+  watcher's startup reconcile from markdown) — satisfies "reload shows it". *Next:* 1.2 Board + task
+  detail + context channel.
