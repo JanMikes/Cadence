@@ -41,6 +41,8 @@ beforeAll(() => {
         json = { steps: [{ title: "Wire the endpoint", files: ["api.ts"] }, { title: "Add a test" }] };
       } else if (opts.role === "implementer") {
         json = { ok: true }; // the implementer only checks for errors, not JSON shape
+      } else if (opts.role === "verifier") {
+        json = { passed: true, checks: [{ name: "tests", passed: true }], criteria: [], issues: [] };
       } else {
         json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
       }
@@ -280,7 +282,7 @@ test("PLAY runs the Planner (mock) → an approvable plan that POST approve conf
   expect(approved.steps.length).toBe(2); // steps preserved through approval
 });
 
-test("execution slice: PLAY → plan → approve → Implementer runs in a worktree → verifying", async () => {
+test("execution slice: PLAY → plan → approve → Implementer → Verifier → review", async () => {
   // a real git repo + an isolated worktree base for this task
   const repo = mkdtempSync(join(tmpdir(), "cadence-gw-repo-"));
   const wtBase = mkdtempSync(join(tmpdir(), "cadence-gw-wt-"));
@@ -317,13 +319,19 @@ test("execution slice: PLAY → plan → approve → Implementer runs in a workt
     expect(plan.steps.length).toBe(2);
     await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
 
-    // the Implementer runs in the worktree (background) and advances → verifying
+    // Implementer (worktree) → Verifier (pass) run in the background → review
     let status = "";
-    for (let i = 0; i < 50 && status !== "verifying"; i++) {
+    for (let i = 0; i < 80 && status !== "review"; i++) {
       await new Promise((r) => setTimeout(r, 20));
       status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
     }
-    expect(status).toBe("verifying");
+    expect(status).toBe("review");
+
+    // the verify report is persisted + served
+    const verify = (await fetch(`${gw.url}/api/tasks/${task.id}/verify`).then((r) => r.json())) as {
+      passed: boolean;
+    };
+    expect(verify.passed).toBe(true);
   } finally {
     delete process.env.CADENCE_WORKTREES;
     rmSync(repo, { recursive: true, force: true });

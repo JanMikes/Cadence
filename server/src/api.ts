@@ -16,6 +16,7 @@ import {
 import { runDiscovery } from "./agents/discovery";
 import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
+import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
@@ -39,6 +40,7 @@ import {
   readPlan,
   readQa,
   readSettings,
+  readVerify,
   writeSettings,
 } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
@@ -175,6 +177,14 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return Response.json(readPlan(taskId));
   }
 
+  const verifyMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/verify$/);
+  if (verifyMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = verifyMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json(readVerify(taskId));
+  }
+
   const planApproveMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/plan\/approve$/);
   if (planApproveMatch) {
     if (method !== "POST") return methodNotAllowed();
@@ -187,13 +197,18 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     // Implementer runs in the isolated worktree; it bails gracefully if it can't.
     if (task.status === "implementing") {
       void runImplementer(ctx.db, taskId, ctx.runAgent)
-        .then((r) => {
-          if (r.ran) {
+        .then(async (r) => {
+          if (!r.ran) return;
+          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+          ctx.hub.broadcast({ type: "event", name: "task:implemented", payload: taskId });
+          // Implemented → Verifier (tests/build/lint + diverse reviewers) → pass/fail.
+          const v = await runVerifier(ctx.db, taskId, ctx.runAgent);
+          if (v.ran) {
             ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-            ctx.hub.broadcast({ type: "event", name: "task:implemented", payload: taskId });
+            ctx.hub.broadcast({ type: "event", name: "task:verified", payload: taskId });
           }
         })
-        .catch((err) => console.error(`[cadence] implementer failed for ${taskId}:`, err));
+        .catch((err) => console.error(`[cadence] execution failed for ${taskId}:`, err));
     }
     return Response.json(plan);
   }

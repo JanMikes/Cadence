@@ -481,3 +481,29 @@ export interface TaskPlan {
   approved: boolean;
   notes: string | null;
 }
+
+// --------------------------------------------------------------- verify report (§7.6)
+// The Verifier independently checks the implementation against the acceptance
+// criteria + runs tests/build/lint (with diverse reviewer subagents), → pass/fail.
+
+export interface VerifyCriterion {
+  criterion: string;
+  met: boolean;
+  evidence?: string;
+}
+export interface VerifyCheck {
+  name: string; // tests | build | lint | …
+  passed: boolean;
+  output?: string;
+}
+export interface VerifyIssue {
+  severity: string; // high | med | low
+  detail: string;
+  file?: string;
+}
+export interface VerifyReport {
+  passed: boolean;
+  criteria: VerifyCriterion[];
+  checks: VerifyCheck[];
+  issues: VerifyIssue[];
+}

@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import type { DailyDigest, QAChannel, TaskPlan } from "@cadence/shared";
+import type { DailyDigest, QAChannel, TaskPlan, VerifyReport } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, tasks } from "../db/schema";
@@ -140,6 +140,52 @@ export function writePlan(id: string, plan: TaskPlan): void {
     stringifyMarkdown(
       { steps: plan.steps, approved: plan.approved, notes: plan.notes },
       renderPlanBody(plan),
+    ),
+  );
+}
+
+// --------------------------------------------------- task verify report (verify.md)
+
+/** Read a task's Verifier report (verify.md frontmatter); null if none yet. */
+export function readVerify(id: string): VerifyReport | null {
+  const file = paths.taskVerify(id);
+  if (!existsSync(file)) return null;
+  const { data } = parseMarkdown<Partial<VerifyReport>>(readFileSync(file, "utf8"));
+  return {
+    passed: data.passed ?? false,
+    criteria: data.criteria ?? [],
+    checks: data.checks ?? [],
+    issues: data.issues ?? [],
+  };
+}
+
+function renderVerifyBody(r: VerifyReport): string {
+  const lines = [`# Verification — ${r.passed ? "✅ passed" : "❌ failed"}`, ""];
+  if (r.checks.length) {
+    lines.push("## Checks");
+    for (const c of r.checks) lines.push(`- ${c.passed ? "✅" : "❌"} ${c.name}`);
+    lines.push("");
+  }
+  if (r.criteria.length) {
+    lines.push("## Acceptance criteria");
+    for (const c of r.criteria) lines.push(`- [${c.met ? "x" : " "}] ${c.criterion}`);
+    lines.push("");
+  }
+  if (r.issues.length) {
+    lines.push("## Issues");
+    for (const i of r.issues) lines.push(`- **${i.severity}** ${i.detail}${i.file ? ` (${i.file})` : ""}`);
+  }
+  return lines.join("\n");
+}
+
+/** Write a task's Verifier report to verify.md (frontmatter + readable body). */
+export function writeVerify(id: string, report: VerifyReport): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(
+    paths.taskVerify(id),
+    stringifyMarkdown(
+      { passed: report.passed, criteria: report.criteria, checks: report.checks, issues: report.issues },
+      renderVerifyBody(report),
     ),
   );
 }
