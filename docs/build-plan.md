@@ -9,9 +9,14 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.9 (Daily Digest gamification + evening recap)
-- **Next step:** 2.10 (Autonomy settings: per-project enable/disable + UI toggle) — last Phase 2 step
+- **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
+  (10/10, accepted).**
+- **Last completed step:** 2.10 (Autonomy settings) — Phase 2 done + acceptance check passed
+- **Next step:** 3.1 (Ready state + PLAY button)
+- **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
+  inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
+  Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
+  default.
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -223,11 +228,28 @@ Then stop and report.
 - [x] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
 - [x] 2.8 Daily Digest: interactive morning plan → committed daily goal.
 - [x] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
-- [ ] 2.10 Autonomy settings (per-project enable/disable).
+- [x] 2.10 Autonomy settings (per-project enable/disable).
 
 **Acceptance check (manual):** capture a task → triage auto-fills project/priority/deadline; refine
 produces a spec + Q&A; answering Q&A (or adding context) advances it to Ready; an over-vague task
 lands in Needs-Feedback ("too vague"); the Daily Digest proposes a deadline-ordered plan you can edit.
+
+**Phase 2 — Acceptance check (run 2026-06-06):** verified via the deterministic suite (real `claude`
+mocked so the build never spends usage; autonomy ships OFF by default — a real-claude smoke is
+available on request).
+1. ✅ Capture (autonomy on) → Triage auto-fills priority/labels/restatement (+ project/deadline when
+   the model returns them); routes Inbox → Triaged (2.3 `triage.test`, gateway autonomy pipeline E2E).
+2. ✅ Refine → Discovery writes a spec + (with unknowns) the Questioner emits ranked Q&A cards
+   (2.4/2.5 unit + the gateway capture→needs_feedback(q1)→GET qa loop).
+3. ✅ Answering Q&A (or adding context) advances Needs-Feedback → Ready (2.5 `answerQuestions`,
+   gateway POST qa/answers → ready).
+4. ✅ Over-vague task → Needs-Feedback "too vague" (Triage/Discovery `insufficient` bail → needFromUser).
+5. ✅ Daily Digest proposes a deadline-ordered plan you can reorder/trim/commit; progress ring +
+   streak + evening recap (2.8/2.9 unit + gateway propose→commit→recap).
+6. ✅ Autonomy is gated: OFF by default; global toggle + per-project enable/disable resolve
+   project ?? global (2.10 `resolveProjectAutonomy`).
+7. ✅ `bun test` (131 pass) and `bun run build` both green; lifecycle (2.6) + urgency (2.7) enforced.
+→ Phase 2 accepted. Autonomy remains opt-in; agent runs are mock-tested.
 
 ## Phase 3 — Execution: PLAY → implement → verify → deliver
 - [ ] 3.1 Ready state + PLAY button.
@@ -730,3 +752,17 @@ review and revert a memory entry.
   Evening-recap button that surfaces the note + shipped list, and a "Recapped" state. Tests: digest
   unit (progress, note positivity, recap tally + streak build) + gateway recap (1/2 + note) +
   ProgressRing SSR. Verify: 129 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 2.10 Autonomy settings (per-project enable/disable + global toggle) — Phase 2
+  complete.** Added `projects.autonomy` (nullable boolean) via migration **0004** (clean ADD COLUMN,
+  applied to the real db), threaded through `ProjectFrontmatter` → `reindexProject` → the `Project`
+  DTO → `Create/UpdateProjectInput` (null = inherit global). `resolveProjectAutonomy(db, projectId)`
+  = project override ?? global switch (§9.1's project ?? global). **Design decision on the per-project
+  gate:** a task is unassigned at capture, so the *initial* triage rides the global switch; once Triage
+  assigns a project that has opted out, the capture pipeline stops *before* Discovery (task stays
+  Triaged for manual refine) — that's where per-project disable bites. An explicitly-on project also
+  opts in when global is off (resolver returns the project value when set). Web: a global Autonomy
+  toggle (`role=switch`, with a plain-language warning that it background-spawns Claude) in Settings,
+  and a tri-state Inherit/On/Off select on every project (create + edit). Tests: autonomy index
+  round-trip + `resolveProjectAutonomy` (null→global, off-overrides-on, on-overrides-off). Verify: 131
+  pass (×2 stable), build green, scan clean. **Ran the Phase 2 acceptance check — all items pass
+  (see above); Phase 2 accepted.** Next: Phase 3 (Execution) starting at 3.1.
