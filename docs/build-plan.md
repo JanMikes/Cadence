@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 4.2 (Dependencies graph + subtasks)
-- **Next step:** 4.3 (Cost & throughput analytics)
+- **Last completed step:** 4.3 (Cost & throughput analytics)
+- **Next step:** 4.4 (Extend search to transcripts (FTS over *.jsonl) + saved filters)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -282,7 +282,7 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 ## Phase 4 — Multi-repo, analytics, polish
 - [x] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
 - [x] 4.2 Dependencies graph + subtasks.
-- [ ] 4.3 Cost & throughput analytics.
+- [x] 4.3 Cost & throughput analytics.
 - [ ] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [ ] 4.5 Calendar / deadline view.
 - [ ] 4.6 Scheduled / background sweep mode.
@@ -921,3 +921,13 @@ review and revert a memory entry.
   that task (TaskDetail gained `onOpenTask`, wired from App). Tests: deps unit (edges both directions,
   cycle refusal, remove, isBlocked, subtasks) + gateway (add → cycle-409 → remove; parentTask →
   subtasks) + RelationsPanel SSR. Verify: 184 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 4.3 Cost & throughput analytics.** New `analytics.ts` `computeAnalytics` — a pure,
+  now-injected read over data Cadence *already* records (no new tracking): per-project
+  tasks/done/sessions/cost (session `costUsd`, with an **Unassigned** bucket for null projectId), a
+  task status breakdown, and **14-day completions/day** from the `status_change → done` timeline
+  events (parses the event payload, buckets by local date). `GET /api/analytics`; shared
+  `AnalyticsSummary`/`ProjectAnalytics`/`ThroughputDay`. Web: an **Analytics** view — total
+  cost/sessions/tasks/done stat cards, a CSS bar chart of the 14-day completions, a per-project table
+  (tasks/done/sessions/cost), and a status breakdown; added to the nav + ⌘K. Tests: analytics unit
+  (per-project aggregation incl. summed cost, throughput bucketing onto today, Unassigned bucket) +
+  gateway shape + Analytics SSR. Verify: 189 pass (×2 stable), build green, scan clean.
