@@ -100,6 +100,12 @@ export function readSpec(id: string): string {
   return existsSync(file) ? readFileSync(file, "utf8") : "";
 }
 
+/** Write a task's Discovery spec (spec.md) — the Discovery agent's output (§5). */
+export function writeSpec(id: string, content: string): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
+}
+
 /** Append a timestamped note to a task's context.md (append-only, spec §5). */
 export function appendContext(id: string, text: string, at: Date = new Date()): void {
   mkdirSync(paths.taskDir(id), { recursive: true });

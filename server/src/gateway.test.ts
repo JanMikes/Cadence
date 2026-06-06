@@ -134,7 +134,7 @@ test("project import: candidates list, enrich (mocked), and create selected", as
   expect(created[0]).toMatchObject({ rootPath: "/tmp/imported-repo", name: "Imported Repo" });
 });
 
-test("autonomy on: capturing a task triages it in the background", async () => {
+test("autonomy on: capturing runs the triage→discovery pipeline in the background", async () => {
   // default is off — a captured task stays in Inbox
   const offTask = await createViaApi("stays in inbox");
   await new Promise((r) => setTimeout(r, 120));
@@ -143,23 +143,23 @@ test("autonomy on: capturing a task triages it in the background", async () => {
       .status,
   ).toBe("inbox");
 
-  // turn autonomy on, then capture → triage runs (mock) and moves it to triaged
+  // turn autonomy on, then capture → triage → discovery (mock returns ok/no-unknowns → Ready)
   await fetch(`${gw.url}/api/settings`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ global: { autonomy: true } }),
   });
   try {
-    const task = await createViaApi("triage me automatically");
+    const task = await createViaApi("refine me automatically");
     let status = "";
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 80; i++) {
       status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as {
         status: string;
       }).status;
-      if (status === "triaged") break;
+      if (status === "ready") break;
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(status).toBe("triaged");
+    expect(status).toBe("ready"); // moved past Inbox through the autonomy pipeline
   } finally {
     await fetch(`${gw.url}/api/settings`, {
       method: "PATCH",
@@ -167,6 +167,16 @@ test("autonomy on: capturing a task triages it in the background", async () => {
       body: JSON.stringify({ global: { autonomy: false } }),
     });
   }
+});
+
+test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome", async () => {
+  const task = await createViaApi("Add a feature flag system");
+  const outcome = (await fetch(`${gw.url}/api/tasks/${task.id}/refine`, { method: "POST" }).then((r) =>
+    r.json(),
+  )) as { ran: boolean; status: string };
+  expect(outcome.ran).toBe(true);
+  // the shared mock returns ok/no-unknowns → Ready
+  expect(outcome.status).toBe("ready");
 });
 
 test("GET /api/search finds a task by body text (FTS)", async () => {

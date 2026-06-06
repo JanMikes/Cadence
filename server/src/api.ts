@@ -11,6 +11,7 @@ import {
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
+import { runDiscovery } from "./agents/discovery";
 import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
@@ -105,6 +106,23 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       return Response.json(updated);
     }
     return methodNotAllowed();
+  }
+
+  const refineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/refine$/);
+  if (refineMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = refineMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    const before = getTask(ctx.db, taskId);
+    const outcome = await runDiscovery(ctx.db, taskId, ctx.runAgent);
+    if (outcome.ran) {
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      if (outcome.status === "needs_feedback") {
+        const t = getTask(ctx.db, taskId);
+        if (t) notifyOnTransition(ctx.hub, before?.status, t);
+      }
+    }
+    return Response.json(outcome);
   }
 
   const taskSessionsMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/sessions$/);
@@ -364,17 +382,25 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
   if (!readSettings().global.autonomy) return;
   void runTriage(ctx.db, taskId, ctx.runAgent)
-    .then((outcome) => {
+    .then(async (outcome) => {
       if (!outcome.ran) return;
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       if (outcome.status === "needs_feedback") {
         const t = getTask(ctx.db, taskId);
         if (t) notifyOnTransition(ctx.hub, "inbox", t);
-      } else {
-        ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
+        return;
+      }
+      // Triaged → auto-continue into Discovery (the refinement loop).
+      ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
+      const disc = await runDiscovery(ctx.db, taskId, ctx.runAgent);
+      if (!disc.ran) return;
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      if (disc.status === "needs_feedback") {
+        const t = getTask(ctx.db, taskId);
+        if (t) notifyOnTransition(ctx.hub, "refining", t);
       }
     })
-    .catch((err) => console.error(`[cadence] triage failed for ${taskId}:`, err));
+    .catch((err) => console.error(`[cadence] autonomy pipeline failed for ${taskId}:`, err));
 }
 
 function badRequest(message: string): Response {
