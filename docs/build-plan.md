@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 2.10 (Autonomy settings) — Phase 2 done + acceptance check passed
-- **Next step:** 3.1 (Ready state + PLAY button)
+- **Last completed step:** 3.1 (Ready state + PLAY button)
+- **Next step:** 3.2 (Planner in plan mode → approvable plan)
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -252,7 +252,7 @@ available on request).
 → Phase 2 accepted. Autonomy remains opt-in; agent runs are mock-tested.
 
 ## Phase 3 — Execution: PLAY → implement → verify → deliver
-- [ ] 3.1 Ready state + PLAY button.
+- [x] 3.1 Ready state + PLAY button.
 - [ ] 3.2 Planner (plan mode) → approvable plan.
 - [ ] 3.3 git worktree per task provisioning + branch naming.
 - [ ] 3.4 Implementer in the worktree (permission mode per task).
@@ -766,3 +766,11 @@ review and revert a memory entry.
   round-trip + `resolveProjectAutonomy` (null→global, off-overrides-on, on-overrides-off). Verify: 131
   pass (×2 stable), build green, scan clean. **Ran the Phase 2 acceptance check — all items pass
   (see above); Phase 2 accepted.** Next: Phase 3 (Execution) starting at 3.1.
+- **2026-06-06 · 3.1 Ready state + PLAY button.** The human PLAY gate (§6) that opens execution.
+  `POST /api/tasks/:id/play` requires status `ready` (409 with the current status otherwise),
+  transitions ready → implementing (recorded on the 2.6 timeline via `updateTask`), and broadcasts a
+  `task:play` event — the hook the Planner → worktree → Implementer pipeline attaches to in 3.2+. For
+  now PLAY only opens the implementing phase; no agent runs yet (kept honest/incremental). Web: a
+  prominent green PLAY button in `TaskDetail`, shown only when the task is Ready, with a "Starting…"
+  pending state and an error hint; `playTask` in the api lib. Test: gateway play (409 before Ready →
+  200 → implementing → timeline entry). Verify: 132 pass (×2 stable), build green, scan clean.
