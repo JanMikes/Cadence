@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.3 (FTS5 search table over task text + sync triggers)
-- **Next step:** 0.4
+- **Last completed step:** 0.4 (storage layer: markdown ⇄ index, bootstrap + reindex)
+- **Next step:** 0.5
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -72,7 +72,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
 - [x] **0.3 FTS5 search table.** FTS5 virtual table over task text (transcripts later); sync hooks
   stubbed.
   - Verify: insert a task, FTS query returns it.
-- [ ] **0.4 Storage layer (markdown ⇄ index).** Bootstrap `~/.cadence/` (dirs + `settings.json`).
+- [x] **0.4 Storage layer (markdown ⇄ index).** Bootstrap `~/.cadence/` (dirs + `settings.json`).
   Helpers to read/write a task folder (`task.md` frontmatter+body, `context.md`, `qa.md`, …),
   project/fleet markdown, and reindex `task.md` → SQLite.
   - Verify: write a task folder, reindex; DB row matches frontmatter (round-trip test).
@@ -279,3 +279,20 @@ review and revert a memory entry.
   `bun test` (5 pass) — insert→search returns the task, update/delete keep FTS consistent; the real
   `~/.cadence/cadence.db` migrates to include `tasks_fts` + 3 triggers and a live insert/search/delete
   round-trips; `bun run build` green. *Next:* 0.4 storage layer (markdown ⇄ index).
+- **2026-06-06 · 0.4 Storage layer.** Added `gray-matter` (server dep). New `server/src/store/`:
+  `paths.ts` (the `~/.cadence/` layout, all call-time so `CADENCE_HOME` overrides apply), `markdown.ts`
+  (`parseMarkdown`/`stringifyMarkdown` — drops `undefined`, keeps `null`), `types.ts` (Task/Project/Fleet
+  frontmatter + GlobalSettings), `store.ts` (`bootstrap`, `readSettings`, typed read/write for
+  task/project/fleet markdown, and `reindexTask`/`reindexProject`/`reindexFleet`/`reindexAll`). Reindex
+  upserts via drizzle `onConflictDoUpdate` (fires the FTS triggers automatically). *Decisions:* (a) task
+  frontmatter references a project/fleet by **slug**, resolved to the FK id at reindex (null if not yet
+  indexed) — human-editable + spec's `project` key; `reindexAll` does projects+fleets before tasks so
+  links resolve. (b) Project/fleet **markdown BODY = the systemPrompt context layer** (spec §4/§7.1);
+  task body = description. (c) `deadline` stored as an ISO date string in markdown, converted to epoch ms
+  for the index (`toEpochMs` handles string|number|Date). (d) `labels`/ordered fleet `projects` stay in
+  markdown only (not indexed columns). *Gotcha fixed:* `parseMarkdown` originally constrained `T extends
+  Record<string,unknown>`, which TS interfaces don't satisfy (no implicit index signature) — relaxed to
+  bare `<T>`. *Verified:* `bun test` (8 pass) — bootstrap tree + default settings; write task folder →
+  reindex → DB row matches frontmatter (incl. slug→id, deadline→ms), labels round-trip in markdown, FTS
+  finds it, re-reindex reflects edits; real `~/.cadence` bootstrap creates all dirs + settings.json;
+  `bun run build` green. *Next:* 0.5 file watcher (`~/.cadence/**` → reindex changed task.md).
