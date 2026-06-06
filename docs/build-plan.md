@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 5 — Self-improving layer. **Phase 4 COMPLETE (7/7; 4.7 out of scope).**
-- **Last completed step:** 5.1 (Memory layer composed into context)
-- **Next step:** 5.2 (Reflector/Librarian job — corrections + outcomes → memory)
+- **Last completed step:** 5.2 (Reflector/Librarian job — corrections → memory)
+- **Next step:** 5.3 (Self-monitoring analytics — provenance, verify pass-rate, rollovers)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -310,7 +310,7 @@ mocked; real git used for fleet/worktree tests).
 
 ## Phase 5 — Self-improving layer
 - [x] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
-- [ ] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
+- [x] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
 - [ ] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
 - [ ] 5.4 Proactive proposals via notifications.
 - [ ] 5.5 "What Cadence learned" feed (review / revert).
@@ -1001,3 +1001,14 @@ review and revert a memory entry.
   memory files + add new ones (per-file textarea, save-when-changed) in the nav + ⌘K. Tests: memory
   unit (safeName, global round-trip + MEMORY-first, per-project, **composeContext folds both in**) +
   gateway PUT/GET + Memory SSR. Verify: 209 pass (×2 stable), build green, scan clean.
+- **2026-06-07 · 5.2 Reflector/Librarian job — corrections → memory.** New `agents/reflector.ts`:
+  `gatherSignals` pulls resolved suggestions I edited/overrode/dismissed/confirmed (the §10.2 provenance
+  = my highest-signal corrections); `buildReflectorPrompt` asks a one-shot **Haiku** for **durable,
+  general** lessons only (empty list if nothing sticks); `applyReflection` appends each lesson to the
+  global `learned` memory or a named project's memory; `runReflector` bails when there are no signals.
+  Added the `reflector` role → Haiku, and `appendMemoryNote`/`appendProjectMemoryNote` (bullet appends).
+  API: `POST /api/reflect`. Web: a "Reflect now" button in the Memory view (distills + refreshes,
+  reports "Learned N"). Tests: reflector unit (corrections-only gather, apply→global memory, no-signal
+  bail, full distill via mock with the signal reaching the prompt, prompt content) + a gateway E2E
+  (create+override a suggestion → reflect → the learned note appears) — which caught that the resolve
+  route is `/api/suggestions/:id/resolve`. Verify: 215 pass (×2 stable), build green, scan clean.
