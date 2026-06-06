@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# Cadence pre-commit secret + client-identifier guard.
+#
+# Blocks any staged change that looks like a credential, or that contains a
+# confidential client/project identifier. The repo is PUBLIC-SAFE: generic
+# application code + docs only. Runtime/confidential data lives in ~/.cadence/,
+# secrets live in the OS keychain — never in the repo. See SECURITY.md.
+#
+# Activate (once per clone):  git config core.hooksPath .githooks
+#
+# Bypass a single known-safe line (use sparingly, NEVER for a real secret) by
+# appending this marker to that line:  cadence-allow-secret
+#
+set -u
+
+ALLOW_MARKER='cadence-allow-secret'
+
+# Optional machine-local denylist of confidential client/project identifiers,
+# one term per line (blank lines and #comments ignored). Kept OUT of the repo on
+# purpose, so real names never become public. Default location under ~/.cadence.
+denylist_file="${CADENCE_COMMIT_DENYLIST:-$HOME/.cadence/commit-denylist.txt}"
+
+# High-confidence, public-safe secret patterns (extended regex, case-insensitive).
+patterns=(
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----'
+  'AKIA[0-9A-Z]{16}'
+  'gh[pousr]_[A-Za-z0-9]{20,}'
+  'xox[baprs]-[A-Za-z0-9-]{10,}'
+  '(secret|token|password|passwd|pwd|api[_-]?key|access[_-]?key|auth)["'"'"' ]*[:=][ ]*["'"'"']?[A-Za-z0-9_/+.-]{8,}'
+  'sk-[A-Za-z0-9_-]{8,}'
+  'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'
+)
+
+# Emit "<file>\t<added-line>" for every newly added line in the staged diff.
+staged_added() {
+  git diff --cached --no-color -U0 --diff-filter=ACM | awk '
+    /^\+\+\+ /            { file = substr($0, 7); next }
+    /^\+/ && !/^\+\+\+ /  { print file "\t" substr($0, 2) }
+  '
+}
+
+violations=0
+report() { echo "  ✖ $1: ${2:0:80}"; violations=$((violations + 1)); }
+
+while IFS=$'\t' read -r file line; do
+  case "$line" in *"$ALLOW_MARKER"*) continue ;; esac
+
+  for p in "${patterns[@]}"; do
+    if printf '%s' "$line" | grep -Eiq -- "$p"; then
+      report "possible secret in $file" "$line"
+      break
+    fi
+  done
+
+  if [ -f "$denylist_file" ]; then
+    while IFS= read -r term; do
+      [ -z "$term" ] && continue
+      case "$term" in \#*) continue ;; esac
+      if printf '%s' "$line" | grep -Fiq -- "$term"; then
+        report "confidential identifier in $file" "$line"
+        break
+      fi
+    done < "$denylist_file"
+  fi
+done < <(staged_added)
+
+if [ "$violations" -gt 0 ]; then
+  echo ""
+  echo "✖ Commit blocked by the Cadence secret guard ($violations match(es))."
+  echo "  • Move secrets to the OS keychain; keep runtime/confidential data in ~/.cadence/."
+  echo "  • False positive? Append the marker '$ALLOW_MARKER' to the offending line."
+  echo "  • See SECURITY.md for the full data-boundary policy."
+  exit 1
+fi
+
+exit 0
