@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 5 — Self-improving layer. **Phase 4 COMPLETE (7/7; 4.7 out of scope).**
-- **Last completed step:** 5.3 (Self-monitoring analytics)
-- **Next step:** 5.4 (Proactive proposals via notifications)
+- **Last completed step:** 5.4 (Proactive proposals via notifications)
+- **Next step:** 5.5 ("What Cadence learned" feed — review / revert) — **LAST STEP before BUILD COMPLETE**
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -312,7 +312,7 @@ mocked; real git used for fleet/worktree tests).
 - [x] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
 - [x] 5.2 Reflector/Librarian job (corrections + outcomes → memory).
 - [x] 5.3 Self-monitoring analytics (provenance, verify pass-rate, rollovers).
-- [ ] 5.4 Proactive proposals via notifications.
+- [x] 5.4 Proactive proposals via notifications.
 - [ ] 5.5 "What Cadence learned" feed (review / revert).
 
 **Acceptance check (manual):** correcting a suggestion updates memory; a later run reflects the
@@ -1021,3 +1021,15 @@ review and revert a memory entry.
   breakdown. Tests: selfmonitor unit (provenance counts + acceptance rate, verify pass-rate from
   verify.md, null/zero empty state) + gateway shape. Verify: 219 pass (×2 stable), build green, scan
   clean. Phase 5: 5.4 (proactive proposals) + 5.5 ("what Cadence learned" feed) remain → then COMPLETE.
+- **2026-06-07 · 5.4 Proactive proposals via notifications.** New `proposals.ts` `buildProposals`
+  distills the sweep + self-monitor into occasional, propose-don't-impose nudges — deadlines at risk,
+  stale tasks (review/archive?), and "N corrections — Reflect?"; each proposal id embeds its count so a
+  static situation doesn't re-nag but a changed one re-proposes. `emitProposals` broadcasts each *new*
+  proposal as a `notify` event (deduped via a Set). `startSweep` gained an `onTick` hook (no
+  sweep→proposals import cycle); the gateway wires it to `emitProposals` with a persistent emitted-set,
+  so proposals arrive as live notifications when the background sweep runs. `GET /api/proposals` serves
+  them on demand. Web: a `ProposalsPanel` atop Notifications lists proposals (the "reflect" one is
+  actionable → Reflect now) and renders nothing when none. Tests: proposals unit (build from each
+  signal, empty-when-quiet, emit-once dedup) + gateway shape; fixed the NotificationsView SSR test to
+  wrap a QueryClient (it now hosts ProposalsPanel). Verify: 224 pass (×2 stable), build green, scan
+  clean. **Only 5.5 ("what Cadence learned" feed) remains → then BUILD COMPLETE.**
