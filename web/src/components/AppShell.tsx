@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bell,
   Boxes,
+  CalendarDays,
   FolderGit2,
   Inbox,
   LayoutGrid,
@@ -16,6 +17,7 @@ export type ViewId =
   | "today"
   | "inbox"
   | "board"
+  | "calendar"
   | "projects"
   | "fleets"
   | "sessions"
@@ -34,6 +36,7 @@ const NAV: NavItem[] = [
   { id: "today", label: "Today", icon: Sparkles },
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "board", label: "Board", icon: LayoutGrid },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "projects", label: "Projects", icon: FolderGit2 },
   { id: "fleets", label: "Fleets", icon: Boxes },
   { id: "sessions", label: "Sessions", icon: Activity },

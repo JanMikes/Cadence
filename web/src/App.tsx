@@ -4,6 +4,7 @@ import { AppShell, type ViewId } from "./components/AppShell";
 import { Analytics } from "./features/analytics/Analytics";
 import { ApprovalsBar } from "./features/approvals/ApprovalsBar";
 import { Board } from "./features/board/Board";
+import { Calendar } from "./features/calendar/Calendar";
 import { Today } from "./features/digest/Today";
 import { Fleets } from "./features/fleets/Fleets";
 import { Inbox } from "./features/inbox/Inbox";
@@ -72,6 +73,7 @@ export function App() {
         {view === "today" ? <Today onOpen={setSelectedId} /> : null}
         {view === "inbox" ? <Inbox onOpen={setSelectedId} /> : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
+        {view === "calendar" ? <Calendar onOpenTask={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}
         {view === "fleets" ? <Fleets /> : null}
         {view === "sessions" ? <SessionsView /> : null}
