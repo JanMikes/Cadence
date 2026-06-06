@@ -8,6 +8,7 @@ import { SessionPanel } from "./features/session/SessionPanel";
 import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { TaskDetail } from "./features/task/TaskDetail";
+import { UsageBar } from "./features/usage/UsageBar";
 import { cn } from "./lib/utils";
 
 type Conn = "connecting" | "online" | "offline";
@@ -50,6 +51,7 @@ export function App() {
           setView(v);
           setSelectedId(null);
         }}
+        topBar={<UsageBar />}
         status={
           <span className="inline-flex items-center gap-1.5">
             <span className={cn("size-2 rounded-full", dot)} />

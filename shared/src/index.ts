@@ -83,6 +83,8 @@ export interface TaskDetail extends Task {
   labels: string[];
   /** Effective permission mode after task ?? project ?? global resolution (§9.1). */
   resolvedPermissionMode: string;
+  /** Sum of this task's session costs (effort signal, not a budget). */
+  costUsd: number;
 }
 
 export interface UpdateTaskInput {
@@ -203,6 +205,23 @@ export const TERMINAL_APPS = ["Terminal", "iTerm"] as const;
 export interface OpenTerminalResult {
   ok: boolean;
   command: string;
+}
+
+/** Ambient usage summary derived from ~/.claude/stats-cache.json. */
+export interface UsageStats {
+  totalSessions: number;
+  totalMessages: number;
+  lastComputedDate: string | null;
+  recentDay: { date: string; messages: number; sessions: number; tokens: number } | null;
+  /** Sum over the most recent 7 days present in the data. */
+  week: { messages: number; sessions: number; tokens: number };
+  topModels: Array<{ model: string; tokens: number }>;
+}
+
+export interface UsageResponse {
+  stats: UsageStats;
+  /** Latest rate_limit_info captured from a live session (5h/weekly windows), if any. */
+  rateLimit: unknown | null;
 }
 
 /** A discovered project directory (from ~/.claude/projects) proposed for import. */

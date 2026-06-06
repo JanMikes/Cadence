@@ -25,9 +25,11 @@ export interface AppShellProps {
   onNavigate: (view: ViewId) => void;
   /** Small status line shown at the bottom of the nav (e.g. gateway health). */
   status?: ReactNode;
+  /** Ambient bar pinned above the scrolling content (e.g. the usage bar). */
+  topBar?: ReactNode;
 }
 
-export function AppShell({ children, activeView, onNavigate, status }: AppShellProps) {
+export function AppShell({ children, activeView, onNavigate, status, topBar }: AppShellProps) {
   return (
     <div className="flex h-full bg-background text-foreground">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card/40">
@@ -66,7 +68,10 @@ export function AppShell({ children, activeView, onNavigate, status }: AppShellP
         ) : null}
       </aside>
 
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {topBar}
+        <div className="flex-1 overflow-auto">{children}</div>
+      </main>
     </div>
   );
 }

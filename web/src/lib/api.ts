@@ -16,6 +16,7 @@ import type {
   TranscriptEntry,
   UpdateProjectInput,
   UpdateTaskInput,
+  UsageResponse,
 } from "@cadence/shared";
 
 /** Mirror of the server's resume command (control surfaces §5) for the copy button. */
@@ -126,6 +127,10 @@ export function getSessions(): Promise<Session[]> {
 
 export function getLiveSessions(): Promise<LiveSession[]> {
   return fetch("/api/live-sessions").then(json<LiveSession[]>);
+}
+
+export function getUsage(): Promise<UsageResponse> {
+  return fetch("/api/usage").then(json<UsageResponse>);
 }
 
 export function getTranscript(sessionId: string): Promise<TranscriptEntry[]> {

@@ -182,6 +182,11 @@ export function TaskDetail({
               <dt className="text-muted-foreground">Estimate</dt>
               <dd>{task.estimate != null ? `${task.estimate} min` : "—"}</dd>
 
+              <dt className="text-muted-foreground">Cost</dt>
+              <dd title="Sum of session costs — an effort signal, not a budget">
+                ${task.costUsd.toFixed(4)}
+              </dd>
+
               <dt className="text-muted-foreground">Labels</dt>
               <dd className="flex flex-wrap gap-1">
                 {task.labels.length ? (

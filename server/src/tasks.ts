@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { tasks } from "./db/schema";
 import { getProjectById } from "./projects";
+import { taskCostUsd } from "./sessions";
 import { paths } from "./store/paths";
 import { readSettings, readTask, reindexTask, writeTask } from "./store/store";
 import type { TaskFrontmatter } from "./store/types";
@@ -68,7 +69,12 @@ export function getTaskDetail(db: Db, id: string): TaskDetail | null {
   } catch {
     /* markdown missing — index-only row */
   }
-  return { ...task, labels, resolvedPermissionMode: resolvePermissionMode(db, id) };
+  return {
+    ...task,
+    labels,
+    resolvedPermissionMode: resolvePermissionMode(db, id),
+    costUsd: taskCostUsd(db, id),
+  };
 }
 
 /**

@@ -17,6 +17,7 @@ import { appendContext, readContext, readSettings, writeSettings } from "./store
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
 import { buildResumeCommand } from "./terminal";
 import { readLiveSessions, readTranscript } from "./transcripts";
+import { readUsageStats } from "./usage";
 import {
   createTask,
   getTask,
@@ -137,6 +138,10 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/live-sessions" && method === "GET") {
     return Response.json(readLiveSessions());
+  }
+
+  if (pathname === "/api/usage" && method === "GET") {
+    return Response.json({ stats: readUsageStats(), rateLimit: ctx.spawn.latestRateLimit() });
   }
 
   if (pathname === "/api/import/candidates" && method === "GET") {

@@ -38,6 +38,11 @@ export function listTaskSessions(db: Db, taskId: string): Session[] {
     .all();
 }
 
+/** Sum of a task's session costs (an effort signal, not a budget — §10). */
+export function taskCostUsd(db: Db, taskId: string): number {
+  return listTaskSessions(db, taskId).reduce((sum, s) => sum + (s.costUsd ?? 0), 0);
+}
+
 export interface SpawnArgs {
   cwd: string;
   taskId?: string | null;
@@ -58,11 +63,17 @@ export interface SpawnArgs {
  */
 export class SpawnManager {
   private readonly handles = new Map<string, SessionHandle>();
+  private latestRateLimitInfo: unknown = null;
 
   constructor(
     private readonly db: Db,
     private readonly hub: WsHub,
   ) {}
+
+  /** The most recent rate_limit_info seen from a live session (5h/weekly windows). */
+  latestRateLimit(): unknown {
+    return this.latestRateLimitInfo;
+  }
 
   spawn(args: SpawnArgs): Session {
     const id = crypto.randomUUID();
@@ -101,6 +112,9 @@ export class SpawnManager {
         if (event.type === "result" && typeof event.total_cost_usd === "number") {
           cost += event.total_cost_usd;
           this.update(id, { costUsd: cost });
+        }
+        if (event.type === "rate_limit_event" || event.rate_limit_info != null) {
+          this.latestRateLimitInfo = event.rate_limit_info ?? event;
         }
         this.hub.broadcast({ type: "event", name: "session:event", payload: { sessionId: id, event } });
       },
