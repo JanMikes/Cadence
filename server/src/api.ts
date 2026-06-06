@@ -1,11 +1,14 @@
 import {
   APP_NAME,
+  type AppendContextInput,
   type CreateTaskInput,
   type HealthStatus,
   SCHEMA_VERSION,
+  type UpdateTaskInput,
 } from "@cadence/shared";
 import type { Db } from "./db/client";
-import { createTask, getTask, listTasks } from "./tasks";
+import { appendContext, readContext } from "./store/store";
+import { createTask, getTaskDetail, listTasks, updateTask } from "./tasks";
 import type { WsHub } from "./ws";
 
 export interface ApiContext {
@@ -49,8 +52,46 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (taskMatch) {
     const id = taskMatch[1] as string;
     if (method === "GET") {
-      const task = getTask(ctx.db, id);
-      return task ? Response.json(task) : notFound(pathname);
+      const detail = getTaskDetail(ctx.db, id);
+      return detail ? Response.json(detail) : notFound(pathname);
+    }
+    if (method === "PATCH") {
+      let patch: UpdateTaskInput;
+      try {
+        patch = (await req.json()) as UpdateTaskInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (typeof patch?.title === "string" && !patch.title.trim()) {
+        return badRequest("title cannot be blank");
+      }
+      const updated = updateTask(ctx.db, id, patch);
+      if (!updated) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: updated.id });
+      return Response.json(updated);
+    }
+    return methodNotAllowed();
+  }
+
+  const ctxMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/context$/);
+  if (ctxMatch) {
+    const id = ctxMatch[1] as string;
+    if (!getTaskDetail(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") {
+      return Response.json({ content: readContext(id) });
+    }
+    if (method === "POST") {
+      let input: AppendContextInput;
+      try {
+        input = (await req.json()) as AppendContextInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const text = typeof input?.text === "string" ? input.text.trim() : "";
+      if (!text) return badRequest("text is required");
+      appendContext(id, text);
+      ctx.hub.broadcast({ type: "event", name: "task:context", payload: id });
+      return Response.json({ content: readContext(id) }, { status: 201 });
     }
     return methodNotAllowed();
   }

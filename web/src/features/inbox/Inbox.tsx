@@ -5,7 +5,7 @@ import { type FormEvent, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { createTask, getTasks } from "../../lib/api";
 
-export function Inbox() {
+export function Inbox({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
 
@@ -64,19 +64,25 @@ export function Inbox() {
             No tasks yet — capture your first above.
           </li>
         ) : null}
-        {tasks.data?.map((task) => <TaskRow key={task.id} task={task} />)}
+        {tasks.data?.map((task) => <TaskRow key={task.id} task={task} onOpen={onOpen} />)}
       </ul>
     </div>
   );
 }
 
-function TaskRow({ task }: { task: Task }) {
+function TaskRow({ task, onOpen }: { task: Task; onOpen: (id: string) => void }) {
   return (
-    <li className="rounded-md border border-border bg-card/50 px-4 py-3">
-      <div className="text-sm font-medium">{task.title}</div>
-      {task.body ? (
-        <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{task.body}</div>
-      ) : null}
+    <li>
+      <button
+        type="button"
+        onClick={() => onOpen(task.id)}
+        className="w-full rounded-md border border-border bg-card/50 px-4 py-3 text-left transition-colors hover:border-primary/50"
+      >
+        <div className="text-sm font-medium">{task.title}</div>
+        {task.body ? (
+          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{task.body}</div>
+        ) : null}
+      </button>
     </li>
   );
 }

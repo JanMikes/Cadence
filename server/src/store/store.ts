@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, tasks } from "../db/schema";
@@ -71,6 +78,21 @@ export function writeFleet(fm: FleetFrontmatter, systemPrompt = ""): void {
 
 export function readFleet(slug: string) {
   return parseMarkdown<FleetFrontmatter>(readFileSync(paths.fleetFile(slug), "utf8"));
+}
+
+// ------------------------------------------------- task context channel (append-only)
+
+/** Read a task's free-form context channel (context.md); "" if none yet. */
+export function readContext(id: string): string {
+  const file = paths.taskContext(id);
+  return existsSync(file) ? readFileSync(file, "utf8") : "";
+}
+
+/** Append a timestamped note to a task's context.md (append-only, spec §5). */
+export function appendContext(id: string, text: string, at: Date = new Date()): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  const entry = `\n## ${at.toISOString()}\n\n${text.trim()}\n`;
+  appendFileSync(paths.taskContext(id), entry);
 }
 
 // ---------------------------------------------------------------- reindex (md → DB)

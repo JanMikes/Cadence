@@ -70,6 +70,48 @@ test("POST /api/tasks rejects an empty title", async () => {
   expect(res.status).toBe(400);
 });
 
+async function createViaApi(title: string): Promise<Task> {
+  return fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  }).then((r) => r.json() as Promise<Task>);
+}
+
+test("PATCH /api/tasks/:id moves a task across statuses (board drag)", async () => {
+  const task = await createViaApi("Drag me");
+  const res = await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "ready", priority: "high" }),
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ status: "ready", priority: "high" });
+
+  // persisted: a fresh GET reflects it
+  const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
+  expect(after.status).toBe("ready");
+});
+
+test("task context channel: POST appends, GET reads", async () => {
+  const task = await createViaApi("With context");
+  expect(await fetch(`${gw.url}/api/tasks/${task.id}/context`).then((r) => r.json())).toMatchObject({
+    content: "",
+  });
+
+  const post = await fetch(`${gw.url}/api/tasks/${task.id}/context`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "a fresh context note" }),
+  });
+  expect(post.status).toBe(201);
+
+  const ctx = (await fetch(`${gw.url}/api/tasks/${task.id}/context`).then((r) => r.json())) as {
+    content: string;
+  };
+  expect(ctx.content).toContain("a fresh context note");
+});
+
 test("serves the built web app with SPA fallback", async () => {
   const root = await fetch(`${gw.url}/`).then((r) => r.text());
   expect(root).toContain("cadence-spa");

@@ -76,3 +76,28 @@ export interface CreateTaskInput {
   title: string;
   body?: string;
 }
+
+/** Task plus the list-valued fields that live in markdown (not the index). */
+export interface TaskDetail extends Task {
+  labels: string[];
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  priority?: string | null;
+  deadline?: number | null; // epoch ms
+  estimate?: number | null; // minutes
+  labels?: string[];
+  deliveryMode?: string | null;
+}
+
+/** The always-on free-form context channel (context.md), append-only. */
+export interface ContextChannel {
+  content: string;
+}
+
+export interface AppendContextInput {
+  text: string;
+}

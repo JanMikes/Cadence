@@ -2,11 +2,12 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { migrateDb, openDb, type Db } from "./db/client";
 import { searchTasks } from "./db/search";
 import { paths } from "./store/paths";
-import { bootstrap } from "./store/store";
-import { createTask, getTask, listTasks } from "./tasks";
+import { appendContext, bootstrap, readContext } from "./store/store";
+import { createTask, getTask, getTaskDetail, listTasks, updateTask } from "./tasks";
 
 let db: Db;
 let home: string;
@@ -42,4 +43,43 @@ test("listTasks returns captured tasks newest-first and filters by status", () =
   expect(inbox.map((t) => t.id)).toEqual([b.id, a.id]); // newest first
   expect(listTasks(db, { status: "done" })).toHaveLength(0);
   expect(listTasks(db)).toHaveLength(2);
+});
+
+test("updateTask persists status + fields to markdown and the index", () => {
+  const task = createTask(db, { title: "Move me" });
+
+  const updated = updateTask(db, task.id, {
+    status: "ready",
+    priority: "high",
+    estimate: 45,
+    labels: ["infra", "backend"],
+    deadline: Date.parse("2026-08-01"),
+  });
+  expect(updated?.status).toBe("ready");
+  expect(updated?.labels).toEqual(["infra", "backend"]);
+
+  // index reflects the change
+  expect(getTask(db, task.id)?.status).toBe("ready");
+  expect(getTask(db, task.id)?.deadline).toBe(Date.parse("2026-08-01"));
+  // markdown is the source of truth (labels live there)
+  expect(getTaskDetail(db, task.id)?.labels).toEqual(["infra", "backend"]);
+  // status survives a re-read of the file
+  const md = readFileSync(paths.taskFile(task.id), "utf8");
+  expect(md).toContain("status: ready");
+
+  expect(updateTask(db, "no-such-id", { status: "done" })).toBeNull();
+});
+
+test("context channel appends notes to context.md (append-only)", () => {
+  const task = createTask(db, { title: "Has context" });
+  expect(readContext(task.id)).toBe("");
+
+  appendContext(task.id, "first note", new Date("2026-06-06T10:00:00Z"));
+  appendContext(task.id, "second note", new Date("2026-06-06T11:00:00Z"));
+
+  const content = readContext(task.id);
+  expect(content).toContain("first note");
+  expect(content).toContain("second note");
+  expect(content.indexOf("first note")).toBeLessThan(content.indexOf("second note")); // append order
+  expect(content).toContain("2026-06-06T10:00:00"); // timestamped
 });

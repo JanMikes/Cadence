@@ -7,7 +7,7 @@ test("Inbox renders a quick-capture input and a labeled Capture button", () => {
   const qc = new QueryClient();
   const html = renderToStaticMarkup(
     <QueryClientProvider client={qc}>
-      <Inbox />
+      <Inbox onOpen={() => {}} />
     </QueryClientProvider>,
   );
   expect(html).toContain("Inbox");

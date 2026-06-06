@@ -1,12 +1,16 @@
 import type { HealthStatus } from "@cadence/shared";
 import { useEffect, useState } from "react";
-import { AppShell } from "./components/AppShell";
+import { AppShell, type ViewId } from "./components/AppShell";
+import { Board } from "./features/board/Board";
 import { Inbox } from "./features/inbox/Inbox";
+import { TaskDetail } from "./features/task/TaskDetail";
 import { cn } from "./lib/utils";
 
 type Conn = "connecting" | "online" | "offline";
 
 export function App() {
+  const [view, setView] = useState<ViewId>("inbox");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
 
@@ -34,15 +38,30 @@ export function App() {
         : "Connecting…";
 
   return (
-    <AppShell
-      status={
-        <span className="inline-flex items-center gap-1.5">
-          <span className={cn("size-2 rounded-full", dot)} />
-          {statusText}
-        </span>
-      }
-    >
-      <Inbox />
-    </AppShell>
+    <>
+      <AppShell
+        activeView={view}
+        onNavigate={(v) => {
+          setView(v);
+          setSelectedId(null);
+        }}
+        status={
+          <span className="inline-flex items-center gap-1.5">
+            <span className={cn("size-2 rounded-full", dot)} />
+            {statusText}
+          </span>
+        }
+      >
+        {view === "inbox" ? <Inbox onOpen={setSelectedId} /> : null}
+        {view === "board" ? <Board onOpen={setSelectedId} /> : null}
+        {view === "settings" ? (
+          <div className="p-8 text-sm text-muted-foreground">Settings — coming soon.</div>
+        ) : null}
+      </AppShell>
+
+      {selectedId ? (
+        <TaskDetail taskId={selectedId} onClose={() => setSelectedId(null)} />
+      ) : null}
+    </>
   );
 }

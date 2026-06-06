@@ -13,7 +13,7 @@ test("LabeledIconButton renders an icon AND a text label (never icon-only)", () 
 
 test("AppShell renders the themed shell with a labeled left-nav + content", () => {
   const html = renderToStaticMarkup(
-    <AppShell status="ok">
+    <AppShell status="ok" activeView="inbox" onNavigate={() => {}}>
       <div>main-content-here</div>
     </AppShell>,
   );
