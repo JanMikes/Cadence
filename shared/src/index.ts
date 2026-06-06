@@ -248,6 +248,14 @@ export interface ClaudeEvent {
   [key: string]: unknown;
 }
 
+/** A reusable subagent definition injected via `claude --agents <json>` (spec §7.3). */
+export interface SubagentDef {
+  description: string;
+  prompt: string; // the subagent's system prompt
+  tools?: string[]; // allowed tools (read-only for explorers/reviewers)
+  model?: string;
+}
+
 /** Result of a one-shot agent run (`claude -p --output-format json`) — Phase 2. */
 export interface AgentResult {
   /** The final result text. */
