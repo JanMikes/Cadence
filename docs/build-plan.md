@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.1 (repo scaffold: Bun workspaces, strict TS, dev/build/test, configurable ports)
-- **Next step:** 0.2
+- **Last completed step:** 0.2 (SQLite + Drizzle: 7-table index schema + migrations)
+- **Next step:** 0.3
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -66,7 +66,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
 - [x] **0.1 Repo scaffold.** Root Bun + strict TypeScript. Folders `server/` (gateway), `web/`
   (Vite+React+TS), `shared/` (types). Root scripts `dev`, `build`, `test`.
   - Verify: `bun install` clean; `bun run dev` boots gateway + Vite; a placeholder page loads.
-- [ ] **0.2 SQLite + Drizzle.** drizzle + drizzle-kit. Index schema: `projects`, `fleets`, `tasks`,
+- [x] **0.2 SQLite + Drizzle.** drizzle + drizzle-kit. Index schema: `projects`, `fleets`, `tasks`,
   `task_deps`, `sessions`, `events`, `suggestions`. Migration creates `~/.cadence/cadence.db`.
   - Verify: migration runs; `bun test` inserts+selects one row per table.
 - [ ] **0.3 FTS5 search table.** FTS5 virtual table over task text (transcripts later); sync hooks
@@ -248,3 +248,19 @@ review and revert a memory entry.
   proxy chain), defaults untouched; friendly EADDRINUSE message confirmed. *Next:* 0.2 SQLite + Drizzle.
   *Note for 0.4/0.6:* consider auto-free-port discovery (gateway scans from `CADENCE_PORT`, writes the
   chosen port to a `~/.cadence/` runtime file the proxy reads) for fully hands-off collision avoidance.
+- **2026-06-06 · 0.2 SQLite + Drizzle.** Added `drizzle-orm` (server dep) + `drizzle-kit` (root devDep).
+  `server/src/db/schema.ts` defines the 7-table index (`projects, fleets, tasks, task_deps, sessions,
+  events, suggestions`) modelled on spec §4 — markdown stays the source of truth, the DB only indexes
+  queryable scalars; list-valued fields (labels, criteria, contextNotes, qa, fleet projectIds order) stay
+  in markdown. `server/src/db/client.ts` opens `bun:sqlite` with `WAL` + `foreign_keys ON`, wraps in
+  drizzle, resolves the migrations folder relative to the file, and exposes `openDb(path)` /
+  `migrateDb` / `openAndMigrate`; the app DB path is `~/.cadence/cadence.db`, overridable via
+  `CADENCE_HOME` (tests use `:memory:`). `drizzle.config.ts` + `bun run db:generate` produced
+  `server/drizzle/0000_*.sql` (tracked); `bun run db:migrate` applies it. *Decisions:* text UUID PKs
+  (caller-generated), epoch-ms integer timestamps with a SQL `unixepoch()*1000` default, `events.id`
+  autoincrement; `tasks.priority` left as free-form text (scale intentionally deferred to the 1.2 UI —
+  not invented here); task target = nullable `project_id` XOR `fleet_id`; `task_deps` is a composite-PK
+  edge table (blocker→blocked). *Verified:* `bun run db:migrate` creates `~/.cadence/cadence.db` with all
+  7 tables (listed); `bun test` (3 pass) round-trips one row per table in FK order, checks defaults
+  (`status=inbox`, `permission=auto`, `kind=warm`, `cost=0`, `createdAt>0`) and FK enforcement;
+  `bun run build` green. *Next:* 0.3 FTS5 search table over task text.
