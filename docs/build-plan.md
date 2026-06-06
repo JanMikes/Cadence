@@ -9,11 +9,13 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** **Phase 1 COMPLETE (MVP)** — awaiting human smoke-test + go-ahead for Phase 2 (autonomy)
-- **Last completed step:** 1.14 (Suggestion primitive) — Phase 1 done; acceptance check run
-- **Next step:** 2.1 (Agent runner) — ⚠️ Phase 2 = autonomy; auto-spawns real `claude` on capture (needs user go-ahead)
+- **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
+- **Last completed step:** 2.1 (Agent runner — one-shot `claude -p` worker)
+- **Next step:** 2.2 (Agent library — reusable subagent defs via `--agents`)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
+- **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
+  agent (no real model/cost); real-agent smokes are offered, not auto-run.
 
 ## Rules for the building agent (the idempotent loop)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md` (spec, the behavior source of truth),
@@ -154,7 +156,16 @@ Then stop and report.
 
 ## Phase 2 — Autonomy: triage-on-capture + refinement loop
 (Derives from backlog Phase 2. Detail these into atomic steps when you reach the phase.)
-- [ ] 2.1 Agent runner: one-shot `-p --resume` worker + role selection + JSON-output parsing + status mapping.
+- [x] 2.1 Agent runner: one-shot `-p --resume` worker + role selection + JSON-output parsing + status mapping.
+  - **2026-06-06 · 2.1.** `server/src/agents/runner.ts` `runAgent(opts)` runs a one-shot `claude -p
+    <prompt> --output-format json` (defaults to read-only `plan` permission mode) → `AgentResult`
+    {text, json, costUsd, sessionId, isError, raw}; `modelForRole` (triage/delivery=haiku,
+    discovery/questioner/verifier=sonnet, planner/implementer=opus); `parseAgentJson` extracts JSON from
+    the result text incl. ```json fences. `command` override + `testing/mock-agent.ts` (canned via
+    `CADENCE_MOCK_AGENT_RESULT`) make it model-free in tests. *Gotcha:* the mock scripts had no
+    imports/exports so tsc treated them as global scripts → `argv`/`prompt` collided; added `export {}`.
+    *Verified:* `bun test` (83 pass) — role→model, parseAgentJson (raw/fenced/prose), runAgent parses
+    result/cost/session and surfaces a triage-style JSON object; `bun run build` green.
 - [ ] 2.2 Agent library: reusable subagent defs injected via `--agents` (explorer, reviewers…).
 - [ ] 2.3 Triage agent on capture (→ project/priority/deadline/labels/restatement, or `insufficient`).
 - [ ] 2.4 Discovery agent (+ parallel explorer subagents) → spec/criteria/unknowns, or `insufficient`.
