@@ -343,11 +343,51 @@ test("execution slice: PLAY → plan → approve → Implementer → Verifier �
     }
     expect(delivery.mode).toBe("branch_summary");
     expect(delivery.summary.length).toBeGreaterThan(0);
+
+    // Review screen: the diff endpoint serves the task's changes shape
+    const diff = (await fetch(`${gw.url}/api/tasks/${task.id}/diff`).then((r) => r.json())) as {
+      mode: string;
+      branch: string | null;
+    };
+    expect(diff.mode).toBe("branch_summary");
+    expect(diff.branch).toContain("cadence/");
+
+    // merge → done
+    const merge = (await fetch(`${gw.url}/api/tasks/${task.id}/review/merge`, { method: "POST" }).then(
+      (r) => r.json(),
+    )) as { merged: boolean; task: { status: string } };
+    expect(merge.merged).toBe(true);
+    expect(merge.task.status).toBe("done");
   } finally {
     delete process.env.CADENCE_WORKTREES;
     rmSync(repo, { recursive: true, force: true });
     rmSync(wtBase, { recursive: true, force: true });
   }
+});
+
+test("review/request-changes sends a task in review back to implementing with a note", async () => {
+  const task = await createViaApi("Needs another pass");
+  // get it to review via valid manual moves (each transition is allowed)
+  for (const status of ["ready", "implementing", "verifying", "review"]) {
+    await fetch(`${gw.url}/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+  }
+  const res = await fetch(`${gw.url}/api/tasks/${task.id}/review/request-changes`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ note: "please add tests" }),
+  });
+  expect(res.status).toBe(200);
+  expect((await res.json()) as { status: string }).toMatchObject({ status: "implementing" });
+
+  // the note landed on the context channel
+  const ctx = (await fetch(`${gw.url}/api/tasks/${task.id}/context`).then((r) => r.json())) as {
+    content: string;
+  };
+  expect(ctx.content).toContain("please add tests");
 });
 
 test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome", async () => {

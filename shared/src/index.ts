@@ -518,3 +518,14 @@ export interface DeliveryResult {
   branch: string | null;
   prUrl: string | null;
 }
+
+/** The task's changes for the Review screen (§7 / §10): unified git diff. */
+export interface TaskDiff {
+  mode: string;
+  branch: string | null;
+  diff: string; // unified diff text ("" when there's nothing to show)
+}
+
+export interface ReviewActionInput {
+  note?: string; // optional note for request-changes
+}

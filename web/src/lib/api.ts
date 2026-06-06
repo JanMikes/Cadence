@@ -4,6 +4,7 @@ import type {
   CreateProjectInput,
   CreateTaskInput,
   DailyDigest,
+  DeliveryResult,
   EnrichResult,
   GlobalSettings,
   ImportCandidate,
@@ -19,9 +20,11 @@ import type {
   SuggestionAction,
   Task,
   TaskDetail,
+  TaskDiff,
   TaskEvent,
   TaskPlan,
   TranscriptEntry,
+  VerifyReport,
   UpdateProjectInput,
   UpdateTaskInput,
   UsageResponse,
@@ -74,6 +77,32 @@ export function playTask(id: string): Promise<TaskDetail> {
 
 export function getPlan(id: string): Promise<TaskPlan> {
   return fetch(`/api/tasks/${id}/plan`).then(json<TaskPlan>);
+}
+
+export function getVerify(id: string): Promise<VerifyReport> {
+  return fetch(`/api/tasks/${id}/verify`).then(json<VerifyReport>);
+}
+
+export function getDelivery(id: string): Promise<DeliveryResult> {
+  return fetch(`/api/tasks/${id}/delivery`).then(json<DeliveryResult>);
+}
+
+export function getDiff(id: string): Promise<TaskDiff> {
+  return fetch(`/api/tasks/${id}/diff`).then(json<TaskDiff>);
+}
+
+export function mergeReview(id: string): Promise<{ merged: boolean; task: TaskDetail }> {
+  return fetch(`/api/tasks/${id}/review/merge`, { method: "POST" }).then(
+    json<{ merged: boolean; task: TaskDetail }>,
+  );
+}
+
+export function requestChanges(id: string, note: string): Promise<TaskDetail> {
+  return fetch(`/api/tasks/${id}/review/request-changes`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ note }),
+  }).then(json<TaskDetail>);
 }
 
 export function approvePlan(id: string): Promise<TaskPlan> {

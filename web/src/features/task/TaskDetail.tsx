@@ -23,6 +23,7 @@ import { statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { PlanView } from "./PlanView";
+import { ReviewPanel } from "./ReviewPanel";
 import { StatusTimeline } from "./StatusTimeline";
 
 export function TaskDetail({
@@ -234,6 +235,10 @@ export function TaskDetail({
 
             {["implementing", "verifying", "review", "done"].includes(task.status) ? (
               <PlanView taskId={taskId} />
+            ) : null}
+
+            {task.status === "review" ? (
+              <ReviewPanel taskId={taskId} onChanged={invalidateTask} />
             ) : null}
 
             <SuggestionList entityType="task" entityId={taskId} />

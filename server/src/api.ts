@@ -8,6 +8,7 @@ import {
   type HealthStatus,
   type RecapDigestInput,
   type ResolveSuggestionInput,
+  type ReviewActionInput,
   SCHEMA_VERSION,
   type SpawnSessionInput,
   type UpdateProjectInput,
@@ -28,6 +29,7 @@ import { listTaskEvents } from "./events";
 import { importProjects, scanClaudeProjects } from "./import";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
 import { notifyOnTransition } from "./notify";
+import { mergeTask, taskDiff } from "./review";
 import {
   createProject,
   getProject,
@@ -193,6 +195,47 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const taskId = deliveryMatch[1] as string;
     if (!getTask(ctx.db, taskId)) return notFound(pathname);
     return Response.json(readDelivery(taskId));
+  }
+
+  const diffMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/diff$/);
+  if (diffMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = diffMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json(taskDiff(ctx.db, taskId));
+  }
+
+  const mergeMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review\/merge$/);
+  if (mergeMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = mergeMatch[1] as string;
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
+    if (task.status !== "review") return conflict(`merge requires a task in review (currently ${task.status})`, { status: task.status });
+    const result = mergeTask(ctx.db, taskId);
+    if (!result.ok) return conflict(result.message, { merged: false });
+    const updated = updateTask(ctx.db, taskId, { status: "done" });
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    return Response.json({ merged: true, message: result.message, task: updated });
+  }
+
+  const requestChangesMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review\/request-changes$/);
+  if (requestChangesMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = requestChangesMatch[1] as string;
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
+    if (task.status !== "review") return conflict(`request-changes requires a task in review (currently ${task.status})`, { status: task.status });
+    let body: ReviewActionInput;
+    try {
+      body = (await req.json().catch(() => ({}))) as ReviewActionInput;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    if (body?.note?.trim()) appendContext(taskId, `Requested changes: ${body.note.trim()}`);
+    const updated = updateTask(ctx.db, taskId, { status: "implementing" });
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    return Response.json(updated);
   }
 
   const planApproveMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/plan\/approve$/);
