@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.2 (Agent library — reusable subagent defs via `--agents`)
-- **Next step:** 2.3 (Triage agent on capture)
+- **Last completed step:** 2.3 (Triage agent on capture — autonomy, gated off by default)
+- **Next step:** 2.4 (Discovery agent + parallel explorer subagents)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -175,7 +175,21 @@ Then stop and report.
     explorers+reviewers with full fields; explorers/reviewers carry no mutating tools (read-only);
     agentsJson serializes full + filters subset; `bun run build` green. The `--agents` JSON shape
     matches Claude Code's subagent-definition format; a real acceptance smoke is offered, not auto-run.
-- [ ] 2.3 Triage agent on capture (→ project/priority/deadline/labels/restatement, or `insufficient`).
+- [x] 2.3 Triage agent on capture (→ project/priority/deadline/labels/restatement, or `insufficient`).
+  - **2026-06-06 · 2.3.** `server/src/agents/triage.ts`: `buildTriagePrompt` (task + known projects,
+    agent-prompts §1), `runTriage(db, taskId, run=runAgent)` runs a one-shot Haiku agent (read-only
+    `plan` mode), parses JSON, and `applyTriage`: **ok** → status `triaged` + project(slug→FK)/priority/
+    deadline(→ms)/labels + restatement appended to `context.md`; **insufficient** → `needs_feedback` +
+    needFromUser in context; unparseable → left in Inbox. Runner injectable (mock in tests). **Autonomy:**
+    `GlobalSettings.global.autonomy` (default **false**, `DEFAULT_SETTINGS` sets it); the capture endpoint
+    calls `maybeTriageOnCapture` — a no-op unless autonomy is on; when on, triages in the **background**
+    (fire-and-forget) + broadcasts `task:updated`/`task:triaged` (+ a needs_feedback notify).
+    `ApiContext.runAgent` injectable; gateway defaults to real `runAgent`. *Decision:* triage auto-applies
+    routing (low-risk, reversible) per §10.2; provenance via context note for now (suggestion-UI wiring is
+    a later refinement). *Verified:* `bun test` (91 pass, stable ×2) — prompt build; sufficient→Triaged
+    with all fields+restatement; insufficient→Needs-Feedback; unparseable→Inbox; gateway: autonomy OFF
+    leaves capture in Inbox, autonomy ON triages in the background (mock); `bun run build` green. Default
+    install never spawns claude on capture; a real triage smoke is offered, not auto-run.
 - [ ] 2.4 Discovery agent (+ parallel explorer subagents) → spec/criteria/unknowns, or `insufficient`.
 - [ ] 2.5 Questioner agent → ranked Q&A cards; Needs-Feedback UI (Q&A + "too vague" cards).
 - [ ] 2.6 Lifecycle state machine enforced server-side + status timeline.
