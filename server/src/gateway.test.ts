@@ -585,6 +585,15 @@ test("subtasks: PATCH parentTask, then GET subtasks lists the children", async (
   expect(subs.map((t) => t.id)).toContain(child.id);
 });
 
+test("GET /api/sweep returns a proactive findings report", async () => {
+  const report = (await fetch(`${gw.url}/api/sweep`).then((r) => r.json())) as {
+    ranAt: number;
+    findings: unknown[];
+  };
+  expect(typeof report.ranAt).toBe("number");
+  expect(Array.isArray(report.findings)).toBe(true);
+});
+
 test("GET /api/analytics returns cost/throughput/status aggregates", async () => {
   await createViaApi("Analytics task");
   const a = (await fetch(`${gw.url}/api/analytics`).then((r) => r.json())) as {

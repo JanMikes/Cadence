@@ -243,6 +243,26 @@ export interface UpdateProjectInput {
   notes?: string | null;
 }
 
+// --------------------------------------------------------- background sweep (§8)
+// A scheduled scan surfacing proactive, propose-don't-impose nudges: tasks idling
+// too long, and deadlines at risk. Deterministic (no Claude) — the agent-backed
+// jobs (Reflector, inbox grooming) layer on top.
+
+export type SweepKind = "stale" | "at_risk";
+
+export interface SweepFinding {
+  kind: SweepKind;
+  taskId: string;
+  title: string;
+  status: string;
+  detail: string; // e.g. "Idle 12d in refining" / "Overdue by 2d"
+}
+
+export interface SweepReport {
+  ranAt: number;
+  findings: SweepFinding[];
+}
+
 // --------------------------------------------------------------- analytics (§10)
 // Cost & throughput, derived from sessions (cost) + the status_change timeline.
 

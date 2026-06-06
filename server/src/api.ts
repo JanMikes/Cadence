@@ -36,6 +36,7 @@ import { listTaskEvents } from "./events";
 import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from "./searches";
+import { runSweep } from "./sweep";
 import { searchTranscripts } from "./transcript-search";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
 import { notifyOnTransition } from "./notify";
@@ -426,6 +427,10 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/analytics" && method === "GET") {
     return Response.json(computeAnalytics(ctx.db));
+  }
+
+  if (pathname === "/api/sweep" && method === "GET") {
+    return Response.json(runSweep(ctx.db, Date.now()));
   }
 
   if (pathname === "/api/search" && method === "GET") {

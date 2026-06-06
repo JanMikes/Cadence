@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { commitDigest, getDigest, recapDigest } from "../../lib/api";
 import { ProgressRing } from "./ProgressRing";
+import { SweepPanel } from "./SweepPanel";
 
 const TIER_BADGE: Record<string, { label: string; className: string }> = {
   overdue: { label: "Overdue", className: "bg-red-500/15 text-red-400" },
@@ -125,6 +126,8 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
       {digest.isError ? (
         <p className="mt-4 text-sm text-red-400">Couldn’t load today’s digest.</p>
       ) : null}
+
+      <SweepPanel onOpen={onOpen} />
 
       <label className="mt-5 text-xs font-medium text-muted-foreground" htmlFor="digest-goal">
         What matters most today?

@@ -23,6 +23,7 @@ import type {
   SpawnSessionInput,
   Suggestion,
   SuggestionAction,
+  SweepReport,
   Task,
   TaskDepsView,
   TaskDetail,
@@ -159,6 +160,10 @@ export function getSubtasks(taskId: string): Promise<Task[]> {
 
 export function getAnalytics(): Promise<AnalyticsSummary> {
   return fetch("/api/analytics").then(json<AnalyticsSummary>);
+}
+
+export function getSweep(): Promise<SweepReport> {
+  return fetch("/api/sweep").then(json<SweepReport>);
 }
 
 export function getApprovals(): Promise<ApprovalRequest[]> {

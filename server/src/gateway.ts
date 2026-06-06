@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { runAgent } from "./agents/runner";
 import { ApprovalRegistry } from "./approvals";
+import { startSweep } from "./sweep";
 import type { AgentRunner } from "./agents/triage";
 import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
@@ -70,6 +71,9 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     });
   }
 
+  // Background sweep (§8) — disabled unless CADENCE_SWEEP_MS is set; off in tests.
+  const sweep = opts.startWatcher === false ? { close() {} } : startSweep(db, hub);
+
   const server = Bun.serve<WsData>({
     port,
     hostname: "127.0.0.1",
@@ -120,6 +124,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     broadcast: (msg) => hub.broadcast(msg),
     stop: async () => {
       watcher?.close();
+      sweep.close();
       for (const id of spawnManager.liveIds()) spawnManager.kill(id);
       await server.stop(true);
     },
