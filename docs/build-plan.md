@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.5 (Live transcript UI + follow-up)
-- **Next step:** 1.6 (Context composition v1)
+- **Last completed step:** 1.6 (Context composition v1)
+- **Next step:** 1.7 (Permission mode selector)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -114,7 +114,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.5 Live transcript UI + follow-up.** Render events (token typing via `text_delta`, tool-use
   cards, `result`+cost); input sends follow-up messages to the warm process.
   - Verify: send a message → streamed reply; a 2nd retains context; cost shown.
-- [ ] **1.6 Context composition v1.** Compose Global → Project → Task (spec/context/qa) into
+- [x] **1.6 Context composition v1.** Compose Global → Project → Task (spec/context/qa) into
   `--append-system-prompt` at spawn.
   - Verify: a project systemPrompt marker visibly affects behavior.
 - [ ] **1.7 Permission mode selector.** Auto (default) / Manual / Dangerous per session+task
@@ -461,3 +461,19 @@ review and revert a memory entry.
   — fixed via the tolerant `update` + a settle delay before `rmSync`. *Real context-retention* is the
   warm-process property (control-surfaces §3.1 + 1.4's real session); offer the user a real 2-message
   smoke on request. *Next:* 1.6 context composition v1 (Global → Project → Task → `--append-system-prompt`).
+- **2026-06-06 · 1.6 Context composition.** `server/src/context.ts` `composeContext(db, scope)` builds the
+  layered system prompt **most-general first** so later layers win (spec §7.1): Global
+  (`settings.json`) → Project `systemPrompt` → Fleet `systemPrompt` → Task `spec.md` → Task `context.md`,
+  each as a `## <title>` section; returns `""` when nothing applies. The spawn endpoint composes it for
+  the task and passes it as `--append-system-prompt` (only when non-empty). Added `store.readSpec` +
+  `store.writeSettings`; the mock claude now **echoes the `--append-system-prompt` it received** in its
+  init event, making composition verifiable end-to-end with no real model. *Decisions:* repo CLAUDE.md is
+  left to claude's native loading; Q&A answers + the role prompt are deferred to Phase 2 (Discovery/
+  Questioner); fleet layer wired but fleets are fleshed out in Phase 4. *Verified:* `bun test` (44 pass)
+  — composeContext layers global/project/task in order with distinct markers + is empty when nothing
+  applies; **openSession passes the composed `--append-system-prompt` through to the session** (the mock
+  echoes the project marker back); `bun run build` green. *Verify-line note:* "project systemPrompt
+  visibly affects behavior" is proven deterministically as "the marker reaches the session's
+  `--append-system-prompt`" (composition + delivery); the real-model effect follows from claude's
+  documented `--append-system-prompt` semantics — honored the one-real-spawn boundary; a real marker
+  smoke is available on request. *Next:* 1.7 permission mode selector.
