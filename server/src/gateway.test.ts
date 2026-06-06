@@ -261,6 +261,40 @@ test("GET /api/tasks?sort=urgency orders overdue/due-soon ahead of far-off", asy
   expect(sorted.find((t) => t.id === overdue.id)?.urgencyTier).toBe("overdue");
 });
 
+test("GET /api/digest proposes a plan; POST /api/digest/commit locks it in", async () => {
+  const a = await createViaApi("Digest A");
+  const b = await createViaApi("Digest B");
+
+  const proposed = (await fetch(`${gw.url}/api/digest`).then((r) => r.json())) as {
+    status: string;
+    picks: Array<{ taskId: string }>;
+  };
+  expect(proposed.status).toBe("planning");
+  expect(proposed.picks.length).toBeGreaterThanOrEqual(2);
+
+  const committed = (await fetch(`${gw.url}/api/digest/commit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ picks: [b.id, a.id], goal: "Focus on B" }),
+  }).then((r) => r.json())) as { status: string; goal: string; picks: Array<{ taskId: string }> };
+  expect(committed.status).toBe("committed");
+  expect(committed.goal).toBe("Focus on B");
+  expect(committed.picks.map((p) => p.taskId)).toEqual([b.id, a.id]);
+
+  // a fresh GET returns the committed plan, not a new proposal
+  const after = (await fetch(`${gw.url}/api/digest`).then((r) => r.json())) as { status: string };
+  expect(after.status).toBe("committed");
+});
+
+test("POST /api/digest/commit rejects a non-array picks payload", async () => {
+  const res = await fetch(`${gw.url}/api/digest/commit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ goal: "no picks" }),
+  });
+  expect(res.status).toBe(400);
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",

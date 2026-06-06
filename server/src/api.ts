@@ -1,6 +1,7 @@
 import {
   APP_NAME,
   type AppendContextInput,
+  type CommitDigestInput,
   type CreateProjectInput,
   type CreateSuggestionInput,
   type CreateTaskInput,
@@ -17,6 +18,7 @@ import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
+import { commitDigest, getDigest } from "./digest";
 import { listTaskEvents } from "./events";
 import { importProjects, scanClaudeProjects } from "./import";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
@@ -228,6 +230,28 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (pathname === "/api/search" && method === "GET") {
     const q = url.searchParams.get("q") ?? "";
     return Response.json(q.trim() ? searchTaskHits(ctx.db, q) : []);
+  }
+
+  if (pathname === "/api/digest") {
+    if (method === "GET") {
+      const date = url.searchParams.get("date") ?? undefined;
+      return Response.json(getDigest(ctx.db, Date.now(), date));
+    }
+    return methodNotAllowed();
+  }
+
+  if (pathname === "/api/digest/commit") {
+    if (method !== "POST") return methodNotAllowed();
+    let input: CommitDigestInput;
+    try {
+      input = (await req.json()) as CommitDigestInput;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    if (!Array.isArray(input?.picks)) return badRequest("picks must be an array of task ids");
+    const digest = commitDigest(ctx.db, input, Date.now());
+    ctx.hub.broadcast({ type: "event", name: "digest:committed", payload: digest.date });
+    return Response.json(digest);
   }
 
   if (pathname === "/api/suggestions") {

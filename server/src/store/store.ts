@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import type { QAChannel } from "@cadence/shared";
+import type { DailyDigest, QAChannel } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, tasks } from "../db/schema";
@@ -136,6 +136,57 @@ export function writeQa(id: string, qa: QAChannel): void {
   writeFileSync(
     paths.taskQa(id),
     stringifyMarkdown({ questions: qa.questions, answers: qa.answers }, renderQaBody(qa)),
+  );
+}
+
+// --------------------------------------------------- Daily Digest (digests/<date>.md)
+
+/** Read a committed digest for a date; null if none has been committed yet. */
+export function readDigest(date: string): DailyDigest | null {
+  const file = paths.digestFile(date);
+  if (!existsSync(file)) return null;
+  const { data } = parseMarkdown<Partial<DailyDigest>>(readFileSync(file, "utf8"));
+  return {
+    date: data.date ?? date,
+    status: data.status === "committed" ? "committed" : "planning",
+    picks: data.picks ?? [],
+    goal: data.goal ?? null,
+    constraints: data.constraints ?? null,
+    committedAt: data.committedAt ?? null,
+  };
+}
+
+function renderDigestBody(digest: DailyDigest): string {
+  const lines = [`# Today — ${digest.date}`];
+  if (digest.goal) lines.push("", `**Goal:** ${digest.goal}`);
+  if (digest.constraints) lines.push("", `**Constraints:** ${digest.constraints}`);
+  lines.push("", "## Plan");
+  if (digest.picks.length === 0) {
+    lines.push("_No tasks picked._");
+  } else {
+    for (const p of digest.picks.slice().sort((a, b) => a.order - b.order)) {
+      lines.push(`${p.order + 1}. ${p.title} — _${p.rationale}_ (${p.status})`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** Persist a digest to digests/<date>.md (frontmatter + a readable plan body). */
+export function writeDigest(digest: DailyDigest): void {
+  mkdirSync(paths.digestsDir(), { recursive: true });
+  writeFileSync(
+    paths.digestFile(digest.date),
+    stringifyMarkdown(
+      {
+        date: digest.date,
+        status: digest.status,
+        picks: digest.picks,
+        goal: digest.goal,
+        constraints: digest.constraints,
+        committedAt: digest.committedAt,
+      },
+      renderDigestBody(digest),
+    ),
   );
 }
 

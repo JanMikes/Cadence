@@ -405,3 +405,37 @@ export interface TaskEvent {
 export interface AppendContextInput {
   text: string;
 }
+
+// ------------------------------------------------------------- Daily Digest (§10.3)
+// The morning planning ritual: a deadline-first shortlist Claude proposes and I
+// commit as today's goal. Each day persists to ~/.cadence/digests/<date>.md.
+
+export interface DigestPick {
+  taskId: string;
+  title: string;
+  status: string;
+  /** One-line reason this made the shortlist (e.g. "Overdue · P0", "Ready to start"). */
+  rationale: string;
+  /** Position in the plan (0-based). */
+  order: number;
+  urgencyTier: UrgencyTier;
+}
+
+export type DigestStatus = "planning" | "committed";
+
+export interface DailyDigest {
+  date: string; // YYYY-MM-DD (server-local)
+  status: DigestStatus; // "planning" = a fresh proposal; "committed" = my locked-in plan
+  picks: DigestPick[];
+  goal: string | null; // free-form "what matters most today"
+  constraints: string | null; // meetings / energy / etc.
+  committedAt: number | null;
+}
+
+export interface CommitDigestInput {
+  date?: string; // defaults to today
+  /** Ordered task ids that make up today's committed plan. */
+  picks: string[];
+  goal?: string | null;
+  constraints?: string | null;
+}

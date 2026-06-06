@@ -2,7 +2,14 @@ import { Activity, Bell, FolderGit2, Inbox, LayoutGrid, Settings, Sparkles } fro
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
-export type ViewId = "inbox" | "board" | "projects" | "sessions" | "notifications" | "settings";
+export type ViewId =
+  | "today"
+  | "inbox"
+  | "board"
+  | "projects"
+  | "sessions"
+  | "notifications"
+  | "settings";
 
 interface NavItem {
   id: ViewId;
@@ -12,6 +19,7 @@ interface NavItem {
 
 // Left-nav. Every item is labeled (icon + text), per the UX-clarity rules (§10.1).
 const NAV: NavItem[] = [
+  { id: "today", label: "Today", icon: Sparkles },
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "board", label: "Board", icon: LayoutGrid },
   { id: "projects", label: "Projects", icon: FolderGit2 },

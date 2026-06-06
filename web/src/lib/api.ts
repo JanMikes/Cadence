@@ -1,7 +1,9 @@
 import type {
+  CommitDigestInput,
   ContextChannel,
   CreateProjectInput,
   CreateTaskInput,
+  DailyDigest,
   EnrichResult,
   GlobalSettings,
   ImportCandidate,
@@ -83,6 +85,19 @@ export function getQa(taskId: string): Promise<QAChannel> {
 
 export function getTimeline(taskId: string): Promise<TaskEvent[]> {
   return fetch(`/api/tasks/${taskId}/timeline`).then(json<TaskEvent[]>);
+}
+
+export function getDigest(date?: string): Promise<DailyDigest> {
+  const q = date ? `?date=${encodeURIComponent(date)}` : "";
+  return fetch(`/api/digest${q}`).then(json<DailyDigest>);
+}
+
+export function commitDigest(input: CommitDigestInput): Promise<DailyDigest> {
+  return fetch("/api/digest/commit", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  }).then(json<DailyDigest>);
 }
 
 export function submitAnswers(

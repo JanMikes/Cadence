@@ -2,6 +2,7 @@ import type { HealthStatus } from "@cadence/shared";
 import { useEffect, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
 import { Board } from "./features/board/Board";
+import { Today } from "./features/digest/Today";
 import { Inbox } from "./features/inbox/Inbox";
 import { Projects } from "./features/projects/Projects";
 import { SessionPanel } from "./features/session/SessionPanel";
@@ -17,7 +18,7 @@ import { cn } from "./lib/utils";
 type Conn = "connecting" | "online" | "offline";
 
 export function App() {
-  const [view, setView] = useState<ViewId>("inbox");
+  const [view, setView] = useState<ViewId>("today");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
@@ -65,6 +66,7 @@ export function App() {
           </span>
         }
       >
+        {view === "today" ? <Today onOpen={setSelectedId} /> : null}
         {view === "inbox" ? <Inbox onOpen={setSelectedId} /> : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}
