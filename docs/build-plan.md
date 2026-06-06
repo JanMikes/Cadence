@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 4.3 (Cost & throughput analytics)
-- **Next step:** 4.4 (Extend search to transcripts (FTS over *.jsonl) + saved filters)
+- **Last completed step:** 4.4 (Transcript search + saved filters)
+- **Next step:** 4.5 (Calendar / deadline view)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -283,7 +283,7 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 - [x] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
 - [x] 4.2 Dependencies graph + subtasks.
 - [x] 4.3 Cost & throughput analytics.
-- [ ] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
+- [x] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [ ] 4.5 Calendar / deadline view.
 - [ ] 4.6 Scheduled / background sweep mode.
 - [ ] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey.
@@ -931,3 +931,16 @@ review and revert a memory entry.
   (tasks/done/sessions/cost), and a status breakdown; added to the nav + ⌘K. Tests: analytics unit
   (per-project aggregation incl. summed cost, throughput bucketing onto today, Unassigned bucket) +
   gateway shape + Analytics SSR. Verify: 189 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 4.4 Transcript search + saved filters.** `transcript-search.ts` `searchTranscripts`
+  scans the recorded sessions' `*.jsonl` **on demand** — a cheap whole-file substring gate avoids
+  parsing non-matches, then a clean single-line snippet comes from the parsed user/assistant text. Chose
+  on-demand scanning over an FTS index because the transcripts are external, large, ever-changing
+  ~/.claude files (a maintained index would go stale); the acceptance bar is "matches across sessions,"
+  which this meets. `searches.ts` persists saved searches to `~/.cadence/searches.json`
+  (list/create/delete). shared `TranscriptHit`/`SavedSearch`/`CreateSavedSearchInput` +
+  `paths.savedSearches`. API: `GET /api/search/transcripts?q=`, `GET/POST /api/searches`,
+  `DELETE /api/searches/:id`. Web: the ⌘K palette now shows transcript hits (snippet → opens the task)
+  beneath task hits, lists saved searches when the box is empty (apply re-runs the query and keeps the
+  palette open — `run` can return true to stay open), and offers "★ Save search" when a query is typed.
+  Tests: searches CRUD unit + transcript-search unit (match+snippet, non-match/empty-query) + gateway
+  (saved CRUD, transcript endpoint shape). Verify: 194 pass (×2 stable), build green, scan clean.
