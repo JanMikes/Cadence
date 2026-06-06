@@ -507,3 +507,14 @@ export interface VerifyReport {
   checks: VerifyCheck[];
   issues: VerifyIssue[];
 }
+
+// ----------------------------------------------------------------- delivery (§7.7)
+// The Delivery agent writes a human summary; Cadence finalizes per delivery mode:
+// branch_summary (commit on branch) / auto_pr (push + gh pr) / apply_in_place.
+
+export interface DeliveryResult {
+  mode: string; // branch_summary | auto_pr | apply_in_place
+  summary: string;
+  branch: string | null;
+  prUrl: string | null;
+}

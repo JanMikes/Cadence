@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Db } from "./db/client";
 import { getProjectById } from "./projects";
-import { getTask } from "./tasks";
+import { getTask, resolveDeliveryMode, resolveTaskCwd } from "./tasks";
 
 /**
  * Per-task git worktree provisioning (spec §5/§9: isolation by default). The
@@ -92,4 +92,21 @@ export function provisionWorktree(db: Db, taskId: string): Worktree {
 /** Remove a task's worktree (cleanup after delivery/cancel). Best-effort. */
 export function removeWorktree(wt: Worktree): boolean {
   return git(["worktree", "remove", "--force", wt.path], wt.rootPath).ok;
+}
+
+/** Where execution (Implementer/Verifier/Delivery) runs, per delivery mode:
+ *  apply_in_place edits the repo directly (no isolation); the others get a
+ *  per-task worktree. Throws (via provisionWorktree) when a worktree is needed
+ *  but the task has no git project. */
+export interface ExecutionTarget {
+  cwd: string;
+  branch: string | null;
+  worktreePath: string | null;
+}
+export function resolveExecutionCwd(db: Db, taskId: string): ExecutionTarget {
+  if (resolveDeliveryMode(db, taskId) === "apply_in_place") {
+    return { cwd: resolveTaskCwd(db, taskId), branch: null, worktreePath: null };
+  }
+  const wt = provisionWorktree(db, taskId);
+  return { cwd: wt.path, branch: wt.branch, worktreePath: wt.path };
 }

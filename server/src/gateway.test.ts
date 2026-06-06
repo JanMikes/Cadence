@@ -43,6 +43,8 @@ beforeAll(() => {
         json = { ok: true }; // the implementer only checks for errors, not JSON shape
       } else if (opts.role === "verifier") {
         json = { passed: true, checks: [{ name: "tests", passed: true }], criteria: [], issues: [] };
+      } else if (opts.role === "delivery") {
+        json = { summary: "Implemented and verified.", branch: null, prUrl: null };
       } else {
         json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
       }
@@ -332,6 +334,15 @@ test("execution slice: PLAY → plan → approve → Implementer → Verifier �
       passed: boolean;
     };
     expect(verify.passed).toBe(true);
+
+    // Delivery ran (chained after a passing verify) → a summary is served
+    let delivery = { summary: "", mode: "" };
+    for (let i = 0; i < 50 && !delivery.summary; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      delivery = (await fetch(`${gw.url}/api/tasks/${task.id}/delivery`).then((r) => r.json())) as typeof delivery;
+    }
+    expect(delivery.mode).toBe("branch_summary");
+    expect(delivery.summary.length).toBeGreaterThan(0);
   } finally {
     delete process.env.CADENCE_WORKTREES;
     rmSync(repo, { recursive: true, force: true });

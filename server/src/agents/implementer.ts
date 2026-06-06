@@ -3,7 +3,7 @@ import type { Db } from "../db/client";
 import { claudePermissionMode } from "../sessions";
 import { readPlan, readSpec } from "../store/store";
 import { getTaskDetail, resolvePermissionMode, updateTask } from "../tasks";
-import { provisionWorktree } from "../worktree";
+import { resolveExecutionCwd } from "../worktree";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -61,23 +61,28 @@ export async function runImplementer(
   const plan = readPlan(taskId);
   if (!plan.approved) return { ran: false, reason: "plan not approved" };
 
-  let wt: { path: string; branch: string };
+  let target: { cwd: string; branch: string | null; worktreePath: string | null };
   try {
-    wt = provisionWorktree(db, taskId);
+    target = resolveExecutionCwd(db, taskId);
   } catch (err) {
     return { ran: false, reason: (err as Error).message };
   }
 
   const claudeMode = claudePermissionMode(resolvePermissionMode(db, taskId));
   const result = await run({
-    cwd: wt.path,
+    cwd: target.cwd,
     role: "implementer",
     prompt: buildImplementerPrompt({ title: task.title, body: task.body }, readSpec(taskId), plan),
     permissionMode: claudeMode,
   });
 
   if (result.isError) {
-    return { ran: false, reason: "implementer agent errored", branch: wt.branch, worktreePath: wt.path };
+    return {
+      ran: false,
+      reason: "implementer agent errored",
+      branch: target.branch ?? undefined,
+      worktreePath: target.worktreePath ?? undefined,
+    };
   }
 
   // Implemented → hand off to the Verifier (3.5).
@@ -85,8 +90,8 @@ export async function runImplementer(
   return {
     ran: true,
     status: "verifying",
-    branch: wt.branch,
-    worktreePath: wt.path,
+    branch: target.branch ?? undefined,
+    worktreePath: target.worktreePath ?? undefined,
     costUsd: result.costUsd,
   };
 }

@@ -2,7 +2,7 @@ import type { TaskPlan, VerifyCheck, VerifyCriterion, VerifyIssue, VerifyReport 
 import type { Db } from "../db/client";
 import { readPlan, readSpec, writeVerify } from "../store/store";
 import { getTaskDetail, updateTask } from "../tasks";
-import { provisionWorktree } from "../worktree";
+import { resolveExecutionCwd } from "../worktree";
 import { agentsJson } from "./library";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
@@ -109,15 +109,15 @@ export async function runVerifier(
   const task = getTaskDetail(db, taskId);
   if (!task) return { ran: false, reason: "task not found" };
 
-  let wt: { path: string };
+  let target: { cwd: string };
   try {
-    wt = provisionWorktree(db, taskId);
+    target = resolveExecutionCwd(db, taskId);
   } catch (err) {
     return { ran: false, reason: (err as Error).message };
   }
 
   const result = await run({
-    cwd: wt.path,
+    cwd: target.cwd,
     role: "verifier",
     prompt: buildVerifierPrompt({ title: task.title, body: task.body }, readSpec(taskId), readPlan(taskId)),
     permissionMode: "acceptEdits",

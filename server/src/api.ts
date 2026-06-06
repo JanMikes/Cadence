@@ -13,6 +13,7 @@ import {
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
+import { runDelivery } from "./agents/delivery";
 import { runDiscovery } from "./agents/discovery";
 import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
@@ -37,6 +38,7 @@ import {
 import {
   appendContext,
   readContext,
+  readDelivery,
   readPlan,
   readQa,
   readSettings,
@@ -185,6 +187,14 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return Response.json(readVerify(taskId));
   }
 
+  const deliveryMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/delivery$/);
+  if (deliveryMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = deliveryMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json(readDelivery(taskId));
+  }
+
   const planApproveMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/plan\/approve$/);
   if (planApproveMatch) {
     if (method !== "POST") return methodNotAllowed();
@@ -206,6 +216,12 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
           if (v.ran) {
             ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
             ctx.hub.broadcast({ type: "event", name: "task:verified", payload: taskId });
+            // Passed → Delivery produces the summary + branch/PR (task stays in
+            // review for the human to merge in 3.7).
+            if (v.passed) {
+              const d = await runDelivery(ctx.db, taskId, ctx.runAgent);
+              if (d.ran) ctx.hub.broadcast({ type: "event", name: "task:delivered", payload: taskId });
+            }
           }
         })
         .catch((err) => console.error(`[cadence] execution failed for ${taskId}:`, err));

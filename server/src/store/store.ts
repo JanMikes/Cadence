@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import type { DailyDigest, QAChannel, TaskPlan, VerifyReport } from "@cadence/shared";
+import type { DailyDigest, DeliveryResult, QAChannel, TaskPlan, VerifyReport } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, tasks } from "../db/schema";
@@ -186,6 +186,33 @@ export function writeVerify(id: string, report: VerifyReport): void {
     stringifyMarkdown(
       { passed: report.passed, criteria: report.criteria, checks: report.checks, issues: report.issues },
       renderVerifyBody(report),
+    ),
+  );
+}
+
+// ------------------------------------------------------ task delivery (delivery.md)
+
+/** Read a task's Delivery result (delivery.md); null if not delivered yet. */
+export function readDelivery(id: string): DeliveryResult | null {
+  const file = paths.taskDelivery(id);
+  if (!existsSync(file)) return null;
+  const { data, body } = parseMarkdown<Partial<DeliveryResult>>(readFileSync(file, "utf8"));
+  return {
+    mode: data.mode ?? "branch_summary",
+    summary: (data.summary ?? body ?? "").trim(),
+    branch: data.branch ?? null,
+    prUrl: data.prUrl ?? null,
+  };
+}
+
+/** Write a task's Delivery result to delivery.md (frontmatter + the summary body). */
+export function writeDelivery(id: string, result: DeliveryResult): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(
+    paths.taskDelivery(id),
+    stringifyMarkdown(
+      { mode: result.mode, branch: result.branch, prUrl: result.prUrl, summary: result.summary },
+      `# Delivery\n\n${result.summary}`,
     ),
   );
 }

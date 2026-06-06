@@ -64,6 +64,20 @@ export function resolvePermissionMode(db: Db, taskId: string): string {
   return readSettings().global.defaultPermissionMode || "auto";
 }
 
+/**
+ * Resolve a task's effective delivery mode (§8): the task's own override, else
+ * its project default, else the global default, else "branch_summary".
+ */
+export function resolveDeliveryMode(db: Db, taskId: string): string {
+  const task = getTask(db, taskId);
+  if (task?.deliveryMode) return task.deliveryMode;
+  if (task?.projectId) {
+    const project = getProjectById(db, task.projectId);
+    if (project?.defaultDeliveryMode) return project.defaultDeliveryMode;
+  }
+  return readSettings().global.defaultDeliveryMode || "branch_summary";
+}
+
 /** Task + its markdown-only fields (labels) + resolved permission, for the detail view. */
 export function getTaskDetail(db: Db, id: string): TaskDetail | null {
   const task = getTask(db, id);
