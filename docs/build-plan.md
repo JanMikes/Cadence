@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 3.5 (Verifier + diverse reviewer subagents → pass/fail)
-- **Next step:** 3.6 (Delivery + delivery-mode resolution: branch_summary / auto_pr / apply_in_place)
+- **Last completed step:** 3.6 (Delivery + delivery-mode resolution)
+- **Next step:** 3.7 (Review screen: in-app diff + summary + verify results; merge / request-changes)
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -257,7 +257,7 @@ available on request).
 - [x] 3.3 git worktree per task provisioning + branch naming.
 - [x] 3.4 Implementer in the worktree (permission mode per task).
 - [x] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
-- [ ] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
+- [x] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
 - [ ] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
 - [ ] 3.8 Manual-approve mode (`canUseTool`) + Dangerous-mode guardrail (confirm + worktree).
 
@@ -831,3 +831,18 @@ review and revert a memory entry.
   Implementer → Verifier → **review**, with the verify report served. Verify: 152 pass (×2 stable),
   build green, scan clean. Execution pipeline is now end-to-end through verification; only Delivery
   (3.6) + the Review screen (3.7) + Manual/Dangerous guardrails (3.8) remain in Phase 3.
+- **2026-06-06 · 3.6 Delivery + delivery-mode resolution.** `resolveDeliveryMode` (task ?? project ??
+  global ?? branch_summary) mirrors the permission resolver. New `worktree.resolveExecutionCwd` makes
+  execution **delivery-mode-aware**: `apply_in_place` runs in the repo's rootPath (no isolation —
+  scratch repos), `branch_summary`/`auto_pr` get the per-task worktree; the Implementer + Verifier now
+  route through it (default stays isolated, so their tests are unchanged). New `agents/delivery.ts`
+  (`runDelivery`, Haiku): the agent writes the human summary, then Cadence **deterministically**
+  finalizes per mode — branch_summary leaves the commit on the per-task branch, `auto_pr` does a
+  best-effort `git push` + `gh pr create` → prUrl, apply_in_place has no branch/PR. git/gh steps are
+  best-effort (failure noted, never thrown); status stays **review** for the human merge in 3.7. Store
+  `readDelivery`/`writeDelivery` (summary in frontmatter so it round-trips exactly + a readable body —
+  caught a bug where reading the body returned the "# Delivery" header); shared `DeliveryResult`.
+  Wiring: a passing Verifier chains into Delivery; `GET /api/tasks/:id/delivery`. Tests: delivery unit
+  (resolve mode task-over-project, prompt, branch_summary vs apply_in_place) + the gateway E2E now
+  asserts the served delivery summary. Verify: 156 pass (×2 stable), build green, scan clean. Phase 3:
+  only the Review screen (3.7) + Manual/Dangerous guardrails (3.8) remain.
