@@ -20,6 +20,7 @@ import type {
   Task,
   TaskDetail,
   TaskEvent,
+  TaskPlan,
   TranscriptEntry,
   UpdateProjectInput,
   UpdateTaskInput,
@@ -69,6 +70,14 @@ export function updateTask(id: string, patch: UpdateTaskInput): Promise<TaskDeta
 
 export function playTask(id: string): Promise<TaskDetail> {
   return fetch(`/api/tasks/${id}/play`, { method: "POST" }).then(json<TaskDetail>);
+}
+
+export function getPlan(id: string): Promise<TaskPlan> {
+  return fetch(`/api/tasks/${id}/plan`).then(json<TaskPlan>);
+}
+
+export function approvePlan(id: string): Promise<TaskPlan> {
+  return fetch(`/api/tasks/${id}/plan/approve`, { method: "POST" }).then(json<TaskPlan>);
 }
 
 export function getContext(id: string): Promise<ContextChannel> {

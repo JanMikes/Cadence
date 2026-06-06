@@ -37,6 +37,8 @@ beforeAll(() => {
         json = { sufficiency: "ok", spec: "Spec body", unknowns: ["which auth provider?"] };
       } else if (opts.role === "questioner") {
         json = { questions: [{ id: "q1", rank: 1, type: "text", text: "Which auth provider?" }] };
+      } else if (opts.role === "planner") {
+        json = { steps: [{ title: "Wire the endpoint", files: ["api.ts"] }, { title: "Add a test" }] };
       } else {
         json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
       }
@@ -249,6 +251,31 @@ test("POST /api/tasks/:id/play requires Ready, then opens the implementing phase
     payload: { from: string | null; to: string };
   }>;
   expect(timeline.some((e) => e.payload?.to === "implementing")).toBe(true);
+});
+
+test("PLAY runs the Planner (mock) → an approvable plan that POST approve confirms", async () => {
+  const task = await createViaApi("Plan via play");
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "ready" }),
+  });
+  await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+
+  // the planner runs in the background — poll until plan.md has steps
+  let plan = { steps: [] as Array<{ title: string }>, approved: false };
+  for (let i = 0; i < 50 && plan.steps.length === 0; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as typeof plan;
+  }
+  expect(plan.steps.length).toBe(2);
+  expect(plan.approved).toBe(false);
+
+  const approved = (await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" }).then(
+    (r) => r.json(),
+  )) as { approved: boolean; steps: Array<{ title: string }> };
+  expect(approved.approved).toBe(true);
+  expect(approved.steps.length).toBe(2); // steps preserved through approval
 });
 
 test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome", async () => {

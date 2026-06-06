@@ -14,6 +14,7 @@ import {
   type UpdateTaskInput,
 } from "@cadence/shared";
 import { runDiscovery } from "./agents/discovery";
+import { approvePlan, runPlanner } from "./agents/planner";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
@@ -31,7 +32,14 @@ import {
   resolveProjectAutonomy,
   updateProject,
 } from "./projects";
-import { appendContext, readContext, readQa, readSettings, writeSettings } from "./store/store";
+import {
+  appendContext,
+  readContext,
+  readPlan,
+  readQa,
+  readSettings,
+  writeSettings,
+} from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
@@ -145,12 +153,35 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     }
     const updated = updateTask(ctx.db, taskId, { status: "implementing" });
     if (!updated) return notFound(pathname);
-    // The execution pipeline (Planner → worktree → Implementer → …) hooks on
-    // this event in 3.2+. For now PLAY just opens the implementing phase.
     ctx.hub.broadcast({ type: "event", name: "task:play", payload: taskId });
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     notifyOnTransition(ctx.hub, "ready", updated);
+    // Kick off the Planner (read-only, plan mode) in the background; it writes an
+    // approvable plan.md. The Implementer (3.4) runs only after approval.
+    void runPlanner(ctx.db, taskId, ctx.runAgent)
+      .then((p) => {
+        if (p.ran) ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+      })
+      .catch((err) => console.error(`[cadence] planner failed for ${taskId}:`, err));
     return Response.json(updated);
+  }
+
+  const planMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/plan$/);
+  if (planMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = planMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json(readPlan(taskId));
+  }
+
+  const planApproveMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/plan\/approve$/);
+  if (planApproveMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = planApproveMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    const plan = approvePlan(taskId);
+    ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+    return Response.json(plan);
   }
 
   const refineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/refine$/);

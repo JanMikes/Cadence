@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import type { DailyDigest, QAChannel } from "@cadence/shared";
+import type { DailyDigest, QAChannel, TaskPlan } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, tasks } from "../db/schema";
@@ -105,6 +105,43 @@ export function readSpec(id: string): string {
 export function writeSpec(id: string, content: string): void {
   mkdirSync(paths.taskDir(id), { recursive: true });
   writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
+}
+
+// ------------------------------------------------- task execution plan (plan.md)
+
+/** Read a task's implementation plan (plan.md frontmatter); empty if none yet. */
+export function readPlan(id: string): TaskPlan {
+  const file = paths.taskPlan(id);
+  if (!existsSync(file)) return { steps: [], approved: false, notes: null };
+  const { data } = parseMarkdown<Partial<TaskPlan>>(readFileSync(file, "utf8"));
+  return { steps: data.steps ?? [], approved: data.approved ?? false, notes: data.notes ?? null };
+}
+
+function renderPlanBody(plan: TaskPlan): string {
+  const lines = ["# Implementation plan", plan.approved ? "_Approved._" : "_Awaiting approval._", ""];
+  if (plan.steps.length === 0) {
+    lines.push("_No steps yet._");
+  } else {
+    plan.steps.forEach((s, i) => {
+      lines.push(`${i + 1}. ${s.risky ? "⚠️ " : ""}${s.title}`);
+      if (s.detail) lines.push(`   ${s.detail}`);
+      if (s.files?.length) lines.push(`   _files:_ ${s.files.join(", ")}`);
+    });
+  }
+  if (plan.notes) lines.push("", `> ${plan.notes}`);
+  return lines.join("\n");
+}
+
+/** Write a task's plan (steps + approval) to plan.md (frontmatter + readable body). */
+export function writePlan(id: string, plan: TaskPlan): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(
+    paths.taskPlan(id),
+    stringifyMarkdown(
+      { steps: plan.steps, approved: plan.approved, notes: plan.notes },
+      renderPlanBody(plan),
+    ),
+  );
 }
 
 // ----------------------------------------------------- task Q&A channel (qa.md)

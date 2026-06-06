@@ -22,6 +22,7 @@ import {
 import { statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
+import { PlanView } from "./PlanView";
 import { StatusTimeline } from "./StatusTimeline";
 
 export function TaskDetail({
@@ -229,6 +230,10 @@ export function TaskDetail({
 
             {task.body ? (
               <p className="mt-5 whitespace-pre-wrap text-sm text-foreground/90">{task.body}</p>
+            ) : null}
+
+            {["implementing", "verifying", "review", "done"].includes(task.status) ? (
+              <PlanView taskId={taskId} />
             ) : null}
 
             <SuggestionList entityType="task" entityId={taskId} />

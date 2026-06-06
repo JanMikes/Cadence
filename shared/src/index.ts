@@ -463,3 +463,21 @@ export interface CommitDigestInput {
 export interface RecapDigestInput {
   date?: string; // defaults to today
 }
+
+// --------------------------------------------------------------- execution plan (§7.4)
+// The Planner (plan mode, read-only) turns the spec into an ordered, approvable
+// implementation plan stored on the task (plan.md). The Implementer (3.4) only
+// runs once it's approved.
+
+export interface PlanStep {
+  title: string;
+  detail?: string;
+  files?: string[];
+  risky?: boolean; // risky / irreversible — surfaced for review
+}
+
+export interface TaskPlan {
+  steps: PlanStep[];
+  approved: boolean;
+  notes: string | null;
+}
