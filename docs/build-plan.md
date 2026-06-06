@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.12 (Notifications)
-- **Next step:** 1.13 (Global search + ⌘K palette)
+- **Last completed step:** 1.13 (Global search + ⌘K palette)
+- **Next step:** 1.14 (Suggestion primitive) — final Phase 1 step
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -135,7 +135,7 @@ converse → terminal handoff. No autonomy yet.
   - Verify: bar reflects usage; cost accrues per session.
 - [x] **1.12 Notifications.** In-app badges + Web Notifications API (needs-feedback / delivered).
   - Verify: a needs-input event raises a badge + desktop notification.
-- [ ] **1.13 Global search + ⌘K palette.** FTS5 over tasks; palette for jump-to + actions.
+- [x] **1.13 Global search + ⌘K palette.** FTS5 over tasks; palette for jump-to + actions.
   - Verify: search finds a task by body text; ⌘K jumps to it.
 - [ ] **1.14 Suggestion primitive.** Accept/Edit/Override control + per-field provenance
   (suggested→confirmed), reusable.
@@ -567,3 +567,15 @@ review and revert a memory entry.
   integration test** confirms PATCH→needs_feedback broadcasts the notify event to a connected client;
   the store prepends/tracks-unread/markAllRead; NotificationsView SSR; `bun run build` green. *Next:*
   1.13 global search + ⌘K palette.
+- **2026-06-06 · 1.13 Global search + ⌘K.** Server: `sanitizeFtsQuery()` turns free text into a safe
+  FTS5 MATCH (strip punctuation/operators, lower-case, **prefix-match each word** → palette-friendly);
+  `searchTaskHits(db, q)` returns ranked `{taskId,title,status}`. *Gotcha:* FTS5 `MATCH` can't target a
+  JOIN alias ("no such column: f") — so MATCH runs in a **subquery** on the bare `tasks_fts`, then joins
+  `tasks` for status. API: `GET /api/search?q=`. shared: `SearchHit`. Web: a **⌘K / Ctrl+K**
+  `CommandPalette` (global keydown toggle, Esc closes) — debounced task search + jump-to-view actions,
+  arrow/Enter keyboard nav; selecting a task calls `onOpenTask` (opens the detail), an action calls
+  `onNavigate`; renders null until opened. *Verified:* `bun test` (74 pass) — `searchTaskHits` finds a
+  task by a body word (prefix+sanitized, with status), tolerates `"x" AND (` without an FTS syntax
+  error, empty→[]; `sanitizeFtsQuery("Hello, World!")=="hello* world*"`; `GET /api/search` finds by body
+  + empty→[]; CommandPalette SSR null-when-closed; `bun run build` green. *Next:* 1.14 suggestion
+  primitive (final Phase 1 step → MVP complete).
