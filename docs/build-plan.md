@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 3.4 (Implementer in the worktree, permission mode per task)
-- **Next step:** 3.5 (Verifier + diverse reviewer subagents → pass/fail)
+- **Last completed step:** 3.5 (Verifier + diverse reviewer subagents → pass/fail)
+- **Next step:** 3.6 (Delivery + delivery-mode resolution: branch_summary / auto_pr / apply_in_place)
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -256,7 +256,7 @@ available on request).
 - [x] 3.2 Planner (plan mode) → approvable plan.
 - [x] 3.3 git worktree per task provisioning + branch naming.
 - [x] 3.4 Implementer in the worktree (permission mode per task).
-- [ ] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
+- [x] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
 - [ ] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
 - [ ] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
 - [ ] 3.8 Manual-approve mode (`canUseTool`) + Dangerous-mode guardrail (confirm + worktree).
@@ -816,3 +816,18 @@ review and revert a memory entry.
   completion so no background work dangles past teardown). Caught a tsc-only error (the
   `seen: T | null` capture pattern broke the `expect().toBe()` overload — switched to a calls array).
   Verify: 148 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 3.5 Verifier + diverse reviewer subagents → pass/fail.** New `agents/verifier.ts`:
+  `runVerifier` locates the task's worktree (idempotent re-provision → the same tree the Implementer
+  used), runs a one-shot **Sonnet** agent there with the diverse reviewer lenses injected via
+  `--agents` (security-/test-/convention-reviewer + smoke-tester), under **acceptEdits** so the
+  smoke-tester can actually run build/tests — the prompt forbids fixing (report-only, §6).
+  `normalizeReport` cleans criteria/checks/issues and omits undefined nested keys (the YAML-dump
+  guard). `applyVerify` writes `verify.md` and **routes the task**: pass → review (the human merges,
+  3.7), fail → back to implementing. Store: `readVerify`/`writeVerify` (frontmatter + readable
+  ✅/❌ body); shared `VerifyReport` + criterion/check/issue types. **Wiring:** the Implementer's
+  background completion now chains into the Verifier; `GET /api/tasks/:id/verify` serves the report.
+  Tests: verifier unit (prompt names the subagents + "DO NOT FIX", normalize, pass→review,
+  fail→implementing) + the gateway **E2E extended to the full slice**: PLAY → plan → approve →
+  Implementer → Verifier → **review**, with the verify report served. Verify: 152 pass (×2 stable),
+  build green, scan clean. Execution pipeline is now end-to-end through verification; only Delivery
+  (3.6) + the Review screen (3.7) + Manual/Dangerous guardrails (3.8) remain in Phase 3.
