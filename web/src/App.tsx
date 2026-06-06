@@ -7,6 +7,7 @@ import { Projects } from "./features/projects/Projects";
 import { SessionPanel } from "./features/session/SessionPanel";
 import { NotificationsView } from "./features/notifications/NotificationsView";
 import { useNotifications } from "./features/notifications/store";
+import { CommandPalette } from "./features/search/CommandPalette";
 import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { TaskDetail } from "./features/task/TaskDetail";
@@ -83,6 +84,14 @@ export function App() {
       {activeSessionId ? (
         <SessionPanel sessionId={activeSessionId} onClose={() => setActiveSessionId(null)} />
       ) : null}
+
+      <CommandPalette
+        onOpenTask={setSelectedId}
+        onNavigate={(v) => {
+          setView(v);
+          setSelectedId(null);
+        }}
+      />
     </>
   );
 }

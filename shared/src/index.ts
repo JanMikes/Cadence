@@ -86,6 +86,13 @@ export interface CreateTaskInput {
   body?: string;
 }
 
+/** A ranked search result (FTS5 over task text). */
+export interface SearchHit {
+  taskId: string;
+  title: string;
+  status: string;
+}
+
 /** Task plus the list-valued fields that live in markdown (not the index). */
 export interface TaskDetail extends Task {
   labels: string[];

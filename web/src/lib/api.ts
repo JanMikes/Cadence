@@ -9,6 +9,7 @@ import type {
   LiveSession,
   OpenTerminalResult,
   Project,
+  SearchHit,
   Session,
   SpawnSessionInput,
   Task,
@@ -131,6 +132,10 @@ export function getLiveSessions(): Promise<LiveSession[]> {
 
 export function getUsage(): Promise<UsageResponse> {
   return fetch("/api/usage").then(json<UsageResponse>);
+}
+
+export function search(q: string): Promise<SearchHit[]> {
+  return fetch(`/api/search?q=${encodeURIComponent(q)}`).then(json<SearchHit[]>);
 }
 
 export function getTranscript(sessionId: string): Promise<TranscriptEntry[]> {

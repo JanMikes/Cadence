@@ -123,6 +123,19 @@ test("project import: candidates list, enrich (mocked), and create selected", as
   expect(created[0]).toMatchObject({ rootPath: "/tmp/imported-repo", name: "Imported Repo" });
 });
 
+test("GET /api/search finds a task by body text (FTS)", async () => {
+  await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Indexing work", body: "implement the elasticsearch reindexer" }),
+  });
+  const hits = (await fetch(`${gw.url}/api/search?q=elasticsearch`).then((r) => r.json())) as Array<{
+    title: string;
+  }>;
+  expect(hits.some((h) => h.title === "Indexing work")).toBe(true);
+  expect(await fetch(`${gw.url}/api/search?q=`).then((r) => r.json())).toEqual([]);
+});
+
 test("settings: GET defaults, PATCH preferredTerminal", async () => {
   const before = (await fetch(`${gw.url}/api/settings`).then((r) => r.json())) as {
     preferredTerminal: string;

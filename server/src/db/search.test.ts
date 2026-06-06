@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { migrateDb, openDb, type Db } from "./client";
-import { searchTasks } from "./search";
+import { sanitizeFtsQuery, searchTaskHits, searchTasks } from "./search";
 import { tasks } from "./schema";
 
 let db: Db;
@@ -27,6 +27,25 @@ test("FTS returns a task by a word in its body", () => {
 
   // Title is indexed too; diacritics are folded (remove_diacritics 2).
   expect(searchTasks(db, "gateway").map((h) => h.taskId)).toContain(id);
+});
+
+test("searchTaskHits finds a task by body text (prefix + sanitized), with status", () => {
+  const id = crypto.randomUUID();
+  db.insert(tasks)
+    .values({ id, title: "Refactor parser", body: "rework the tokenizer pipeline", status: "ready" })
+    .run();
+
+  // prefix match on a body word
+  const hits = searchTaskHits(db, "token");
+  expect(hits.find((h) => h.taskId === id)).toMatchObject({ title: "Refactor parser", status: "ready" });
+
+  // punctuation/operators are sanitized away (no FTS syntax error)
+  expect(() => searchTaskHits(db, '"tokenizer" AND (')).not.toThrow();
+  expect(searchTaskHits(db, "tokenizer").map((h) => h.taskId)).toContain(id);
+
+  // empty / junk queries return nothing rather than erroring
+  expect(searchTaskHits(db, "   ")).toHaveLength(0);
+  expect(sanitizeFtsQuery("Hello, World!")).toBe("hello* world*");
 });
 
 test("triggers keep FTS in sync on update and delete", () => {

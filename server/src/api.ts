@@ -11,6 +11,7 @@ import {
 } from "@cadence/shared";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
+import { searchTaskHits } from "./db/search";
 import { importProjects, scanClaudeProjects } from "./import";
 import { notifyOnTransition } from "./notify";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
@@ -145,6 +146,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/usage" && method === "GET") {
     return Response.json({ stats: readUsageStats(), rateLimit: ctx.spawn.latestRateLimit() });
+  }
+
+  if (pathname === "/api/search" && method === "GET") {
+    const q = url.searchParams.get("q") ?? "";
+    return Response.json(q.trim() ? searchTaskHits(ctx.db, q) : []);
   }
 
   if (pathname === "/api/import/candidates" && method === "GET") {

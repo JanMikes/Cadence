@@ -1,9 +1,40 @@
+import type { SearchHit } from "@cadence/shared";
 import { sql } from "drizzle-orm";
 import type { Db } from "./client";
 
 export interface TaskSearchHit {
   taskId: string;
   title: string;
+}
+
+/**
+ * Turn free user text into a safe FTS5 MATCH query: strip punctuation/operators,
+ * lower-case, and prefix-match each word (palette-friendly). "" if nothing usable.
+ */
+export function sanitizeFtsQuery(q: string): string {
+  const terms = q
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  return terms.map((t) => `${t}*`).join(" ");
+}
+
+/** Ranked task hits (id + title + status) for the search box / ⌘K palette. */
+export function searchTaskHits(db: Db, query: string, limit = 20): SearchHit[] {
+  const match = sanitizeFtsQuery(query);
+  if (!match) return [];
+  // MATCH must reference the bare FTS table (no join alias), so match in a subquery
+  // and join tasks for the status.
+  const rows = db.all(
+    sql`SELECT t.id as taskId, t.title as title, t.status as status
+        FROM (
+          SELECT task_id, rank FROM tasks_fts WHERE tasks_fts MATCH ${match} ORDER BY rank LIMIT ${limit}
+        ) m
+        JOIN tasks t ON t.id = m.task_id
+        ORDER BY m.rank`,
+  ) as Array<{ taskId: string; title: string; status: string }>;
+  return rows;
 }
 
 /**
