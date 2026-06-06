@@ -71,6 +71,11 @@ export function provisionWorktree(db: Db, taskId: string): Worktree {
   const project = getProjectById(db, task.projectId);
   const rootPath = project?.rootPath;
   if (!rootPath) throw new Error("worktree: project has no rootPath");
+  return provisionWorktreeAt(rootPath, task);
+}
+
+/** Provision a worktree for `task` in a SPECIFIC repo (used per-member by fleets). */
+export function provisionWorktreeAt(rootPath: string, task: { id: string; title: string }): Worktree {
   if (!isGitRepo(rootPath)) throw new Error(`worktree: ${rootPath} is not a git repo`);
 
   const branch = branchName(task);

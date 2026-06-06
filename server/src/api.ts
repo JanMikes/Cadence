@@ -2,6 +2,7 @@ import {
   APP_NAME,
   type AppendContextInput,
   type CommitDigestInput,
+  type CreateFleetInput,
   type CreateProjectInput,
   type CreateSuggestionInput,
   type CreateTaskInput,
@@ -11,11 +12,13 @@ import {
   type ReviewActionInput,
   SCHEMA_VERSION,
   type SpawnSessionInput,
+  type UpdateFleetInput,
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
 import { runDelivery } from "./agents/delivery";
 import { runDiscovery } from "./agents/discovery";
+import { runFleetImplementer } from "./agents/fleet";
 import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
 import { runVerifier } from "./agents/verifier";
@@ -27,6 +30,7 @@ import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
 import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents } from "./events";
+import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
 import { notifyOnTransition } from "./notify";
@@ -625,6 +629,62 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       const updated = updateProject(ctx.db, slug, patch);
       if (!updated) return notFound(pathname);
       ctx.hub.broadcast({ type: "event", name: "project:updated", payload: updated.slug });
+      return Response.json(updated);
+    }
+    return methodNotAllowed();
+  }
+
+  if (pathname === "/api/fleets") {
+    if (method === "GET") return Response.json(listFleets(ctx.db));
+    if (method === "POST") {
+      let input: CreateFleetInput;
+      try {
+        input = (await req.json()) as CreateFleetInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const name = typeof input?.name === "string" ? input.name.trim() : "";
+      if (!name) return badRequest("name is required");
+      const fleet = createFleet(ctx.db, { ...input, name });
+      ctx.hub.broadcast({ type: "event", name: "fleet:created", payload: fleet.slug });
+      return Response.json(fleet, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const fleetRunMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/fleet-run$/);
+  if (fleetRunMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = fleetRunMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    const outcome = await runFleetImplementer(ctx.db, taskId, ctx.runAgent);
+    if (outcome.ran) {
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      ctx.hub.broadcast({ type: "event", name: "fleet:ran", payload: taskId });
+    }
+    return Response.json(outcome);
+  }
+
+  const fleetMatch = pathname.match(/^\/api\/fleets\/([^/]+)$/);
+  if (fleetMatch) {
+    const slug = fleetMatch[1] as string;
+    if (method === "GET") {
+      const fleet = getFleet(ctx.db, slug);
+      return fleet ? Response.json(fleet) : notFound(pathname);
+    }
+    if (method === "PATCH") {
+      let patch: UpdateFleetInput;
+      try {
+        patch = (await req.json()) as UpdateFleetInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (typeof patch?.name === "string" && !patch.name.trim()) {
+        return badRequest("name cannot be blank");
+      }
+      const updated = updateFleet(ctx.db, slug, patch);
+      if (!updated) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "fleet:updated", payload: updated.slug });
       return Response.json(updated);
     }
     return methodNotAllowed();

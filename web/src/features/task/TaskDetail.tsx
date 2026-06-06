@@ -12,6 +12,7 @@ import { LabeledIconButton } from "../../components/LabeledIconButton";
 import {
   appendContext,
   getContext,
+  getFleets,
   getProjects,
   getTaskDetail,
   getTaskSessions,
@@ -45,6 +46,7 @@ export function TaskDetail({
     queryFn: () => getContext(taskId),
   });
   const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const fleets = useQuery({ queryKey: ["fleets"], queryFn: getFleets });
 
   const invalidateTask = () => {
     void qc.invalidateQueries({ queryKey: ["task", taskId] });
@@ -58,6 +60,11 @@ export function TaskDetail({
 
   const setProject = useMutation({
     mutationFn: (slug: string | null) => updateTask(taskId, { project: slug }),
+    onSuccess: invalidateTask,
+  });
+
+  const setFleet = useMutation({
+    mutationFn: (slug: string | null) => updateTask(taskId, { fleet: slug }),
     onSuccess: invalidateTask,
   });
 
@@ -170,6 +177,23 @@ export function TaskDetail({
                   {projects.data?.map((p) => (
                     <option key={p.id} value={p.slug}>
                       {p.name}
+                    </option>
+                  ))}
+                </select>
+              </dd>
+
+              <dt className="text-muted-foreground">Fleet</dt>
+              <dd>
+                <select
+                  value={fleets.data?.find((f) => f.id === task.fleetId)?.slug ?? ""}
+                  onChange={(e) => setFleet.mutate(e.target.value || null)}
+                  aria-label="Fleet"
+                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">— None —</option>
+                  {fleets.data?.map((f) => (
+                    <option key={f.id} value={f.slug}>
+                      {f.name}
                     </option>
                   ))}
                 </select>

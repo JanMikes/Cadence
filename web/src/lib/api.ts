@@ -2,10 +2,12 @@ import type {
   ApprovalRequest,
   CommitDigestInput,
   ContextChannel,
+  CreateFleetInput,
   CreateProjectInput,
   CreateTaskInput,
   DailyDigest,
   DeliveryResult,
+  Fleet,
   EnrichResult,
   GlobalSettings,
   ImportCandidate,
@@ -25,6 +27,7 @@ import type {
   TaskEvent,
   TaskPlan,
   TranscriptEntry,
+  UpdateFleetInput,
   VerifyReport,
   UpdateProjectInput,
   UpdateTaskInput,
@@ -176,6 +179,26 @@ export function submitAnswers(
 
 export function getProjects(): Promise<Project[]> {
   return fetch("/api/projects").then(json<Project[]>);
+}
+
+export function getFleets(): Promise<Fleet[]> {
+  return fetch("/api/fleets").then(json<Fleet[]>);
+}
+
+export function createFleet(input: CreateFleetInput): Promise<Fleet> {
+  return fetch("/api/fleets", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  }).then(json<Fleet>);
+}
+
+export function updateFleet(slug: string, patch: UpdateFleetInput): Promise<Fleet> {
+  return fetch(`/api/fleets/${slug}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  }).then(json<Fleet>);
 }
 
 export function createProject(input: CreateProjectInput): Promise<Project> {

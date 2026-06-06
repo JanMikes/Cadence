@@ -17,6 +17,7 @@ const NAV: Array<{ id: ViewId; label: string }> = [
   { id: "inbox", label: "Go to Inbox" },
   { id: "board", label: "Go to Board" },
   { id: "projects", label: "Go to Projects" },
+  { id: "fleets", label: "Go to Fleets" },
   { id: "sessions", label: "Go to Sessions" },
   { id: "notifications", label: "Go to Notifications" },
   { id: "settings", label: "Go to Settings" },

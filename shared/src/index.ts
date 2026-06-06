@@ -216,6 +216,51 @@ export interface UpdateProjectInput {
   notes?: string | null;
 }
 
+// ------------------------------------------------------------------------ fleets
+// A named, ordered set of projects for multi-repo tasks (spec §4). Member slugs
+// live in the fleet's markdown; the index holds the scalar fields.
+
+export interface Fleet {
+  id: string;
+  name: string;
+  slug: string;
+  projects: string[]; // ordered member project slugs
+  systemPrompt: string | null;
+  notes: string | null;
+  createdAt: number;
+}
+
+export interface CreateFleetInput {
+  name: string;
+  projects?: string[];
+  systemPrompt?: string;
+  notes?: string;
+}
+
+export interface UpdateFleetInput {
+  name?: string;
+  projects?: string[];
+  systemPrompt?: string | null;
+  notes?: string | null;
+}
+
+/** One repo's outcome within a multi-repo fleet run. */
+export interface FleetSubResult {
+  projectSlug: string;
+  projectName: string;
+  cwd: string;
+  branch: string | null;
+  ran: boolean;
+  reason?: string;
+  costUsd: number;
+}
+
+export interface FleetRunResult {
+  taskId: string;
+  fleet: string;
+  results: FleetSubResult[];
+}
+
 // --------------------------------------------------------------- Claude sessions
 
 /** A Claude Code session we spawned/track (index view of the sessions table). */

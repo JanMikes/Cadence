@@ -509,6 +509,35 @@ test("approvals: a parked canUseTool request lists, then resolve frees the agent
   expect(missing.status).toBe(404);
 });
 
+test("fleets: create with ordered members, list, get, patch", async () => {
+  const created = (await fetch(`${gw.url}/api/fleets`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Platform", projects: ["api", "web"], systemPrompt: "sync" }),
+  }).then((r) => r.json())) as { slug: string; projects: string[] };
+  expect(created.slug).toBe("platform");
+  expect(created.projects).toEqual(["api", "web"]);
+
+  const list = (await fetch(`${gw.url}/api/fleets`).then((r) => r.json())) as Array<{ slug: string }>;
+  expect(list.map((f) => f.slug)).toContain("platform");
+
+  const patched = (await fetch(`${gw.url}/api/fleets/platform`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projects: ["web", "api", "infra"] }),
+  }).then((r) => r.json())) as { projects: string[] };
+  expect(patched.projects).toEqual(["web", "api", "infra"]);
+});
+
+test("POST /api/tasks/:id/fleet-run bails cleanly for a non-fleet task", async () => {
+  const task = await createViaApi("Not on a fleet");
+  const outcome = (await fetch(`${gw.url}/api/tasks/${task.id}/fleet-run`, { method: "POST" }).then((r) =>
+    r.json(),
+  )) as { ran: boolean; reason?: string };
+  expect(outcome.ran).toBe(false);
+  expect(outcome.reason).toContain("not assigned");
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",
