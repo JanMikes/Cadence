@@ -36,6 +36,14 @@ export type ServerMessage = HelloMessage | EventMessage;
 
 export type ClientMessage = { type: "ping" } | { type: "subscribe"; topic?: string };
 
+/** Payload of a `notify` ServerMessage — drives in-app badges + OS notifications. */
+export interface NotifyPayload {
+  kind: "needs_feedback" | "delivered" | "info";
+  title: string;
+  message: string;
+  taskId?: string;
+}
+
 // -------------------------------------------------------------------- entities
 // DTOs returned by the REST API — the indexed (queryable) view of each entity.
 // The markdown under ~/.cadence/ remains the source of truth (spec §5).

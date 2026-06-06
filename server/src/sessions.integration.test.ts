@@ -83,6 +83,30 @@ test("follow-up message streams a reply back over WS (session:event)", async () 
   expect(getSession(db, session.id)?.costUsd ?? 0).toBeGreaterThan(0);
 });
 
+test("moving a task to needs_feedback broadcasts a notify event over WS", async () => {
+  const task = await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Answer me" }),
+  }).then((r) => r.json() as Promise<{ id: string }>);
+
+  const got = collectEvents(
+    (m) => m.type === "event" && m.name === "notify",
+  );
+  await new Promise((r) => setTimeout(r, 150)); // ensure the WS client is registered
+
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "needs_feedback" }),
+  });
+
+  const event = await got;
+  const payload = event.type === "event" ? (event.payload as { kind?: string; taskId?: string }) : {};
+  expect(payload.kind).toBe("needs_feedback");
+  expect(payload.taskId).toBe(task.id);
+});
+
 test("posting to an unknown session is a 409", async () => {
   const res = await fetch(`${gw.url}/api/sessions/not-a-session/messages`, {
     method: "POST",

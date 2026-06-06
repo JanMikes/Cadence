@@ -5,6 +5,8 @@ import { Board } from "./features/board/Board";
 import { Inbox } from "./features/inbox/Inbox";
 import { Projects } from "./features/projects/Projects";
 import { SessionPanel } from "./features/session/SessionPanel";
+import { NotificationsView } from "./features/notifications/NotificationsView";
+import { useNotifications } from "./features/notifications/store";
 import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { TaskDetail } from "./features/task/TaskDetail";
@@ -19,6 +21,8 @@ export function App() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
+  const notifications = useNotifications();
+  const unread = notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +56,7 @@ export function App() {
           setSelectedId(null);
         }}
         topBar={<UsageBar />}
+        navBadges={{ notifications: unread }}
         status={
           <span className="inline-flex items-center gap-1.5">
             <span className={cn("size-2 rounded-full", dot)} />
@@ -63,6 +68,7 @@ export function App() {
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}
         {view === "sessions" ? <SessionsView /> : null}
+        {view === "notifications" ? <NotificationsView onOpenTask={setSelectedId} /> : null}
         {view === "settings" ? <SettingsView /> : null}
       </AppShell>
 

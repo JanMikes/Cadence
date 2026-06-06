@@ -12,6 +12,7 @@ import {
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { importProjects, scanClaudeProjects } from "./import";
+import { notifyOnTransition } from "./notify";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { appendContext, readContext, readSettings, writeSettings } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
@@ -88,9 +89,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       if (typeof patch?.title === "string" && !patch.title.trim()) {
         return badRequest("title cannot be blank");
       }
+      const before = getTask(ctx.db, id);
       const updated = updateTask(ctx.db, id, patch);
       if (!updated) return notFound(pathname);
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: updated.id });
+      notifyOnTransition(ctx.hub, before?.status, updated);
       return Response.json(updated);
     }
     return methodNotAllowed();

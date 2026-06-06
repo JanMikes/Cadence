@@ -1,8 +1,8 @@
-import { Activity, FolderGit2, Inbox, LayoutGrid, Settings, Sparkles } from "lucide-react";
+import { Activity, Bell, FolderGit2, Inbox, LayoutGrid, Settings, Sparkles } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
-export type ViewId = "inbox" | "board" | "projects" | "sessions" | "settings";
+export type ViewId = "inbox" | "board" | "projects" | "sessions" | "notifications" | "settings";
 
 interface NavItem {
   id: ViewId;
@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
   { id: "board", label: "Board", icon: LayoutGrid },
   { id: "projects", label: "Projects", icon: FolderGit2 },
   { id: "sessions", label: "Sessions", icon: Activity },
+  { id: "notifications", label: "Notifications", icon: Bell },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -27,9 +28,18 @@ export interface AppShellProps {
   status?: ReactNode;
   /** Ambient bar pinned above the scrolling content (e.g. the usage bar). */
   topBar?: ReactNode;
+  /** Unread-count badges per nav item (e.g. notifications). */
+  navBadges?: Partial<Record<ViewId, number>>;
 }
 
-export function AppShell({ children, activeView, onNavigate, status, topBar }: AppShellProps) {
+export function AppShell({
+  children,
+  activeView,
+  onNavigate,
+  status,
+  topBar,
+  navBadges,
+}: AppShellProps) {
   return (
     <div className="flex h-full bg-background text-foreground">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card/40">
@@ -56,6 +66,11 @@ export function AppShell({ children, activeView, onNavigate, status, topBar }: A
               >
                 <item.icon className="size-4" />
                 <span>{item.label}</span>
+                {navBadges?.[item.id] ? (
+                  <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                    {navBadges[item.id]}
+                  </span>
+                ) : null}
               </button>
             );
           })}
