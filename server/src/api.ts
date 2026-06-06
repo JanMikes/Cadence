@@ -21,6 +21,7 @@ import { approvePlan, runPlanner } from "./agents/planner";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
+import { type ApprovalDecision, ApprovalRegistry } from "./approvals";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
@@ -73,6 +74,8 @@ export interface ApiContext {
   enrich: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
   /** One-shot agent runner (injectable for tests; default real claude). */
   runAgent: AgentRunner;
+  /** In-app tool-approval registry (Manual mode, §9.1). */
+  approvals: ApprovalRegistry;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -376,6 +379,27 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (pathname === "/api/search" && method === "GET") {
     const q = url.searchParams.get("q") ?? "";
     return Response.json(q.trim() ? searchTaskHits(ctx.db, q) : []);
+  }
+
+  if (pathname === "/api/approvals" && method === "GET") {
+    return Response.json(ctx.approvals.list());
+  }
+
+  const approvalResolveMatch = pathname.match(/^\/api\/approvals\/([^/]+)\/resolve$/);
+  if (approvalResolveMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    let body: ApprovalDecision;
+    try {
+      body = (await req.json()) as ApprovalDecision;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    if (typeof body?.allow !== "boolean") return badRequest("allow (boolean) required");
+    const ok = ctx.approvals.resolve(approvalResolveMatch[1] as string, {
+      allow: body.allow,
+      reason: body.reason,
+    });
+    return ok ? Response.json({ resolved: true }) : notFound(pathname);
   }
 
   if (pathname === "/api/digest") {

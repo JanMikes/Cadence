@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { runAgent } from "./agents/runner";
+import { ApprovalRegistry } from "./approvals";
 import type { AgentRunner } from "./agents/triage";
 import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
@@ -38,6 +39,7 @@ export interface Gateway {
   db: Db;
   hub: WsHub;
   spawn: SpawnManager;
+  approvals: ApprovalRegistry;
   broadcast: (msg: ServerMessage) => void;
   stop: () => Promise<void>;
 }
@@ -57,6 +59,9 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   }
 
   const spawnManager = new SpawnManager(db, hub);
+  const approvals = new ApprovalRegistry((req, event) =>
+    hub.broadcast({ type: "event", name: `approval:${event}`, payload: req.id }),
+  );
 
   let watcher: WatcherHandle | undefined;
   if (opts.startWatcher !== false) {
@@ -84,6 +89,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
           openTerminal: opts.openTerminal ?? openInTerminal,
           enrich: opts.enrich ?? claudeEnrich,
           runAgent: opts.runAgent ?? runAgent,
+          approvals,
         });
       }
 
@@ -110,6 +116,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     db,
     hub,
     spawn: spawnManager,
+    approvals,
     broadcast: (msg) => hub.broadcast(msg),
     stop: async () => {
       watcher?.close();

@@ -105,3 +105,19 @@ test("runImplementer bails (no throw) when the task has no project to isolate", 
   expect(outcome.ran).toBe(false);
   expect(outcome.reason).toMatch(/no project/);
 });
+
+test("Dangerous mode is refused without worktree isolation (apply_in_place)", async () => {
+  const project = createProject(db, { name: "Scratch", rootPath: repo });
+  const task = createTask(db, { title: "Risky in place" });
+  updateTask(db, task.id, {
+    project: project.slug,
+    status: "implementing",
+    permissionMode: "dangerous",
+    deliveryMode: "apply_in_place",
+  });
+  applyPlan(task.id, { steps: [{ title: "x" }] });
+  approvePlan(task.id);
+  const outcome = await runImplementer(db, task.id, ok);
+  expect(outcome.ran).toBe(false);
+  expect(outcome.reason).toMatch(/Dangerous mode requires/);
+});

@@ -69,6 +69,11 @@ export async function runImplementer(
   }
 
   const claudeMode = claudePermissionMode(resolvePermissionMode(db, taskId));
+  // Dangerous-mode guardrail (§9): bypassPermissions is only allowed inside an
+  // isolated worktree, never in-place on the main tree — a runaway can't escape.
+  if (claudeMode === "bypassPermissions" && !target.worktreePath) {
+    return { ran: false, reason: "Dangerous mode requires an isolated worktree (not apply_in_place)" };
+  }
   const result = await run({
     cwd: target.cwd,
     role: "implementer",

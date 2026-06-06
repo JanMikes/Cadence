@@ -482,6 +482,33 @@ test("POST /api/digest/recap closes the day with progress + a positive note", as
   expect(recapped.recap.note.length).toBeGreaterThan(0);
 });
 
+test("approvals: a parked canUseTool request lists, then resolve frees the agent", async () => {
+  // park a request directly on the registry (as the SDK's canUseTool would)
+  const decision = gw.approvals.request({ toolName: "Bash", input: { command: "ls" } }, { id: "ga1" });
+
+  const pending = (await fetch(`${gw.url}/api/approvals`).then((r) => r.json())) as Array<{
+    id: string;
+    toolName: string;
+  }>;
+  expect(pending.some((a) => a.id === "ga1" && a.toolName === "Bash")).toBe(true);
+
+  const res = await fetch(`${gw.url}/api/approvals/ga1/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ allow: true }),
+  });
+  expect(res.status).toBe(200);
+  await expect(decision).resolves.toEqual({ allow: true, reason: undefined });
+
+  // resolving an unknown id is a 404
+  const missing = await fetch(`${gw.url}/api/approvals/nope/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ allow: true }),
+  });
+  expect(missing.status).toBe(404);
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",

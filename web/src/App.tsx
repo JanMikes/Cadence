@@ -1,6 +1,7 @@
 import type { HealthStatus } from "@cadence/shared";
 import { useEffect, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
+import { ApprovalsBar } from "./features/approvals/ApprovalsBar";
 import { Board } from "./features/board/Board";
 import { Today } from "./features/digest/Today";
 import { Inbox } from "./features/inbox/Inbox";
@@ -94,6 +95,8 @@ export function App() {
           setSelectedId(null);
         }}
       />
+
+      <ApprovalsBar />
     </>
   );
 }

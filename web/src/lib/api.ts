@@ -1,4 +1,5 @@
 import type {
+  ApprovalRequest,
   CommitDigestInput,
   ContextChannel,
   CreateProjectInput,
@@ -127,6 +128,18 @@ export function getQa(taskId: string): Promise<QAChannel> {
 
 export function getTimeline(taskId: string): Promise<TaskEvent[]> {
   return fetch(`/api/tasks/${taskId}/timeline`).then(json<TaskEvent[]>);
+}
+
+export function getApprovals(): Promise<ApprovalRequest[]> {
+  return fetch("/api/approvals").then(json<ApprovalRequest[]>);
+}
+
+export function resolveApproval(id: string, allow: boolean): Promise<{ resolved: boolean }> {
+  return fetch(`/api/approvals/${id}/resolve`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ allow }),
+  }).then(json<{ resolved: boolean }>);
 }
 
 export function getDigest(date?: string): Promise<DailyDigest> {

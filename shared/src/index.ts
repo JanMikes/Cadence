@@ -529,3 +529,21 @@ export interface TaskDiff {
 export interface ReviewActionInput {
   note?: string; // optional note for request-changes
 }
+
+// --------------------------------------------------------- tool approvals (§9.1)
+// Manual permission mode: each tool action is parked here until I approve/deny it
+// in-app (the Agent SDK `canUseTool` round-trip).
+
+export interface ApprovalRequest {
+  id: string;
+  sessionId: string | null;
+  taskId: string | null;
+  toolName: string;
+  input: unknown;
+  createdAt: number;
+}
+
+export interface ApprovalDecision {
+  allow: boolean;
+  reason?: string;
+}
