@@ -93,6 +93,51 @@ export interface SearchHit {
   status: string;
 }
 
+// ------------------------------------------------------- suggestions (§10.2)
+// "Propose, don't impose": every decidable field can carry a Claude suggestion
+// the user can Accept / Edit / Override / Dismiss, with per-field provenance.
+
+export const SUGGESTION_STATUSES = [
+  "suggested",
+  "confirmed",
+  "edited",
+  "overridden",
+  "dismissed",
+] as const;
+export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
+
+export type SuggestionAction = "accept" | "edit" | "override" | "dismiss";
+
+export interface Suggestion {
+  id: string;
+  entityType: string; // task | project | …
+  entityId: string;
+  field: string;
+  value: unknown; // the suggested (or edited/overridden) value
+  rationale: string | null;
+  confidence: number | null; // 0..1
+  status: string;
+  source: string | null; // which agent/role proposed it
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+export interface CreateSuggestionInput {
+  entityType: string;
+  entityId: string;
+  field: string;
+  value: unknown;
+  rationale?: string;
+  confidence?: number;
+  source?: string;
+}
+
+export interface ResolveSuggestionInput {
+  action: SuggestionAction;
+  /** New value for edit/override. */
+  value?: unknown;
+}
+
 /** Task plus the list-valued fields that live in markdown (not the index). */
 export interface TaskDetail extends Task {
   labels: string[];

@@ -19,6 +19,7 @@ import {
   updateTask,
 } from "../../lib/api";
 import { statusLabel } from "../../lib/status";
+import { SuggestionList } from "../suggestions/SuggestionControl";
 
 export function TaskDetail({
   taskId,
@@ -204,6 +205,8 @@ export function TaskDetail({
             {task.body ? (
               <p className="mt-5 whitespace-pre-wrap text-sm text-foreground/90">{task.body}</p>
             ) : null}
+
+            <SuggestionList entityType="task" entityId={taskId} />
 
             <section className="mt-7 border-t border-border pt-5">
               <div className="flex items-center justify-between">

@@ -12,6 +12,8 @@ import type {
   SearchHit,
   Session,
   SpawnSessionInput,
+  Suggestion,
+  SuggestionAction,
   Task,
   TaskDetail,
   TranscriptEntry,
@@ -136,6 +138,24 @@ export function getUsage(): Promise<UsageResponse> {
 
 export function search(q: string): Promise<SearchHit[]> {
   return fetch(`/api/search?q=${encodeURIComponent(q)}`).then(json<SearchHit[]>);
+}
+
+export function getSuggestions(entityType: string, entityId: string): Promise<Suggestion[]> {
+  return fetch(
+    `/api/suggestions?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}`,
+  ).then(json<Suggestion[]>);
+}
+
+export function resolveSuggestion(
+  id: string,
+  action: SuggestionAction,
+  value?: unknown,
+): Promise<Suggestion> {
+  return fetch(`/api/suggestions/${id}/resolve`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ action, value }),
+  }).then(json<Suggestion>);
 }
 
 export function getTranscript(sessionId: string): Promise<TranscriptEntry[]> {

@@ -134,7 +134,8 @@ export const suggestions = sqliteTable("suggestions", {
   field: text("field").notNull(),
   suggestedValue: text("suggested_value"), // JSON-encoded
   rationale: text("rationale"),
-  // suggested | confirmed | edited | overridden
+  confidence: real("confidence"), // 0..1 (§10.2)
+  // suggested | confirmed | edited | overridden | dismissed
   status: text("status").notNull().default("suggested"),
   source: text("source"), // which agent/role proposed it
   createdAt: integer("created_at").notNull().default(now),

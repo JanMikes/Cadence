@@ -2,8 +2,10 @@ import {
   APP_NAME,
   type AppendContextInput,
   type CreateProjectInput,
+  type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
+  type ResolveSuggestionInput,
   SCHEMA_VERSION,
   type SpawnSessionInput,
   type UpdateProjectInput,
@@ -17,6 +19,7 @@ import { notifyOnTransition } from "./notify";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { appendContext, readContext, readSettings, writeSettings } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
+import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
 import { readLiveSessions, readTranscript } from "./transcripts";
 import { readUsageStats } from "./usage";
@@ -151,6 +154,47 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (pathname === "/api/search" && method === "GET") {
     const q = url.searchParams.get("q") ?? "";
     return Response.json(q.trim() ? searchTaskHits(ctx.db, q) : []);
+  }
+
+  if (pathname === "/api/suggestions") {
+    if (method === "GET") {
+      const entityType = url.searchParams.get("entityType");
+      const entityId = url.searchParams.get("entityId");
+      if (!entityType || !entityId) return badRequest("entityType and entityId are required");
+      return Response.json(listSuggestions(ctx.db, entityType, entityId));
+    }
+    if (method === "POST") {
+      let input: CreateSuggestionInput;
+      try {
+        input = (await req.json()) as CreateSuggestionInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (!input?.entityType || !input?.entityId || !input?.field) {
+        return badRequest("entityType, entityId and field are required");
+      }
+      const s = createSuggestion(ctx.db, input);
+      ctx.hub.broadcast({ type: "event", name: "suggestion:created", payload: s.id });
+      return Response.json(s, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const resolveMatch = pathname.match(/^\/api\/suggestions\/([^/]+)\/resolve$/);
+  if (resolveMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    let body: ResolveSuggestionInput;
+    try {
+      body = (await req.json()) as ResolveSuggestionInput;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    const actions = ["accept", "edit", "override", "dismiss"];
+    if (!body?.action || !actions.includes(body.action)) return badRequest("invalid action");
+    const resolved = resolveSuggestion(ctx.db, resolveMatch[1] as string, body.action, body.value);
+    if (!resolved) return notFound(pathname);
+    ctx.hub.broadcast({ type: "event", name: "suggestion:resolved", payload: resolved.id });
+    return Response.json(resolved);
   }
 
   if (pathname === "/api/import/candidates" && method === "GET") {
