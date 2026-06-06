@@ -15,6 +15,7 @@ import {
   getProjects,
   getTaskDetail,
   getTaskSessions,
+  playTask,
   spawnSession,
   updateTask,
 } from "../../lib/api";
@@ -84,6 +85,11 @@ export function TaskDetail({
     },
   });
 
+  const play = useMutation({
+    mutationFn: () => playTask(taskId),
+    onSuccess: invalidateTask,
+  });
+
   const addNote = useMutation({
     mutationFn: (text: string) => appendContext(taskId, text),
     onSuccess: () => {
@@ -117,6 +123,21 @@ export function TaskDetail({
         {task ? (
           <>
             <QACards taskId={taskId} onResolved={invalidateTask} />
+
+            {task.status === "ready" ? (
+              <button
+                type="button"
+                onClick={() => play.mutate()}
+                disabled={play.isPending}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-green-600/20 transition-colors hover:bg-green-500 disabled:opacity-60"
+              >
+                <Play className="size-4 fill-current" />
+                {play.isPending ? "Starting…" : "PLAY — implement this task"}
+              </button>
+            ) : null}
+            {play.isError ? (
+              <p className="mt-2 text-xs text-red-400">Couldn’t start — is the task still Ready?</p>
+            ) : null}
 
             <dl className="mt-5 grid grid-cols-[6rem_1fr] items-center gap-y-3 text-sm">
               <dt className="text-muted-foreground">Status</dt>

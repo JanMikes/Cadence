@@ -133,6 +133,26 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return methodNotAllowed();
   }
 
+  const playMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/play$/);
+  if (playMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = playMatch[1] as string;
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
+    // PLAY is the human gate (§6): only a Ready task can start executing.
+    if (task.status !== "ready") {
+      return conflict(`PLAY requires a Ready task (currently ${task.status})`, { status: task.status });
+    }
+    const updated = updateTask(ctx.db, taskId, { status: "implementing" });
+    if (!updated) return notFound(pathname);
+    // The execution pipeline (Planner → worktree → Implementer → …) hooks on
+    // this event in 3.2+. For now PLAY just opens the implementing phase.
+    ctx.hub.broadcast({ type: "event", name: "task:play", payload: taskId });
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    notifyOnTransition(ctx.hub, "ready", updated);
+    return Response.json(updated);
+  }
+
   const refineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/refine$/);
   if (refineMatch) {
     if (method !== "POST") return methodNotAllowed();

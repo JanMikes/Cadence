@@ -227,6 +227,30 @@ test("autonomy on: capturing runs the triage→discovery pipeline in the backgro
   }
 });
 
+test("POST /api/tasks/:id/play requires Ready, then opens the implementing phase", async () => {
+  const task = await createViaApi("Play me");
+  // not Ready yet → 409
+  const tooEarly = await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+  expect(tooEarly.status).toBe(409);
+
+  // move it to Ready (inbox → ready is a valid manual move)
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "ready" }),
+  });
+  const played = await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+  expect(played.status).toBe(200);
+  expect(await played.json()).toMatchObject({ status: "implementing" });
+
+  // the transition is recorded on the timeline
+  const timeline = (await fetch(`${gw.url}/api/tasks/${task.id}/timeline`).then((r) => r.json())) as Array<{
+    type: string;
+    payload: { from: string | null; to: string };
+  }>;
+  expect(timeline.some((e) => e.payload?.to === "implementing")).toBe(true);
+});
+
 test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome", async () => {
   const task = await createViaApi("Add a feature flag system");
   const outcome = (await fetch(`${gw.url}/api/tasks/${task.id}/refine`, { method: "POST" }).then((r) =>

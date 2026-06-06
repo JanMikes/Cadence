@@ -67,6 +67,10 @@ export function updateTask(id: string, patch: UpdateTaskInput): Promise<TaskDeta
   }).then(json<TaskDetail>);
 }
 
+export function playTask(id: string): Promise<TaskDetail> {
+  return fetch(`/api/tasks/${id}/play`, { method: "POST" }).then(json<TaskDetail>);
+}
+
 export function getContext(id: string): Promise<ContextChannel> {
   return fetch(`/api/tasks/${id}/context`).then(json<ContextChannel>);
 }
