@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 4.1 (Fleets — multi-repo tasks; per-repo sub-results)
-- **Next step:** 4.2 (Dependencies graph + subtasks)
+- **Last completed step:** 4.2 (Dependencies graph + subtasks)
+- **Next step:** 4.3 (Cost & throughput analytics)
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
@@ -281,7 +281,7 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 
 ## Phase 4 — Multi-repo, analytics, polish
 - [x] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
-- [ ] 4.2 Dependencies graph + subtasks.
+- [x] 4.2 Dependencies graph + subtasks.
 - [ ] 4.3 Cost & throughput analytics.
 - [ ] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [ ] 4.5 Calendar / deadline view.
@@ -907,3 +907,17 @@ review and revert a memory entry.
   + bail paths; gateway fleet CRUD + the fleet-run endpoint; Fleets SSR. Verify: 176 pass (×2 stable),
   build green, scan clean. (Auto-fanning the full PLAY pipeline — planner/verify/deliver per repo — for
   fleet tasks is a future refinement; 4.1 delivers the multi-repo *implement* fan-out + per-repo results.)
+- **2026-06-06 · 4.2 Dependencies graph + subtasks.** Built on the existing `task_deps` table +
+  `parentTaskId` column. Source of truth = task frontmatter `blockedBy` (ids that must finish first);
+  `reindexTask` now syncs each task's *incoming* edges into `task_deps` — FK-safe: a blocker not yet
+  indexed is skipped and re-synced when the task is next reindexed, so full-reindex order never breaks
+  it. New `deps.ts`: `addDependency`/`removeDependency` (writes frontmatter + reindex), `wouldCycle`
+  (BFS over the blocks-graph from the task — refuses an edge that would close a loop, plus a self-edge
+  guard), `getDeps` (resolved blockedBy/blocks), `getSubtasks` (children by parentTaskId), `isBlocked`
+  (any blocker not done). `updateTask` gained `parentTask` for subtask assignment; shared `TaskDepsView`
+  + `UpdateTaskInput.parentTask`. API: `GET/POST /api/tasks/:id/deps`, `DELETE …/deps/:blockerId`
+  (409 on cycle), `GET …/subtasks`. Web: `RelationsPanel` in the task detail — blocked-by (✅/⏳ per
+  blocker) with add (select)/remove, blocks, a parent selector, and subtasks; every row click-opens
+  that task (TaskDetail gained `onOpenTask`, wired from App). Tests: deps unit (edges both directions,
+  cycle refusal, remove, isBlocked, subtasks) + gateway (add → cycle-409 → remove; parentTask →
+  subtasks) + RelationsPanel SSR. Verify: 184 pass (×2 stable), build green, scan clean.
