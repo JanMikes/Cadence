@@ -248,6 +248,19 @@ export interface ClaudeEvent {
   [key: string]: unknown;
 }
 
+/** Result of a one-shot agent run (`claude -p --output-format json`) — Phase 2. */
+export interface AgentResult {
+  /** The final result text. */
+  text: string;
+  /** Parsed JSON if the agent returned JSON (incl. fenced ```json blocks), else null. */
+  json: unknown | null;
+  costUsd: number;
+  sessionId: string | null;
+  isError: boolean;
+  /** The raw parsed output object from claude. */
+  raw: unknown;
+}
+
 export interface GlobalSettings {
   version: number;
   global: {

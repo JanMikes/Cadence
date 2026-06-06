@@ -65,3 +65,5 @@ process.stdin.on("data", (chunk: Buffer) => {
 });
 
 process.stdin.on("end", () => process.exit(0));
+
+export {};
