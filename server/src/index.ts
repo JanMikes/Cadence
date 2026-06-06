@@ -7,6 +7,12 @@ const PORT = Number(process.env.CADENCE_PORT ?? 4477);
 try {
   const gateway = startGateway({ port: PORT });
   console.log(`[cadence] gateway listening on ${gateway.url}`);
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      void gateway.stop().finally(() => process.exit(0));
+    });
+  }
 } catch (err) {
   if (err instanceof Error && (err as { code?: string }).code === "EADDRINUSE") {
     console.error(

@@ -5,18 +5,21 @@ import {
   type CreateTaskInput,
   type HealthStatus,
   SCHEMA_VERSION,
+  type SpawnSessionInput,
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
 import type { Db } from "./db/client";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
+import { listSessions, listTaskSessions, type SpawnManager } from "./sessions";
 import { appendContext, readContext } from "./store/store";
-import { createTask, getTaskDetail, listTasks, updateTask } from "./tasks";
+import { createTask, getTask, getTaskDetail, listTasks, resolveTaskCwd, updateTask } from "./tasks";
 import type { WsHub } from "./ws";
 
 export interface ApiContext {
   db: Db;
   hub: WsHub;
+  spawn: SpawnManager;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -74,6 +77,40 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       return Response.json(updated);
     }
     return methodNotAllowed();
+  }
+
+  const taskSessionsMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/sessions$/);
+  if (taskSessionsMatch) {
+    const taskId = taskSessionsMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    if (method === "GET") return Response.json(listTaskSessions(ctx.db, taskId));
+    if (method === "POST") {
+      let input: SpawnSessionInput;
+      try {
+        input = (await req.json().catch(() => ({}))) as SpawnSessionInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const task = getTask(ctx.db, taskId);
+      const session = ctx.spawn.spawn({
+        cwd: resolveTaskCwd(ctx.db, taskId),
+        taskId,
+        projectId: task?.projectId ?? null,
+        role: input.role ?? "chat",
+        model: input.model,
+        permissionMode: input.permissionMode ?? "auto",
+      });
+      if (typeof input.prompt === "string" && input.prompt.trim()) {
+        ctx.spawn.send(session.id, input.prompt);
+      }
+      ctx.hub.broadcast({ type: "event", name: "session:spawned", payload: session.id });
+      return Response.json(session, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  if (pathname === "/api/sessions" && method === "GET") {
+    return Response.json(listSessions(ctx.db));
   }
 
   const ctxMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/context$/);

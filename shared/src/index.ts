@@ -140,6 +140,48 @@ export interface UpdateProjectInput {
   notes?: string | null;
 }
 
+// --------------------------------------------------------------- Claude sessions
+
+/** A Claude Code session we spawned/track (index view of the sessions table). */
+export interface Session {
+  id: string;
+  taskId: string | null;
+  projectId: string | null;
+  fleetId: string | null;
+  role: string;
+  kind: string; // warm | oneshot
+  status: string; // spawning|running|idle|awaiting_feedback|done|failed|killed
+  cwd: string;
+  branch: string | null;
+  worktreePath: string | null;
+  pid: number | null;
+  model: string | null;
+  permissionMode: string | null;
+  costUsd: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  transcriptPath: string | null;
+}
+
+export interface SpawnSessionInput {
+  /** Optional first user message to send to the warm session. */
+  prompt?: string;
+  model?: string;
+  /** Cadence permission mode (auto|manual|dangerous); resolved to a claude mode. */
+  permissionMode?: string;
+  role?: string;
+}
+
+/**
+ * A parsed line from `claude --output-format stream-json` (§3.2 of the control
+ * surfaces doc). The schema is internal/unversioned, so this stays permissive —
+ * we narrow on `type` ("system"/"assistant"/"result"/"stream_event"/…).
+ */
+export interface ClaudeEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
 /** The always-on free-form context channel (context.md), append-only. */
 export interface ContextChannel {
   content: string;

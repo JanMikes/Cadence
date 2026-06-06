@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
+import { SpawnManager } from "./sessions";
 import { bootstrap } from "./store/store";
 import { startWatcher, type WatcherHandle } from "./store/watcher";
 import { WsHub, type WsData } from "./ws";
@@ -44,6 +45,8 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     db = openAndMigrate();
   }
 
+  const spawnManager = new SpawnManager(db, hub);
+
   let watcher: WatcherHandle | undefined;
   if (opts.startWatcher !== false) {
     watcher = startWatcher(db, {
@@ -63,7 +66,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       }
 
       if (url.pathname.startsWith("/api/")) {
-        return handleApi(req, url, { db, hub });
+        return handleApi(req, url, { db, hub, spawn: spawnManager });
       }
 
       return serveStatic(url.pathname, webDir);
@@ -91,6 +94,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     broadcast: (msg) => hub.broadcast(msg),
     stop: async () => {
       watcher?.close();
+      for (const id of spawnManager.liveIds()) spawnManager.kill(id);
       await server.stop(true);
     },
   };
