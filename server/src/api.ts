@@ -36,7 +36,14 @@ import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents } from "./events";
 import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
-import { listMemoryFiles, readProjectMemory, writeMemoryFile, writeProjectMemory } from "./memory";
+import {
+  listLearnedEntries,
+  listMemoryFiles,
+  readProjectMemory,
+  revertLearnedEntry,
+  writeMemoryFile,
+  writeProjectMemory,
+} from "./memory";
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from "./searches";
 import { buildProposals } from "./proposals";
 import { computeSelfMonitor } from "./selfmonitor";
@@ -447,6 +454,18 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/memory" && method === "GET") {
     return Response.json(listMemoryFiles());
+  }
+
+  if (pathname === "/api/learned" && method === "GET") {
+    return Response.json(listLearnedEntries());
+  }
+
+  const learnedRevertMatch = pathname.match(/^\/api\/learned\/(\d+)$/);
+  if (learnedRevertMatch) {
+    if (method !== "DELETE") return methodNotAllowed();
+    const ok = revertLearnedEntry("learned", Number(learnedRevertMatch[1]));
+    if (ok) ctx.hub.broadcast({ type: "event", name: "memory:updated", payload: "learned" });
+    return ok ? Response.json({ reverted: true }) : notFound(pathname);
   }
 
   if (pathname === "/api/reflect" && method === "POST") {

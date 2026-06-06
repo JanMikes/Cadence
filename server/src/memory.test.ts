@@ -5,9 +5,12 @@ import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "./db/client";
 import { composeContext } from "./context";
 import {
+  appendMemoryNote,
+  listLearnedEntries,
   listMemoryFiles,
   readGlobalMemory,
   readProjectMemory,
+  revertLearnedEntry,
   safeName,
   writeMemoryFile,
   writeProjectMemory,
@@ -51,6 +54,25 @@ test("per-project memory round-trips", () => {
   expect(readProjectMemory(p.slug)).toBe("");
   writeProjectMemory(p.slug, "Run `bun test`. DB must be up for delivery.");
   expect(readProjectMemory(p.slug)).toContain("bun test");
+});
+
+test("learned feed: list bullets + revert one by index", () => {
+  appendMemoryNote("learned", "Jan trims priorities up by one");
+  appendMemoryNote("learned", "Delivery needs the DB up");
+  appendMemoryNote("learned", "Prefer small diffs");
+
+  let entries = listLearnedEntries();
+  expect(entries.map((e) => e.text)).toEqual([
+    "Jan trims priorities up by one",
+    "Delivery needs the DB up",
+    "Prefer small diffs",
+  ]);
+
+  expect(revertLearnedEntry("learned", 1)).toBe(true); // remove the middle one
+  entries = listLearnedEntries();
+  expect(entries.map((e) => e.text)).toEqual(["Jan trims priorities up by one", "Prefer small diffs"]);
+
+  expect(revertLearnedEntry("learned", 9)).toBe(false); // out of range
 });
 
 test("composeContext folds in global + per-project memory", () => {

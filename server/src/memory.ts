@@ -1,4 +1,4 @@
-import type { MemoryFile } from "@cadence/shared";
+import type { LearnedEntry, MemoryFile } from "@cadence/shared";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { paths } from "./store/paths";
 
@@ -57,6 +57,42 @@ export function appendProjectMemoryNote(slug: string, note: string): void {
   const existing = readProjectMemory(slug);
   const base = existing.trim() ? `${existing.trimEnd()}\n` : `# ${slug} memory\n\n`;
   writeProjectMemory(slug, `${base}- ${note.trim()}\n`);
+}
+
+/** The "what Cadence learned" feed: each bullet of a learned memory file, reviewable. */
+export function listLearnedEntries(name = "learned"): LearnedEntry[] {
+  const file = paths.memoryFile(safeName(name));
+  if (!existsSync(file)) return [];
+  const entries: LearnedEntry[] = [];
+  let index = 0;
+  for (const line of readFileSync(file, "utf8").split("\n")) {
+    const m = line.match(/^-\s+(.*)$/);
+    if (m) entries.push({ index: index++, text: (m[1] ?? "").trim() });
+  }
+  return entries;
+}
+
+/** Revert (remove) the index-th learned bullet from a memory file. */
+export function revertLearnedEntry(name: string, index: number): boolean {
+  const file = paths.memoryFile(safeName(name));
+  if (!existsSync(file)) return false;
+  const lines = readFileSync(file, "utf8").split("\n");
+  let bullet = 0;
+  let removed = false;
+  const out: string[] = [];
+  for (const line of lines) {
+    if (/^-\s+/.test(line)) {
+      if (bullet === index) {
+        removed = true;
+        bullet++;
+        continue; // drop this entry
+      }
+      bullet++;
+    }
+    out.push(line);
+  }
+  if (removed) writeFileSync(file, out.join("\n"));
+  return removed;
 }
 
 /** All global memory, concatenated for context composition (each file labeled). */

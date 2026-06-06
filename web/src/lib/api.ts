@@ -13,6 +13,7 @@ import type {
   GlobalSettings,
   ImportCandidate,
   ImportSelection,
+  LearnedEntry,
   LiveSession,
   MemoryFile,
   OpenTerminalResult,
@@ -193,6 +194,14 @@ export function reflectMemory(): Promise<{ ran: boolean; lessons?: number; reaso
   return fetch("/api/reflect", { method: "POST" }).then(
     json<{ ran: boolean; lessons?: number; reason?: string }>,
   );
+}
+
+export function getLearned(): Promise<LearnedEntry[]> {
+  return fetch("/api/learned").then(json<LearnedEntry[]>);
+}
+
+export function revertLearned(index: number): Promise<{ reverted: boolean }> {
+  return fetch(`/api/learned/${index}`, { method: "DELETE" }).then(json<{ reverted: boolean }>);
 }
 
 export function getApprovals(): Promise<ApprovalRequest[]> {

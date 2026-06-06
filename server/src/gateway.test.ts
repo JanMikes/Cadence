@@ -692,6 +692,24 @@ test("reflect: a correction signal → the Reflector writes a learned memory not
   expect(memory.find((m) => m.name === "learned")?.content).toContain("bumps priorities");
 });
 
+test("learned feed: GET entries, then DELETE reverts one", async () => {
+  await fetch(`${gw.url}/api/memory/learned`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "# learned\n\n- first lesson\n- second lesson\n" }),
+  });
+  const entries = (await fetch(`${gw.url}/api/learned`).then((r) => r.json())) as Array<{
+    index: number;
+    text: string;
+  }>;
+  expect(entries.map((e) => e.text)).toEqual(["first lesson", "second lesson"]);
+
+  const del = await fetch(`${gw.url}/api/learned/0`, { method: "DELETE" });
+  expect(del.status).toBe(200);
+  const after = (await fetch(`${gw.url}/api/learned`).then((r) => r.json())) as Array<{ text: string }>;
+  expect(after.map((e) => e.text)).toEqual(["second lesson"]);
+});
+
 test("memory: PUT a global memory file, GET it back", async () => {
   const put = await fetch(`${gw.url}/api/memory/communication`, {
     method: "PUT",

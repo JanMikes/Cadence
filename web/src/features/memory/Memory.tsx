@@ -1,9 +1,9 @@
 import type { MemoryFile } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuit, Plus, Save, Sparkles } from "lucide-react";
+import { BrainCircuit, Lightbulb, Plus, RotateCcw, Save, Sparkles } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { getMemory, reflectMemory, saveMemoryFile } from "../../lib/api";
+import { getLearned, getMemory, reflectMemory, revertLearned, saveMemoryFile } from "../../lib/api";
 
 /**
  * Memory editor (spec §8.1): Cadence's self-written, hand-editable markdown
@@ -73,6 +73,8 @@ export function Memory() {
         <LabeledIconButton icon={<Plus />} label="Add file" type="submit" disabled={!newName.trim()} />
       </form>
 
+      <LearnedFeed />
+
       {files.length === 0 ? (
         <p className="mt-6 text-sm text-muted-foreground">
           No memory yet. Add a file (e.g. <code>communication</code>) or let the Reflector learn over time.
@@ -85,6 +87,46 @@ export function Memory() {
         ))}
       </div>
     </div>
+  );
+}
+
+/** "What Cadence learned" — the learned bullets, each reviewable + revertable (5.5). */
+function LearnedFeed() {
+  const qc = useQueryClient();
+  const learned = useQuery({ queryKey: ["learned"], queryFn: getLearned });
+  const revert = useMutation({
+    mutationFn: (index: number) => revertLearned(index),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["learned"] });
+      void qc.invalidateQueries({ queryKey: ["memory"] });
+    },
+  });
+  const entries = learned.data ?? [];
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="mt-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
+      <h2 className="flex items-center gap-2 text-sm font-medium text-primary">
+        <Lightbulb className="size-4" /> What Cadence learned
+      </h2>
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {entries.map((e) => (
+          <li key={e.index} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">
+            <span className="flex-1 text-sm">{e.text}</span>
+            <button
+              type="button"
+              aria-label="Revert this lesson"
+              title="Revert this lesson"
+              onClick={() => revert.mutate(e.index)}
+              disabled={revert.isPending}
+              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-red-400"
+            >
+              <RotateCcw className="size-3.5" /> Revert
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

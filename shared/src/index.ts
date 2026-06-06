@@ -525,6 +525,12 @@ export interface MemoryFile {
   content: string;
 }
 
+/** One reviewable/revertable bullet from the learned memory ("what Cadence learned"). */
+export interface LearnedEntry {
+  index: number; // position among the file's bullets
+  text: string;
+}
+
 /** A ranked Q&A card from the Questioner agent (agent-prompts §3). */
 export type QAQuestionType = "text" | "single_choice" | "multi_choice" | "boolean";
 export interface QAQuestion {
