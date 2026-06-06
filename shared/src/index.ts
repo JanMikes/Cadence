@@ -165,6 +165,13 @@ export interface UpdateTaskInput {
   permissionMode?: string | null; // auto|manual|dangerous override (null = inherit)
   project?: string | null; // project slug (null to unassign)
   fleet?: string | null; // fleet slug
+  parentTask?: string | null; // parent task id (subtasks); null to detach
+}
+
+/** A task's dependency relationships, resolved (spec §4 blocks[]/blockedBy[]). */
+export interface TaskDepsView {
+  blockedBy: Task[]; // must finish before this task
+  blocks: Task[]; // this task must finish before these
 }
 
 export const PERMISSION_MODES = ["auto", "manual", "dangerous"] as const;

@@ -116,6 +116,7 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   if (patch.permissionMode !== undefined) next.permissionMode = patch.permissionMode;
   if (patch.project !== undefined) next.project = patch.project; // slug; reindex → projectId
   if (patch.fleet !== undefined) next.fleet = patch.fleet;
+  if (patch.parentTask !== undefined) next.parentTask = patch.parentTask;
   if (patch.deadline !== undefined) {
     next.deadline = patch.deadline == null ? null : new Date(patch.deadline).toISOString();
   }

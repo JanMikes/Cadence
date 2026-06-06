@@ -16,6 +16,7 @@ export interface TaskFrontmatter {
   deliveryMode?: string | null; // per-task override
   permissionMode?: string | null; // auto|manual|dangerous override (null = inherit)
   parentTask?: string | null; // parent task id
+  blockedBy?: string[]; // task ids that block this one (→ task_deps edges on reindex)
   labels?: string[]; // stays in markdown only (not indexed as a column)
 }
 

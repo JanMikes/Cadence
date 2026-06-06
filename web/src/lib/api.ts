@@ -22,6 +22,7 @@ import type {
   Suggestion,
   SuggestionAction,
   Task,
+  TaskDepsView,
   TaskDetail,
   TaskDiff,
   TaskEvent,
@@ -131,6 +132,26 @@ export function getQa(taskId: string): Promise<QAChannel> {
 
 export function getTimeline(taskId: string): Promise<TaskEvent[]> {
   return fetch(`/api/tasks/${taskId}/timeline`).then(json<TaskEvent[]>);
+}
+
+export function getDeps(taskId: string): Promise<TaskDepsView> {
+  return fetch(`/api/tasks/${taskId}/deps`).then(json<TaskDepsView>);
+}
+
+export function addDep(taskId: string, blockerId: string): Promise<TaskDepsView> {
+  return fetch(`/api/tasks/${taskId}/deps`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ blockerId }),
+  }).then(json<TaskDepsView>);
+}
+
+export function removeDep(taskId: string, blockerId: string): Promise<TaskDepsView> {
+  return fetch(`/api/tasks/${taskId}/deps/${blockerId}`, { method: "DELETE" }).then(json<TaskDepsView>);
+}
+
+export function getSubtasks(taskId: string): Promise<Task[]> {
+  return fetch(`/api/tasks/${taskId}/subtasks`).then(json<Task[]>);
 }
 
 export function getApprovals(): Promise<ApprovalRequest[]> {

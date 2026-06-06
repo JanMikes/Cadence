@@ -9,7 +9,7 @@ import {
 import type { DailyDigest, DeliveryResult, QAChannel, TaskPlan, VerifyReport } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { fleets, projects, tasks } from "../db/schema";
+import { fleets, projects, taskDeps, tasks } from "../db/schema";
 import { parseMarkdown, stringifyMarkdown } from "./markdown";
 import { paths } from "./paths";
 import type {
@@ -395,6 +395,20 @@ export function reindexTask(db: Db, id: string): void {
     .values(row)
     .onConflictDoUpdate({ target: tasks.id, set: row })
     .run();
+
+  // Sync this task's incoming dependency edges (blockedBy) into task_deps. Each
+  // task owns its own incoming edges; a blocker that isn't indexed yet is skipped
+  // (re-synced when this task is next reindexed), so order never breaks the FK.
+  db.delete(taskDeps).where(eq(taskDeps.blockedTaskId, data.id)).run();
+  for (const blockerId of data.blockedBy ?? []) {
+    if (blockerId === data.id) continue;
+    const exists = db.select({ id: tasks.id }).from(tasks).where(eq(tasks.id, blockerId)).get();
+    if (!exists) continue;
+    db.insert(taskDeps)
+      .values({ blockerTaskId: blockerId, blockedTaskId: data.id })
+      .onConflictDoNothing()
+      .run();
+  }
 }
 
 /** Full reindex from disk: projects + fleets first (so task links resolve), then

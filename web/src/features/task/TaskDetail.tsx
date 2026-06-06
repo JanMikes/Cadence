@@ -24,6 +24,7 @@ import { statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { PlanView } from "./PlanView";
+import { RelationsPanel } from "./RelationsPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { StatusTimeline } from "./StatusTimeline";
 
@@ -31,10 +32,12 @@ export function TaskDetail({
   taskId,
   onClose,
   onOpenSession,
+  onOpenTask,
 }: {
   taskId: string;
   onClose: () => void;
   onOpenSession: (sessionId: string) => void;
+  onOpenTask?: (taskId: string) => void;
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
@@ -333,6 +336,12 @@ export function TaskDetail({
                 </div>
               </form>
             </section>
+
+            <RelationsPanel
+              taskId={taskId}
+              parentTaskId={task.parentTaskId}
+              onOpen={(id) => onOpenTask?.(id)}
+            />
 
             <StatusTimeline taskId={taskId} />
           </>

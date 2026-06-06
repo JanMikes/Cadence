@@ -83,6 +83,7 @@ export function App() {
           taskId={selectedId}
           onClose={() => setSelectedId(null)}
           onOpenSession={setActiveSessionId}
+          onOpenTask={setSelectedId}
         />
       ) : null}
 

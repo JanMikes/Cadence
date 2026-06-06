@@ -26,6 +26,7 @@ import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
 import { type ApprovalDecision, ApprovalRegistry } from "./approvals";
 import { composeContext } from "./context";
+import { addDependency, getDeps, getSubtasks, removeDependency } from "./deps";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
 import { commitDigest, getDigest, recapDigest } from "./digest";
@@ -302,6 +303,45 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const taskId = timelineMatch[1] as string;
     if (!getTask(ctx.db, taskId)) return notFound(pathname);
     return Response.json(listTaskEvents(ctx.db, taskId));
+  }
+
+  const subtasksMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/subtasks$/);
+  if (subtasksMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = subtasksMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json(getSubtasks(ctx.db, taskId));
+  }
+
+  const depMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/deps$/);
+  if (depMatch) {
+    const taskId = depMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    if (method === "GET") return Response.json(getDeps(ctx.db, taskId));
+    if (method === "POST") {
+      let body: { blockerId?: string };
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (!body?.blockerId) return badRequest("blockerId required");
+      const result = addDependency(ctx.db, taskId, body.blockerId);
+      if (!result.ok) return conflict(result.reason);
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      return Response.json(getDeps(ctx.db, taskId));
+    }
+    return methodNotAllowed();
+  }
+
+  const depDeleteMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/deps\/([^/]+)$/);
+  if (depDeleteMatch) {
+    if (method !== "DELETE") return methodNotAllowed();
+    const taskId = depDeleteMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    removeDependency(ctx.db, taskId, depDeleteMatch[2] as string);
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    return Response.json(getDeps(ctx.db, taskId));
   }
 
   const qaMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/qa$/);

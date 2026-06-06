@@ -538,6 +538,53 @@ test("POST /api/tasks/:id/fleet-run bails cleanly for a non-fleet task", async (
   expect(outcome.reason).toContain("not assigned");
 });
 
+test("dependencies: add (blockedBy/blocks), reject a cycle, remove", async () => {
+  const a = await createViaApi("Task A");
+  const b = await createViaApi("Task B");
+  // B blocks A
+  const added = await fetch(`${gw.url}/api/tasks/${a.id}/deps`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ blockerId: b.id }),
+  });
+  expect(added.status).toBe(200);
+  const deps = (await added.json()) as { blockedBy: Array<{ id: string }> };
+  expect(deps.blockedBy.map((t) => t.id)).toEqual([b.id]);
+  // reverse query: B blocks A
+  const bDeps = (await fetch(`${gw.url}/api/tasks/${b.id}/deps`).then((r) => r.json())) as {
+    blocks: Array<{ id: string }>;
+  };
+  expect(bDeps.blocks.map((t) => t.id)).toEqual([a.id]);
+
+  // a cycle (A blocks B) is a 409
+  const cyc = await fetch(`${gw.url}/api/tasks/${b.id}/deps`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ blockerId: a.id }),
+  });
+  expect(cyc.status).toBe(409);
+
+  // remove
+  const removed = (await fetch(`${gw.url}/api/tasks/${a.id}/deps/${b.id}`, { method: "DELETE" }).then(
+    (r) => r.json(),
+  )) as { blockedBy: unknown[] };
+  expect(removed.blockedBy).toHaveLength(0);
+});
+
+test("subtasks: PATCH parentTask, then GET subtasks lists the children", async () => {
+  const parent = await createViaApi("Parent task");
+  const child = await createViaApi("Child task");
+  await fetch(`${gw.url}/api/tasks/${child.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parentTask: parent.id }),
+  });
+  const subs = (await fetch(`${gw.url}/api/tasks/${parent.id}/subtasks`).then((r) => r.json())) as Array<{
+    id: string;
+  }>;
+  expect(subs.map((t) => t.id)).toContain(child.id);
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",
