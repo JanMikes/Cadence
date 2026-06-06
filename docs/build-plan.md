@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.2 (Board + task detail + context channel)
-- **Next step:** 1.3 (Projects CRUD)
+- **Last completed step:** 1.3 (Projects CRUD + task assignment + cwd resolution)
+- **Next step:** 1.4 (Spawn infra — warm Claude session) ⚠️ first step that runs the real `claude` binary
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -103,7 +103,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.2 Board + task detail + context channel.** Kanban by status; detail (body, priority,
   deadline, estimate, labels); always-on free-form `context.md` editor.
   - Verify: drag across columns (status persists); add a context note (appends to `context.md`).
-- [ ] **1.3 Projects CRUD.** Create/list/edit projects (rootPath, color, default model/permission/
+- [x] **1.3 Projects CRUD.** Create/list/edit projects (rootPath, color, default model/permission/
   delivery, systemPrompt) → `projects/<slug>.md` + index; assign a task to a project.
   - Verify: create a project; assign a task; cwd resolves to rootPath.
 - [ ] **1.4 Spawn infra (warm session).** `openSession` (verified pattern: `claude -p --input-format
@@ -398,3 +398,23 @@ review and revert a memory entry.
   AppShell test missing the new required props — fixed); **E2E smoke**: PATCH status→ready writes
   `status: ready` to task.md and **survives a gateway restart**, and a context note appends to
   context.md on disk. *Next:* 1.3 Projects CRUD.
+- **2026-06-06 · 1.3 Projects CRUD.** Shared: `Project` DTO, `Create/UpdateProjectInput`,
+  `PERMISSION_MODES`/`DELIVERY_MODES`; `UpdateTaskInput` gains `project`/`fleet` (slug). Server:
+  `server/src/projects.ts` (`createProject` slugifies the name + de-dupes via `uniqueSlug`, writes
+  `projects/<slug>.md` frontmatter + systemPrompt body, reindexes; `listProjects`; `getProject`/
+  `getProjectById`; `updateProject` merges patch incl. systemPrompt) + REST (`GET/POST /api/projects`,
+  `GET/PATCH /api/projects/:slug`). `updateTask` now assigns a project/fleet by **slug** (reindex
+  resolves slug→FK id). New `resolveTaskCwd(db, taskId)` → project `rootPath` ?? `CADENCE_DEFAULT_CWD`
+  ?? `process.cwd()` (the cwd the 1.4 spawn will use). Web: a **Projects** nav item + view (create form:
+  name/rootPath/color/default permission+delivery/systemPrompt; project list; edit drawer — `ProjectFields`
+  shared between create+edit) and a **Project assignment select** in TaskDetail (Unassigned + each
+  project → PATCH `project=slug`). *Decisions:* projects are addressed by **slug** in URLs + task
+  frontmatter (human-friendly, == filename); permission/delivery use plain-language labels in the UI.
+  *Verified:* `bun test` (33 pass) — create writes file+row, duplicate names → `acme`/`acme-2`, update
+  patches config+systemPrompt, **assign a task → `projectId` resolves and `resolveTaskCwd` → the project
+  rootPath**; Projects SSR renders the create form; `bun run build` green. **E2E smoke**: POST a project
+  → `projects/<slug>.md` on disk + listed; assign a task → `projectId` set + `project: <slug>` in
+  task.md. *Next:* **1.4 Spawn infra** — ⚠️ the first step that launches the real `claude` binary
+  (warm stream-json session); has real side effects (a Claude Code process + cost). Per
+  control-surfaces doc: `claude -p --input-format stream-json --output-format stream-json --verbose
+  --include-partial-messages --session-id <uuid> --permission-mode <mode>` in the task cwd.
