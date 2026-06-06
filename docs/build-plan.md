@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.4 (Spawn infra — warm Claude session, verified vs real binary)
-- **Next step:** 1.5 (Live transcript UI + follow-up)
+- **Last completed step:** 1.5 (Live transcript UI + follow-up)
+- **Next step:** 1.6 (Context composition v1)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -111,7 +111,7 @@ converse → terminal handoff. No autonomy yet.
   --permission-mode <mode>` in the task cwd). Parse stdout NDJSON → typed events → WS; track session
   in DB.
   - Verify: spawn on a task; receive `system/init` + `result`; DB session row + cost recorded.
-- [ ] **1.5 Live transcript UI + follow-up.** Render events (token typing via `text_delta`, tool-use
+- [x] **1.5 Live transcript UI + follow-up.** Render events (token typing via `text_delta`, tool-use
   cards, `result`+cost); input sends follow-up messages to the warm process.
   - Verify: send a message → streamed reply; a 2nd retains context; cost shown.
 - [ ] **1.6 Context composition v1.** Compose Global → Project → Task (spec/context/qa) into
@@ -439,3 +439,25 @@ review and revert a memory entry.
   end-to-end confidence. *Open item for 1.8:* the stored `transcriptPath` (cwd `/`→`-`) wasn't present
   on disk during the brief smoke window — confirm claude's exact transcript-path encoding when building
   the transcript reader. *Next:* 1.5 live transcript UI + follow-up.
+- **2026-06-06 · 1.5 Live transcript + follow-up.** Server: `POST /api/sessions/:id/messages` sends a
+  follow-up into the warm session (409 if the session isn't live); `Gateway.spawn` exposes the
+  `SpawnManager`; `SpawnManager.update` now try/catches so a late event during shutdown (process close
+  after the db is gone) can't crash it. Web: a WS client (`lib/ws.ts` `subscribe` + `useServerMessages`
+  hook with 1s auto-reconnect) + a Vite `/ws` proxy (`ws:true`). The heart is a **pure, tested
+  transcript reducer** (`features/session/transcript.ts`): folds claude stream-json events into
+  renderable items — live token typing from `stream_event`/`content_block_delta`/`text_delta`,
+  finalized `assistant` text, `tool_use` cards, and per-turn `result` cost; unknown types pass through.
+  `SessionPanel` (a wide right drawer) renders the live transcript + a follow-up input + cumulative cost;
+  `TaskDetail` gains a **"Run Claude"** button + a sessions list; `App` opens the panel for the active
+  session. *Decisions:* (a) reducer is a pure function so the streaming logic is unit-testable with zero
+  browser; (b) the UI tracks user messages optimistically (no `--replay-user-messages`); (c) honored the
+  **"one real spawn"** boundary — verified 1.5's plumbing against the **mock** claude, not a new real
+  session. *Verified:* `bun test` (41 pass) — reducer folds a streamed turn (user + live typing +
+  finalized text + cost), renders tool blocks, ignores unknown events; **end-to-end integration** (mock
+  claude + a real WebSocket client): POST a follow-up → the warm session replies → the gateway
+  broadcasts `session:event` over WS to the client → cost recorded on the session row; unknown session →
+  409; SessionPanel SSR renders; `bun run build` green. *Fixed:* a teardown race surfaced as
+  `SQLiteError: disk I/O error` (a killed mock session's close event wrote to an already-removed test db)
+  — fixed via the tolerant `update` + a settle delay before `rmSync`. *Real context-retention* is the
+  warm-process property (control-surfaces §3.1 + 1.4's real session); offer the user a real 2-message
+  smoke on request. *Next:* 1.6 context composition v1 (Global → Project → Task → `--append-system-prompt`).
