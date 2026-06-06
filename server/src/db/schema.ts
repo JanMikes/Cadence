@@ -69,6 +69,8 @@ export const tasks = sqliteTable("tasks", {
   deadline: integer("deadline"),
   estimate: integer("estimate"), // minutes
   deliveryMode: text("delivery_mode"), // per-task override of project/global
+  // auto|manual|dangerous override; null = inherit project ?? global (§9.1)
+  permissionMode: text("permission_mode"),
   parentTaskId: text("parent_task_id"),
   createdAt: integer("created_at").notNull().default(now),
   updatedAt: integer("updated_at").notNull().default(now),

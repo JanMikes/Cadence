@@ -12,6 +12,7 @@ const flag = (name: string): string | null => {
 };
 const sessionId = flag("--session-id") ?? "mock-session";
 const appendSystemPrompt = flag("--append-system-prompt"); // echoed for context-composition tests
+const permissionMode = flag("--permission-mode") ?? "default"; // echoed for permission-mode tests
 
 function emit(obj: unknown): void {
   process.stdout.write(`${JSON.stringify(obj)}\n`);
@@ -23,7 +24,7 @@ emit({
   session_id: sessionId,
   cwd: process.cwd(),
   model: "mock-model",
-  permissionMode: "default",
+  permissionMode,
   tools: [],
   appendSystemPrompt,
 });

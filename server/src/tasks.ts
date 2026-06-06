@@ -5,7 +5,7 @@ import type { Db } from "./db/client";
 import { tasks } from "./db/schema";
 import { getProjectById } from "./projects";
 import { paths } from "./store/paths";
-import { readTask, reindexTask, writeTask } from "./store/store";
+import { readSettings, readTask, reindexTask, writeTask } from "./store/store";
 import type { TaskFrontmatter } from "./store/types";
 
 // Newest-first, with the implicit rowid as a deterministic tiebreaker so tasks
@@ -44,7 +44,21 @@ export function getTask(db: Db, id: string): Task | null {
   return row ? toTask(row) : null;
 }
 
-/** Task + its markdown-only fields (labels), for the detail view. */
+/**
+ * Resolve a task's effective permission mode (§9.1): the task's own override,
+ * else its project default, else the global default, else "auto".
+ */
+export function resolvePermissionMode(db: Db, taskId: string): string {
+  const task = getTask(db, taskId);
+  if (task?.permissionMode) return task.permissionMode;
+  if (task?.projectId) {
+    const project = getProjectById(db, task.projectId);
+    if (project?.defaultPermissionMode) return project.defaultPermissionMode;
+  }
+  return readSettings().global.defaultPermissionMode || "auto";
+}
+
+/** Task + its markdown-only fields (labels) + resolved permission, for the detail view. */
 export function getTaskDetail(db: Db, id: string): TaskDetail | null {
   const task = getTask(db, id);
   if (!task) return null;
@@ -54,7 +68,7 @@ export function getTaskDetail(db: Db, id: string): TaskDetail | null {
   } catch {
     /* markdown missing — index-only row */
   }
-  return { ...task, labels };
+  return { ...task, labels, resolvedPermissionMode: resolvePermissionMode(db, id) };
 }
 
 /**
@@ -73,6 +87,7 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   if (patch.estimate !== undefined) next.estimate = patch.estimate;
   if (patch.labels !== undefined) next.labels = patch.labels;
   if (patch.deliveryMode !== undefined) next.deliveryMode = patch.deliveryMode;
+  if (patch.permissionMode !== undefined) next.permissionMode = patch.permissionMode;
   if (patch.project !== undefined) next.project = patch.project; // slug; reindex → projectId
   if (patch.fleet !== undefined) next.fleet = patch.fleet;
   if (patch.deadline !== undefined) {
@@ -111,6 +126,7 @@ function toTask(row: typeof tasks.$inferSelect): Task {
     deadline: row.deadline,
     estimate: row.estimate,
     deliveryMode: row.deliveryMode,
+    permissionMode: row.permissionMode,
     parentTaskId: row.parentTaskId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

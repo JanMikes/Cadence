@@ -177,6 +177,7 @@ export function reindexTask(db: Db, id: string): void {
     deadline: toEpochMs(data.deadline),
     estimate: data.estimate ?? null,
     deliveryMode: data.deliveryMode ?? null,
+    permissionMode: data.permissionMode ?? null,
     parentTaskId: data.parentTask ?? null,
     updatedAt: Date.now(),
   };

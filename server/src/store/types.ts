@@ -14,6 +14,7 @@ export interface TaskFrontmatter {
   project?: string | null; // project slug
   fleet?: string | null; // fleet slug
   deliveryMode?: string | null; // per-task override
+  permissionMode?: string | null; // auto|manual|dangerous override (null = inherit)
   parentTask?: string | null; // parent task id
   labels?: string[]; // stays in markdown only (not indexed as a column)
 }

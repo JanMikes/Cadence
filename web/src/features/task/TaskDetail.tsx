@@ -1,7 +1,13 @@
-import { TASK_STATUSES } from "@cadence/shared";
+import { PERMISSION_MODES, TASK_STATUSES } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquarePlus, Play, X } from "lucide-react";
+import { MessageSquarePlus, Play, ShieldAlert, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
+
+const PERMISSION_LABELS: Record<string, string> = {
+  auto: "Auto",
+  manual: "Manual",
+  dangerous: "Dangerous",
+};
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import {
   appendContext,
@@ -25,6 +31,7 @@ export function TaskDetail({
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
+  const [confirmDangerous, setConfirmDangerous] = useState(false);
 
   const detail = useQuery({ queryKey: ["task", taskId], queryFn: () => getTaskDetail(taskId) });
   const context = useQuery({
@@ -47,6 +54,19 @@ export function TaskDetail({
     mutationFn: (slug: string | null) => updateTask(taskId, { project: slug }),
     onSuccess: invalidateTask,
   });
+
+  const setPermission = useMutation({
+    mutationFn: (mode: string | null) => updateTask(taskId, { permissionMode: mode }),
+    onSuccess: invalidateTask,
+  });
+
+  const onPermissionChange = (value: string) => {
+    if (value === "dangerous") {
+      setConfirmDangerous(true); // gate Dangerous behind a confirm (§9.1)
+    } else {
+      setPermission.mutate(value || null);
+    }
+  };
 
   const sessions = useQuery({
     queryKey: ["task", taskId, "sessions"],
@@ -127,6 +147,32 @@ export function TaskDetail({
                 </select>
               </dd>
 
+              <dt className="text-muted-foreground">Permission</dt>
+              <dd className="flex items-center gap-2">
+                <select
+                  value={task.permissionMode ?? ""}
+                  onChange={(e) => onPermissionChange(e.target.value)}
+                  aria-label="Permission mode"
+                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">Inherit</option>
+                  {PERMISSION_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {PERMISSION_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+                <span
+                  className={
+                    task.resolvedPermissionMode === "dangerous"
+                      ? "text-xs text-red-400"
+                      : "text-xs text-muted-foreground"
+                  }
+                >
+                  effective: {PERMISSION_LABELS[task.resolvedPermissionMode] ?? task.resolvedPermissionMode}
+                </span>
+              </dd>
+
               <dt className="text-muted-foreground">Priority</dt>
               <dd>{task.priority ?? "—"}</dd>
 
@@ -181,7 +227,9 @@ export function TaskDetail({
                     >
                       <span className="font-mono">{s.id.slice(0, 8)}</span>
                       <span className="text-muted-foreground">
-                        {s.status} · ${s.costUsd.toFixed(4)}
+                        {s.status}
+                        {s.permissionMode ? ` · ${PERMISSION_LABELS[s.permissionMode] ?? s.permissionMode}` : ""} · $
+                        {s.costUsd.toFixed(4)}
                       </span>
                     </button>
                   </li>
@@ -221,6 +269,40 @@ export function TaskDetail({
           </>
         ) : detail.isError ? (
           <p className="mt-6 text-sm text-red-400">Couldn’t load this task.</p>
+        ) : null}
+
+        {confirmDangerous ? (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-6">
+            <div className="w-full max-w-sm rounded-lg border border-red-500/40 bg-card p-5">
+              <div className="flex items-center gap-2 text-red-400">
+                <ShieldAlert className="size-5" />
+                <h3 className="text-sm font-semibold">Enable Dangerous mode?</h3>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Dangerous mode skips <strong>all</strong> permission checks — Claude can edit files and
+                run commands without asking. Use only in a trusted, sandboxed working directory.
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <LabeledIconButton
+                  icon={<X />}
+                  label="Cancel"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmDangerous(false)}
+                />
+                <LabeledIconButton
+                  icon={<ShieldAlert />}
+                  label="Enable Dangerous"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setPermission.mutate("dangerous");
+                    setConfirmDangerous(false);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
         ) : null}
       </aside>
     </div>

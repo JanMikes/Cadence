@@ -67,6 +67,7 @@ export interface Task {
   deadline: number | null;
   estimate: number | null;
   deliveryMode: string | null;
+  permissionMode: string | null; // explicit override (null = inherit project ?? global)
   parentTaskId: string | null;
   createdAt: number;
   updatedAt: number;
@@ -80,6 +81,8 @@ export interface CreateTaskInput {
 /** Task plus the list-valued fields that live in markdown (not the index). */
 export interface TaskDetail extends Task {
   labels: string[];
+  /** Effective permission mode after task ?? project ?? global resolution (§9.1). */
+  resolvedPermissionMode: string;
 }
 
 export interface UpdateTaskInput {
@@ -91,6 +94,7 @@ export interface UpdateTaskInput {
   estimate?: number | null; // minutes
   labels?: string[];
   deliveryMode?: string | null;
+  permissionMode?: string | null; // auto|manual|dangerous override (null = inherit)
   project?: string | null; // project slug (null to unassign)
   fleet?: string | null; // fleet slug
 }

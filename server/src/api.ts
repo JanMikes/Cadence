@@ -14,7 +14,15 @@ import type { Db } from "./db/client";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { listSessions, listTaskSessions, type SpawnManager } from "./sessions";
 import { appendContext, readContext } from "./store/store";
-import { createTask, getTask, getTaskDetail, listTasks, resolveTaskCwd, updateTask } from "./tasks";
+import {
+  createTask,
+  getTask,
+  getTaskDetail,
+  listTasks,
+  resolvePermissionMode,
+  resolveTaskCwd,
+  updateTask,
+} from "./tasks";
 import type { WsHub } from "./ws";
 
 export interface ApiContext {
@@ -104,7 +112,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         projectId: task?.projectId ?? null,
         role: input.role ?? "chat",
         model: input.model,
-        permissionMode: input.permissionMode ?? "auto",
+        permissionMode: input.permissionMode ?? resolvePermissionMode(ctx.db, taskId),
         appendSystemPrompt: appendSystemPrompt || undefined,
       });
       if (typeof input.prompt === "string" && input.prompt.trim()) {
