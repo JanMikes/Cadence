@@ -7,7 +7,11 @@ import { cn } from "../../lib/utils";
 
 export function Board({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
-  const tasks = useQuery({ queryKey: ["tasks", "all"], queryFn: () => getTasks() });
+  // Within each column, surface the most urgent (overdue / due-soon) cards first.
+  const tasks = useQuery({
+    queryKey: ["tasks", "all", "urgency"],
+    queryFn: () => getTasks({ sort: "urgency" }),
+  });
 
   const move = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) => updateTask(id, { status }),
@@ -85,8 +89,14 @@ function Column({
   );
 }
 
+const URGENCY_BADGE: Record<string, { label: string; className: string }> = {
+  overdue: { label: "Overdue", className: "bg-red-500/15 text-red-400" },
+  due_soon: { label: "Due soon", className: "bg-amber-500/15 text-amber-400" },
+};
+
 function BoardCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void }) {
   const onDragStart = (e: DragEvent) => e.dataTransfer.setData("text/plain", task.id);
+  const badge = task.urgencyTier ? URGENCY_BADGE[task.urgencyTier] : undefined;
   return (
     <button
       type="button"
@@ -96,7 +106,10 @@ function BoardCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void 
       className="cursor-grab rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50 active:cursor-grabbing"
     >
       <div className="text-sm font-medium">{task.title}</div>
-      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        {badge ? (
+          <span className={cn("rounded px-1.5 py-0.5 font-medium", badge.className)}>{badge.label}</span>
+        ) : null}
         {task.priority ? <span>{task.priority}</span> : null}
         {task.deadline ? <span>⏷ {new Date(task.deadline).toLocaleDateString()}</span> : null}
       </div>

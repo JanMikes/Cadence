@@ -9,7 +9,10 @@ export function Inbox({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
 
-  const tasks = useQuery({ queryKey: ["tasks", "inbox"], queryFn: () => getTasks("inbox") });
+  const tasks = useQuery({
+    queryKey: ["tasks", "inbox"],
+    queryFn: () => getTasks({ status: "inbox" }),
+  });
 
   const capture = useMutation({
     mutationFn: (t: string) => createTask({ title: t }),

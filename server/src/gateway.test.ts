@@ -237,6 +237,30 @@ test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome",
   expect(outcome.status).toBe("refining");
 });
 
+test("GET /api/tasks?sort=urgency orders overdue/due-soon ahead of far-off", async () => {
+  const far = await createViaApi("Far off");
+  const overdue = await createViaApi("Overdue");
+  const dayMs = 86_400_000;
+  await fetch(`${gw.url}/api/tasks/${far.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deadline: Date.now() + 30 * dayMs, priority: "P0" }),
+  });
+  await fetch(`${gw.url}/api/tasks/${overdue.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ deadline: Date.now() - dayMs, priority: "P3" }),
+  });
+  const sorted = (await fetch(`${gw.url}/api/tasks?sort=urgency`).then((r) => r.json())) as Array<{
+    id: string;
+    urgencyTier: string;
+  }>;
+  const ids = sorted.map((t) => t.id);
+  // overdue (low priority) still outranks the far-off urgent task
+  expect(ids.indexOf(overdue.id)).toBeLessThan(ids.indexOf(far.id));
+  expect(sorted.find((t) => t.id === overdue.id)?.urgencyTier).toBe("overdue");
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",

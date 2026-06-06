@@ -37,9 +37,12 @@ async function json<T>(res: Response): Promise<T> {
 
 const JSON_HEADERS = { "content-type": "application/json" } as const;
 
-export function getTasks(status?: string): Promise<Task[]> {
-  const q = status ? `?status=${encodeURIComponent(status)}` : "";
-  return fetch(`/api/tasks${q}`).then(json<Task[]>);
+export function getTasks(opts: { status?: string; sort?: "urgency" } = {}): Promise<Task[]> {
+  const params = new URLSearchParams();
+  if (opts.status) params.set("status", opts.status);
+  if (opts.sort) params.set("sort", opts.sort);
+  const q = params.toString();
+  return fetch(`/api/tasks${q ? `?${q}` : ""}`).then(json<Task[]>);
 }
 
 export function createTask(input: CreateTaskInput): Promise<Task> {

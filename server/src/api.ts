@@ -63,7 +63,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (pathname === "/api/tasks") {
     if (method === "GET") {
       const status = url.searchParams.get("status") ?? undefined;
-      return Response.json(listTasks(ctx.db, { status }));
+      const sort = url.searchParams.get("sort") === "urgency" ? "urgency" : undefined;
+      return Response.json(listTasks(ctx.db, { status, sort }));
     }
     if (method === "POST") {
       let input: CreateTaskInput;

@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { tasks } from "./db/schema";
 import { recordEvent } from "./events";
+import { sortByUrgency, withUrgency } from "./prioritize";
 import { getProjectById } from "./projects";
 import { taskCostUsd } from "./sessions";
 import { paths } from "./store/paths";
@@ -34,12 +35,14 @@ export function createTask(db: Db, args: CreateTaskArgs): Task {
   return task;
 }
 
-export function listTasks(db: Db, opts: { status?: string } = {}): Task[] {
+export function listTasks(db: Db, opts: { status?: string; sort?: "urgency" } = {}): Task[] {
+  const now = Date.now();
   const base = db.select().from(tasks);
   const rows = opts.status
     ? base.where(eq(tasks.status, opts.status)).orderBy(NEWEST_FIRST).all()
     : base.orderBy(NEWEST_FIRST).all();
-  return rows.map(toTask);
+  const out = rows.map((row) => withUrgency(toTask(row), now));
+  return opts.sort === "urgency" ? sortByUrgency(out, now) : out;
 }
 
 export function getTask(db: Db, id: string): Task | null {
@@ -72,7 +75,7 @@ export function getTaskDetail(db: Db, id: string): TaskDetail | null {
     /* markdown missing — index-only row */
   }
   return {
-    ...task,
+    ...withUrgency(task, Date.now()),
     labels,
     resolvedPermissionMode: resolvePermissionMode(db, id),
     costUsd: taskCostUsd(db, id),

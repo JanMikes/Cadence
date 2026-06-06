@@ -64,6 +64,9 @@ export const TASK_STATUSES = [
 ] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+/** Deadline-driven urgency banding (Principle 12) — drives board order + badges. */
+export type UrgencyTier = "overdue" | "due_soon" | "upcoming" | "none";
+
 export interface Task {
   id: string;
   title: string;
@@ -79,6 +82,9 @@ export interface Task {
   parentTaskId: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Computed at request time: urgency = f(deadline, priority). Not persisted. */
+  urgency?: number;
+  urgencyTier?: UrgencyTier;
 }
 
 export interface CreateTaskInput {
