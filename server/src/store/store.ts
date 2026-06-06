@@ -51,6 +51,11 @@ export function readSettings(): GlobalSettings {
   return JSON.parse(readFileSync(paths.settings(), "utf8")) as GlobalSettings;
 }
 
+export function writeSettings(settings: GlobalSettings): void {
+  mkdirSync(paths.home(), { recursive: true });
+  writeFileSync(paths.settings(), `${JSON.stringify(settings, null, 2)}\n`);
+}
+
 // ---------------------------------------------------------------- tasks (md I/O)
 
 export function writeTask(fm: TaskFrontmatter, body: string): void {
@@ -85,6 +90,12 @@ export function readFleet(slug: string) {
 /** Read a task's free-form context channel (context.md); "" if none yet. */
 export function readContext(id: string): string {
   const file = paths.taskContext(id);
+  return existsSync(file) ? readFileSync(file, "utf8") : "";
+}
+
+/** Read a task's Discovery spec (spec.md); "" if none yet (written in Phase 2). */
+export function readSpec(id: string): string {
+  const file = paths.taskSpec(id);
   return existsSync(file) ? readFileSync(file, "utf8") : "";
 }
 

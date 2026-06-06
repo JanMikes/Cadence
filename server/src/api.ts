@@ -9,6 +9,7 @@ import {
   type UpdateProjectInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
+import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
 import { listSessions, listTaskSessions, type SpawnManager } from "./sessions";
@@ -92,6 +93,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         return badRequest("invalid JSON body");
       }
       const task = getTask(ctx.db, taskId);
+      const appendSystemPrompt = composeContext(ctx.db, {
+        taskId,
+        projectId: task?.projectId ?? null,
+        fleetId: task?.fleetId ?? null,
+      });
       const session = ctx.spawn.spawn({
         cwd: resolveTaskCwd(ctx.db, taskId),
         taskId,
@@ -99,6 +105,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         role: input.role ?? "chat",
         model: input.model,
         permissionMode: input.permissionMode ?? "auto",
+        appendSystemPrompt: appendSystemPrompt || undefined,
       });
       if (typeof input.prompt === "string" && input.prompt.trim()) {
         ctx.spawn.send(session.id, input.prompt);

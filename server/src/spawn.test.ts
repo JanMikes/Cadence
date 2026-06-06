@@ -61,6 +61,33 @@ test("openSession parses stream-json events (system/init … result)", async () 
   expect(events.some((e) => e.type === "result")).toBe(true);
 });
 
+test("openSession passes the composed --append-system-prompt through to the session", async () => {
+  let init: ClaudeEvent | undefined;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timed out")), 5000);
+    const handle = openSession({
+      sessionId: "ctx1",
+      cwd: home,
+      command: MOCK_CMD,
+      appendSystemPrompt: "PROJECT-MARKER-ZEBRA-7",
+      onEvent: (e) => {
+        if (e.type === "system") init = e;
+        if (e.type === "result") handle.close();
+      },
+      onClose: () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      onError: reject,
+    });
+    handle.send("hi");
+  });
+  // the mock echoes back the --append-system-prompt it received
+  expect((init as { appendSystemPrompt?: string } | undefined)?.appendSystemPrompt).toBe(
+    "PROJECT-MARKER-ZEBRA-7",
+  );
+});
+
 test("SpawnManager records a session row, runs on init, records cost on result", async () => {
   const mgr = new SpawnManager(db, new WsHub());
 

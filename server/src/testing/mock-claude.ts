@@ -6,8 +6,12 @@
  * assistant block + a result with a fixed cost, and exits on stdin EOF.
  */
 const argv = process.argv;
-const idx = argv.indexOf("--session-id");
-const sessionId = idx >= 0 ? (argv[idx + 1] ?? "mock-session") : "mock-session";
+const flag = (name: string): string | null => {
+  const i = argv.indexOf(name);
+  return i >= 0 ? (argv[i + 1] ?? null) : null;
+};
+const sessionId = flag("--session-id") ?? "mock-session";
+const appendSystemPrompt = flag("--append-system-prompt"); // echoed for context-composition tests
 
 function emit(obj: unknown): void {
   process.stdout.write(`${JSON.stringify(obj)}\n`);
@@ -21,6 +25,7 @@ emit({
   model: "mock-model",
   permissionMode: "default",
   tools: [],
+  appendSystemPrompt,
 });
 
 const decoder = new TextDecoder();
