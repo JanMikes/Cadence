@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.1 (Agent runner — one-shot `claude -p` worker)
-- **Next step:** 2.2 (Agent library — reusable subagent defs via `--agents`)
+- **Last completed step:** 2.2 (Agent library — reusable subagent defs via `--agents`)
+- **Next step:** 2.3 (Triage agent on capture)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -166,7 +166,15 @@ Then stop and report.
     imports/exports so tsc treated them as global scripts → `argv`/`prompt` collided; added `export {}`.
     *Verified:* `bun test` (83 pass) — role→model, parseAgentJson (raw/fenced/prose), runAgent parses
     result/cost/session and surfaces a triage-style JSON object; `bun run build` green.
-- [ ] 2.2 Agent library: reusable subagent defs injected via `--agents` (explorer, reviewers…).
+- [x] 2.2 Agent library: reusable subagent defs injected via `--agents` (explorer, reviewers…).
+  - **2026-06-06 · 2.2.** `server/src/agents/library.ts` `AGENT_LIBRARY` (spec §7.3): explorer +
+    dependency-mapper (read-only, Haiku), security/test/convention reviewers (read-only, Sonnet),
+    smoke-tester (build/test, Sonnet) — each `{description, prompt, tools, model}`. `agentsJson(names?)`
+    serializes the whole library or a subset to the `--agents` map (unknown names ignored);
+    `listAgents()` lists them. shared: `SubagentDef`. *Verified:* `bun test` (86 pass) — library has
+    explorers+reviewers with full fields; explorers/reviewers carry no mutating tools (read-only);
+    agentsJson serializes full + filters subset; `bun run build` green. The `--agents` JSON shape
+    matches Claude Code's subagent-definition format; a real acceptance smoke is offered, not auto-run.
 - [ ] 2.3 Triage agent on capture (→ project/priority/deadline/labels/restatement, or `insufficient`).
 - [ ] 2.4 Discovery agent (+ parallel explorer subagents) → spec/criteria/unknowns, or `insufficient`.
 - [ ] 2.5 Questioner agent → ranked Q&A cards; Needs-Feedback UI (Q&A + "too vague" cards).
