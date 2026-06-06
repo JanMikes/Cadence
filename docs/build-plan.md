@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.7 (Permission mode selector + resolution + Dangerous confirm)
-- **Next step:** 1.8 (Sessions view + past-transcript reader + sidechains)
+- **Last completed step:** 1.8 (Sessions view + past-transcript reader + sidechains)
+- **Next step:** 1.9 (Terminal handoff)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -120,7 +120,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.7 Permission mode selector.** Auto (default) / Manual / Dangerous per session+task
   (resolved task ?? project ?? global); mode shown on tile; Dangerous needs confirm.
   - Verify: each mode maps to the right `--permission-mode`; Dangerous prompts a confirm.
-- [ ] **1.8 Sessions view + past-transcript reader + sidechains.** Live tiles from `~/.claude/
+- [x] **1.8 Sessions view + past-transcript reader + sidechains.** Live tiles from `~/.claude/
   sessions/*` (status/busy, verify pid alive); read past `projects/**/*.jsonl` (render the parentUuid
   DAG); nest `isSidechain` subagent activity.
   - Verify: a running session shows busy/idle; a past session renders; a subagent run nests.
@@ -492,3 +492,18 @@ review and revert a memory entry.
   the **mapped mode reaching the spawned binary** (the mock echoes `--permission-mode`:
   dangerous→bypassPermissions); `bun run build` green. *Next:* 1.8 sessions view + past-transcript
   reader + sidechains (incl. confirming claude's transcript-path encoding, the 1.4 open item).
+- **2026-06-06 · 1.8 Sessions view + transcript reader.** `server/src/transcripts.ts`: `readLiveSessions()`
+  reads the liveness oracle (`~/.claude/sessions/*.json`) and verifies each pid is actually alive
+  (`process.kill(pid,0)`; EPERM=alive, ESRCH=stale), sorted by `updatedAt`; `readTranscript(path)` parses
+  a past `*.jsonl` into renderable entries (user/assistant content → text/thinking/tool_use/tool_result;
+  metadata-only lines skipped) flagging `isSidechain`; `claudeDir()` honors `CADENCE_CLAUDE_DIR` so tests
+  use synthetic fixtures. **`transcriptPathFor` moved here and FIXED** to `realpathSync(cwd)` before the
+  `/`→`-` encoding — that resolves the **1.4 open item**: macOS `/tmp`→`/private/tmp`, so my 1.4 smoke
+  transcript was filed under `-private-tmp-…`, not `-tmp-…`. API: `GET /api/live-sessions`,
+  `GET /api/sessions/:id/transcript`. Web: a **Sessions** nav + view — live process tiles (status dot
+  busy/idle/shell + a stale flag) and Cadence session tiles; clicking opens a read-only **TranscriptReader**
+  drawer that renders the entries and **indents/labels `isSidechain` subagent lines**. *Verified:*
+  `bun test` (51 pass) — path encoding, alive-vs-stale pid, transcript parsing (messages parsed, metadata
+  skipped, sidechain flagged), SessionsView SSR; **real-data smoke** (read-only, structure only):
+  `readLiveSessions` saw 4 real processes (busy/idle/shell, all alive) and the 1.4 transcript now resolves
+  + reads (3 entries) via the realpath path; `bun run build` green. *Next:* 1.9 terminal handoff.
