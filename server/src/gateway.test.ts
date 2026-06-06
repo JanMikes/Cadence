@@ -11,6 +11,7 @@ let gw: Gateway;
 let db: Db;
 let webDir: string;
 let home: string;
+const terminalLaunches: Array<{ app: string; command: string }> = [];
 
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "cadence-gw-home-"));
@@ -21,7 +22,14 @@ beforeAll(() => {
   writeFileSync(join(webDir, "app.js"), "console.log('hi')");
   db = openDb(join(home, "cadence.db"));
   migrateDb(db);
-  gw = startGateway({ port: 0, webDir, db, startWatcher: false });
+  // Mock the terminal launcher so the test never opens a real window.
+  gw = startGateway({
+    port: 0,
+    webDir,
+    db,
+    startWatcher: false,
+    openTerminal: (app, command) => terminalLaunches.push({ app, command }),
+  });
 });
 
 afterAll(async () => {
@@ -91,6 +99,44 @@ test("PATCH /api/tasks/:id moves a task across statuses (board drag)", async () 
   // persisted: a fresh GET reflects it
   const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
   expect(after.status).toBe("ready");
+});
+
+test("settings: GET defaults, PATCH preferredTerminal", async () => {
+  const before = (await fetch(`${gw.url}/api/settings`).then((r) => r.json())) as {
+    preferredTerminal: string;
+  };
+  expect(before.preferredTerminal).toBe("Terminal");
+
+  const after = (await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ preferredTerminal: "iTerm" }),
+  }).then((r) => r.json())) as { preferredTerminal: string };
+  expect(after.preferredTerminal).toBe("iTerm");
+});
+
+test("open-terminal builds the resume command and invokes the launcher", async () => {
+  const task = await createViaApi("Handoff task");
+  // give the task a session row to hand off
+  const session = gw.spawn.spawn({ cwd: "/tmp/handoff-cwd", taskId: task.id, role: "chat", command: ["true"] });
+
+  await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ preferredTerminal: "Terminal" }),
+  });
+
+  terminalLaunches.length = 0;
+  const res = await fetch(`${gw.url}/api/sessions/${session.id}/open-terminal`, { method: "POST" });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { ok: boolean; command: string };
+  expect(body.command).toBe(`cd '/tmp/handoff-cwd' && claude --resume ${session.id}`);
+
+  expect(terminalLaunches).toHaveLength(1);
+  expect(terminalLaunches[0]?.command).toContain("claude --resume");
+  expect(terminalLaunches[0]?.app).toBe("Terminal");
+
+  gw.spawn.kill(session.id);
 });
 
 test("task context channel: POST appends, GET reads", async () => {

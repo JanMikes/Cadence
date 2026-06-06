@@ -12,9 +12,10 @@ import {
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
+import { appendContext, readContext, readSettings, writeSettings } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
+import { buildResumeCommand } from "./terminal";
 import { readLiveSessions, readTranscript } from "./transcripts";
-import { appendContext, readContext } from "./store/store";
 import {
   createTask,
   getTask,
@@ -30,6 +31,8 @@ export interface ApiContext {
   db: Db;
   hub: WsHub;
   spawn: SpawnManager;
+  /** Launch a terminal app running `command` (injectable for tests). */
+  openTerminal: (app: string, command: string) => void;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -131,6 +134,38 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/live-sessions" && method === "GET") {
     return Response.json(readLiveSessions());
+  }
+
+  if (pathname === "/api/settings") {
+    if (method === "GET") return Response.json(readSettings());
+    if (method === "PATCH") {
+      let patch: { preferredTerminal?: string; global?: Record<string, unknown> };
+      try {
+        patch = (await req.json()) as typeof patch;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const current = readSettings();
+      const next = {
+        ...current,
+        ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
+        global: { ...current.global, ...(patch.global ?? {}) },
+      };
+      writeSettings(next);
+      ctx.hub.broadcast({ type: "event", name: "settings:updated" });
+      return Response.json(next);
+    }
+    return methodNotAllowed();
+  }
+
+  const openTermMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/open-terminal$/);
+  if (openTermMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const session = getSession(ctx.db, openTermMatch[1] as string);
+    if (!session) return notFound(pathname);
+    const command = buildResumeCommand(session.cwd, session.id);
+    ctx.openTerminal(readSettings().preferredTerminal, command);
+    return Response.json({ ok: true, command });
   }
 
   const transcriptMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/transcript$/);

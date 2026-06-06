@@ -1,10 +1,11 @@
-import type { LiveSession, TranscriptEntry } from "@cadence/shared";
+import type { LiveSession, Session, TranscriptEntry } from "@cadence/shared";
 import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { getLiveSessions, getSessions, getTranscript } from "../../lib/api";
 import { cn } from "../../lib/utils";
+import { HandoffButtons } from "../session/HandoffButtons";
 
 function statusDot(status: string, alive = true): string {
   if (!alive) return "bg-muted";
@@ -20,7 +21,7 @@ function statusDot(status: string, alive = true): string {
 export function SessionsView() {
   const live = useQuery({ queryKey: ["live-sessions"], queryFn: getLiveSessions, refetchInterval: 3000 });
   const tracked = useQuery({ queryKey: ["sessions", "all"], queryFn: getSessions });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [open, setOpen] = useState<Session | null>(null);
 
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -51,7 +52,7 @@ export function SessionsView() {
             <li key={s.id}>
               <button
                 type="button"
-                onClick={() => setOpenId(s.id)}
+                onClick={() => setOpen(s)}
                 className="flex w-full items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
               >
                 <span className={cn("size-2 shrink-0 rounded-full", statusDot(s.status))} />
@@ -64,7 +65,7 @@ export function SessionsView() {
         </ul>
       </section>
 
-      {openId ? <TranscriptReader sessionId={openId} onClose={() => setOpenId(null)} /> : null}
+      {open ? <TranscriptReader session={open} onClose={() => setOpen(null)} /> : null}
     </div>
   );
 }
@@ -81,8 +82,11 @@ function LiveTile({ session }: { session: LiveSession }) {
   );
 }
 
-function TranscriptReader({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
-  const t = useQuery({ queryKey: ["transcript", sessionId], queryFn: () => getTranscript(sessionId) });
+function TranscriptReader({ session, onClose }: { session: Session; onClose: () => void }) {
+  const t = useQuery({
+    queryKey: ["transcript", session.id],
+    queryFn: () => getTranscript(session.id),
+  });
 
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop dismiss; Close button is the keyboard path
@@ -91,9 +95,15 @@ function TranscriptReader({ sessionId, onClose }: { sessionId: string; onClose: 
         className="flex h-full w-[680px] max-w-full flex-col border-l border-border bg-background"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between border-b border-border px-5 py-3">
-          <div className="text-sm font-semibold">Transcript · {sessionId.slice(0, 8)}</div>
-          <LabeledIconButton icon={<X />} label="Close" variant="ghost" size="sm" onClick={onClose} />
+        <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold">Transcript · {session.id.slice(0, 8)}</div>
+            <div className="truncate text-xs text-muted-foreground">{session.cwd}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <HandoffButtons sessionId={session.id} cwd={session.cwd} />
+            <LabeledIconButton icon={<X />} label="Close" variant="ghost" size="sm" onClick={onClose} />
+          </div>
         </header>
         <div className="flex flex-1 flex-col gap-2 overflow-auto p-5">
           {t.isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}

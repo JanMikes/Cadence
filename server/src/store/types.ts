@@ -42,13 +42,5 @@ export interface FleetFrontmatter {
   // The markdown BODY is the fleet's systemPrompt context layer.
 }
 
-export interface GlobalSettings {
-  version: number;
-  global: {
-    defaultModel: string | null;
-    defaultPermissionMode: string;
-    defaultDeliveryMode: string;
-    systemPrompt: string;
-  };
-  preferredTerminal: string;
-}
+// GlobalSettings is part of the API contract — defined in @cadence/shared.
+export type { GlobalSettings } from "@cadence/shared";

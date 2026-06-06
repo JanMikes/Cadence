@@ -2,7 +2,9 @@ import type {
   ContextChannel,
   CreateProjectInput,
   CreateTaskInput,
+  GlobalSettings,
   LiveSession,
+  OpenTerminalResult,
   Project,
   Session,
   SpawnSessionInput,
@@ -12,6 +14,12 @@ import type {
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@cadence/shared";
+
+/** Mirror of the server's resume command (control surfaces §5) for the copy button. */
+export function buildResumeCommand(cwd: string, sessionId: string): string {
+  const quoted = `'${cwd.replace(/'/g, `'\\''`)}'`;
+  return `cd ${quoted} && claude --resume ${sessionId}`;
+}
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -99,6 +107,28 @@ export function getLiveSessions(): Promise<LiveSession[]> {
 
 export function getTranscript(sessionId: string): Promise<TranscriptEntry[]> {
   return fetch(`/api/sessions/${sessionId}/transcript`).then(json<TranscriptEntry[]>);
+}
+
+export function openTerminal(sessionId: string): Promise<OpenTerminalResult> {
+  return fetch(`/api/sessions/${sessionId}/open-terminal`, { method: "POST" }).then(
+    json<OpenTerminalResult>,
+  );
+}
+
+export function getSettings(): Promise<GlobalSettings> {
+  return fetch("/api/settings").then(json<GlobalSettings>);
+}
+
+export function updateSettings(
+  patch: Partial<Pick<GlobalSettings, "preferredTerminal">> & {
+    global?: Partial<GlobalSettings["global"]>;
+  },
+): Promise<GlobalSettings> {
+  return fetch("/api/settings", {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  }).then(json<GlobalSettings>);
 }
 
 export function sendSessionMessage(sessionId: string, text: string): Promise<{ ok: boolean }> {

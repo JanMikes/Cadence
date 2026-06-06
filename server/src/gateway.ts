@@ -6,6 +6,7 @@ import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
 import { SpawnManager } from "./sessions";
 import { bootstrap } from "./store/store";
+import { openInTerminal } from "./terminal";
 import { startWatcher, type WatcherHandle } from "./store/watcher";
 import { WsHub, type WsData } from "./ws";
 
@@ -20,6 +21,8 @@ export interface GatewayOptions {
   db?: Db;
   /** Start the file watcher (default true; tests pass false). */
   startWatcher?: boolean;
+  /** Override the terminal launcher (tests pass a mock to avoid opening windows). */
+  openTerminal?: (app: string, command: string) => void;
 }
 
 export interface Gateway {
@@ -67,7 +70,12 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       }
 
       if (url.pathname.startsWith("/api/")) {
-        return handleApi(req, url, { db, hub, spawn: spawnManager });
+        return handleApi(req, url, {
+          db,
+          hub,
+          spawn: spawnManager,
+          openTerminal: opts.openTerminal ?? openInTerminal,
+        });
       }
 
       return serveStatic(url.pathname, webDir);

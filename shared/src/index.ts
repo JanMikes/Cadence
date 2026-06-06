@@ -186,6 +186,25 @@ export interface ClaudeEvent {
   [key: string]: unknown;
 }
 
+export interface GlobalSettings {
+  version: number;
+  global: {
+    defaultModel: string | null;
+    defaultPermissionMode: string;
+    defaultDeliveryMode: string;
+    systemPrompt: string;
+  };
+  preferredTerminal: string;
+}
+
+/** Supported terminal apps for one-click handoff (macOS). */
+export const TERMINAL_APPS = ["Terminal", "iTerm"] as const;
+
+export interface OpenTerminalResult {
+  ok: boolean;
+  command: string;
+}
+
 /** A live Claude Code process from the liveness oracle (~/.claude/sessions/<pid>.json). */
 export interface LiveSession {
   pid: number;
