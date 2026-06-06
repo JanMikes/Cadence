@@ -494,6 +494,12 @@ export interface ContextChannel {
   content: string;
 }
 
+/** A markdown memory file (§8.1): Cadence's self-written, hand-editable context. */
+export interface MemoryFile {
+  name: string; // without the .md extension
+  content: string;
+}
+
 /** A ranked Q&A card from the Questioner agent (agent-prompts §3). */
 export type QAQuestionType = "text" | "single_choice" | "multi_choice" | "boolean";
 export interface QAQuestion {

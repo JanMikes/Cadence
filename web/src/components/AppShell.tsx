@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bell,
   Boxes,
+  BrainCircuit,
   CalendarDays,
   FolderGit2,
   Inbox,
@@ -22,6 +23,7 @@ export type ViewId =
   | "fleets"
   | "sessions"
   | "analytics"
+  | "memory"
   | "notifications"
   | "settings";
 
@@ -41,6 +43,7 @@ const NAV: NavItem[] = [
   { id: "fleets", label: "Fleets", icon: Boxes },
   { id: "sessions", label: "Sessions", icon: Activity },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "memory", label: "Memory", icon: BrainCircuit },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "settings", label: "Settings", icon: Settings },
 ];

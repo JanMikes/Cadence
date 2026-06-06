@@ -8,6 +8,7 @@ import { Calendar } from "./features/calendar/Calendar";
 import { Today } from "./features/digest/Today";
 import { Fleets } from "./features/fleets/Fleets";
 import { Inbox } from "./features/inbox/Inbox";
+import { Memory } from "./features/memory/Memory";
 import { Projects } from "./features/projects/Projects";
 import { SessionPanel } from "./features/session/SessionPanel";
 import { NotificationsView } from "./features/notifications/NotificationsView";
@@ -78,6 +79,7 @@ export function App() {
         {view === "fleets" ? <Fleets /> : null}
         {view === "sessions" ? <SessionsView /> : null}
         {view === "analytics" ? <Analytics /> : null}
+        {view === "memory" ? <Memory /> : null}
         {view === "notifications" ? <NotificationsView onOpenTask={setSelectedId} /> : null}
         {view === "settings" ? <SettingsView /> : null}
       </AppShell>

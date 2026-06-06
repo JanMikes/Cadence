@@ -35,6 +35,7 @@ import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents } from "./events";
 import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
+import { listMemoryFiles, readProjectMemory, writeMemoryFile, writeProjectMemory } from "./memory";
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from "./searches";
 import { runSweep } from "./sweep";
 import { searchTranscripts } from "./transcript-search";
@@ -431,6 +432,45 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/sweep" && method === "GET") {
     return Response.json(runSweep(ctx.db, Date.now()));
+  }
+
+  if (pathname === "/api/memory" && method === "GET") {
+    return Response.json(listMemoryFiles());
+  }
+
+  const memoryFileMatch = pathname.match(/^\/api\/memory\/([^/]+)$/);
+  if (memoryFileMatch) {
+    if (method !== "PUT") return methodNotAllowed();
+    let body: { content?: string };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    if (typeof body?.content !== "string") return badRequest("content (string) required");
+    const file = writeMemoryFile(memoryFileMatch[1] as string, body.content);
+    ctx.hub.broadcast({ type: "event", name: "memory:updated", payload: file.name });
+    return Response.json(file);
+  }
+
+  const projectMemoryMatch = pathname.match(/^\/api\/projects\/([^/]+)\/memory$/);
+  if (projectMemoryMatch) {
+    const slug = projectMemoryMatch[1] as string;
+    if (!getProject(ctx.db, slug)) return notFound(pathname);
+    if (method === "GET") return Response.json({ content: readProjectMemory(slug) });
+    if (method === "PUT") {
+      let body: { content?: string };
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (typeof body?.content !== "string") return badRequest("content (string) required");
+      writeProjectMemory(slug, body.content);
+      ctx.hub.broadcast({ type: "event", name: "memory:updated", payload: slug });
+      return Response.json({ content: body.content });
+    }
+    return methodNotAllowed();
   }
 
   if (pathname === "/api/search" && method === "GET") {

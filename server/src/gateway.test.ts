@@ -645,6 +645,21 @@ test("GET /api/search/transcripts returns [] for an empty query", async () => {
   expect(Array.isArray(hits)).toBe(true);
 });
 
+test("memory: PUT a global memory file, GET it back", async () => {
+  const put = await fetch(`${gw.url}/api/memory/communication`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ content: "Signal over noise. Czech/English fine." }),
+  });
+  expect(put.status).toBe(200);
+  const list = (await fetch(`${gw.url}/api/memory`).then((r) => r.json())) as Array<{
+    name: string;
+    content: string;
+  }>;
+  const file = list.find((f) => f.name === "communication");
+  expect(file?.content).toContain("Signal over noise");
+});
+
 test("settings: GET defaults, PATCH preferredTerminal", async () => {
   const before = (await fetch(`${gw.url}/api/settings`).then((r) => r.json())) as {
     preferredTerminal: string;

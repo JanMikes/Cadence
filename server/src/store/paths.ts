@@ -27,6 +27,9 @@ export const paths = {
   fleetFile: (slug: string) => join(cadenceHome(), "fleets", `${slug}.md`),
 
   memoryDir: () => join(cadenceHome(), "memory"),
+  memoryFile: (name: string) => join(cadenceHome(), "memory", `${name}.md`),
+  projectMemoryDir: () => join(cadenceHome(), "memory", "projects"),
+  projectMemoryFile: (slug: string) => join(cadenceHome(), "memory", "projects", `${slug}.md`),
   digestsDir: () => join(cadenceHome(), "digests"),
   digestFile: (date: string) => join(cadenceHome(), "digests", `${date}.md`),
 } as const;

@@ -14,6 +14,7 @@ import type {
   ImportCandidate,
   ImportSelection,
   LiveSession,
+  MemoryFile,
   OpenTerminalResult,
   Project,
   QAChannel,
@@ -164,6 +165,18 @@ export function getAnalytics(): Promise<AnalyticsSummary> {
 
 export function getSweep(): Promise<SweepReport> {
   return fetch("/api/sweep").then(json<SweepReport>);
+}
+
+export function getMemory(): Promise<MemoryFile[]> {
+  return fetch("/api/memory").then(json<MemoryFile[]>);
+}
+
+export function saveMemoryFile(name: string, content: string): Promise<MemoryFile> {
+  return fetch(`/api/memory/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ content }),
+  }).then(json<MemoryFile>);
 }
 
 export function getApprovals(): Promise<ApprovalRequest[]> {

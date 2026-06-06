@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { fleets } from "./db/schema";
+import { readGlobalMemory, readProjectMemory } from "./memory";
 import { getProjectById } from "./projects";
 import { readContext, readSettings, readSpec } from "./store/store";
 
@@ -28,10 +29,19 @@ export function composeContext(db: Db, scope: ContextScope): string {
   const global = readSettings().global.systemPrompt;
   if (global?.trim()) sections.push(section("Global context", global));
 
+  const globalMemory = readGlobalMemory();
+  if (globalMemory.trim()) sections.push(section("Memory (learned, cross-project)", globalMemory));
+
   if (scope.projectId) {
     const project = getProjectById(db, scope.projectId);
     if (project?.systemPrompt?.trim()) {
       sections.push(section(`Project: ${project.name}`, project.systemPrompt));
+    }
+    if (project) {
+      const projectMemory = readProjectMemory(project.slug);
+      if (projectMemory.trim()) {
+        sections.push(section(`Project memory: ${project.name}`, projectMemory));
+      }
     }
   }
 
