@@ -1,12 +1,28 @@
 import { TASK_STATUSES } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquarePlus, X } from "lucide-react";
+import { MessageSquarePlus, Play, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { appendContext, getContext, getProjects, getTaskDetail, updateTask } from "../../lib/api";
+import {
+  appendContext,
+  getContext,
+  getProjects,
+  getTaskDetail,
+  getTaskSessions,
+  spawnSession,
+  updateTask,
+} from "../../lib/api";
 import { statusLabel } from "../../lib/status";
 
-export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+export function TaskDetail({
+  taskId,
+  onClose,
+  onOpenSession,
+}: {
+  taskId: string;
+  onClose: () => void;
+  onOpenSession: (sessionId: string) => void;
+}) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
 
@@ -30,6 +46,19 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
   const setProject = useMutation({
     mutationFn: (slug: string | null) => updateTask(taskId, { project: slug }),
     onSuccess: invalidateTask,
+  });
+
+  const sessions = useQuery({
+    queryKey: ["task", taskId, "sessions"],
+    queryFn: () => getTaskSessions(taskId),
+  });
+
+  const run = useMutation({
+    mutationFn: () => spawnSession(taskId),
+    onSuccess: (session) => {
+      void qc.invalidateQueries({ queryKey: ["task", taskId, "sessions"] });
+      onOpenSession(session.id);
+    },
   });
 
   const addNote = useMutation({
@@ -124,6 +153,41 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
             {task.body ? (
               <p className="mt-5 whitespace-pre-wrap text-sm text-foreground/90">{task.body}</p>
             ) : null}
+
+            <section className="mt-7 border-t border-border pt-5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">Sessions</h3>
+                <LabeledIconButton
+                  icon={<Play />}
+                  label="Run Claude"
+                  size="sm"
+                  onClick={() => run.mutate()}
+                  disabled={run.isPending}
+                />
+              </div>
+              {run.isError ? (
+                <p className="mt-2 text-xs text-red-400">Couldn’t start a session.</p>
+              ) : null}
+              <ul className="mt-3 flex flex-col gap-1.5">
+                {sessions.data?.length === 0 ? (
+                  <li className="text-xs text-muted-foreground">No sessions yet.</li>
+                ) : null}
+                {sessions.data?.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenSession(s.id)}
+                      className="flex w-full items-center justify-between rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
+                    >
+                      <span className="font-mono">{s.id.slice(0, 8)}</span>
+                      <span className="text-muted-foreground">
+                        {s.status} · ${s.costUsd.toFixed(4)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
             <section className="mt-7 border-t border-border pt-5">
               <h3 className="text-sm font-medium">Context</h3>

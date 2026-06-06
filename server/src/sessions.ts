@@ -151,6 +151,12 @@ export class SpawnManager {
   }
 
   private update(id: string, patch: Partial<typeof sessions.$inferInsert>): void {
-    this.db.update(sessions).set(patch).where(eq(sessions.id, id)).run();
+    try {
+      this.db.update(sessions).set(patch).where(eq(sessions.id, id)).run();
+    } catch (err) {
+      // A late event (e.g. process close during shutdown, after the db is gone)
+      // shouldn't crash the manager.
+      console.warn(`[cadence] session ${id} update skipped:`, (err as Error).message);
+    }
   }
 }

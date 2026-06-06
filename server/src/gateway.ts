@@ -27,6 +27,7 @@ export interface Gateway {
   url: string;
   db: Db;
   hub: WsHub;
+  spawn: SpawnManager;
   broadcast: (msg: ServerMessage) => void;
   stop: () => Promise<void>;
 }
@@ -91,6 +92,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     url: `http://localhost:${boundPort}`,
     db,
     hub,
+    spawn: spawnManager,
     broadcast: (msg) => hub.broadcast(msg),
     stop: async () => {
       watcher?.close();

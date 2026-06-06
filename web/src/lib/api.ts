@@ -3,6 +3,8 @@ import type {
   CreateProjectInput,
   CreateTaskInput,
   Project,
+  Session,
+  SpawnSessionInput,
   Task,
   TaskDetail,
   UpdateProjectInput,
@@ -71,4 +73,24 @@ export function updateProject(slug: string, patch: UpdateProjectInput): Promise<
     headers: JSON_HEADERS,
     body: JSON.stringify(patch),
   }).then(json<Project>);
+}
+
+export function getTaskSessions(taskId: string): Promise<Session[]> {
+  return fetch(`/api/tasks/${taskId}/sessions`).then(json<Session[]>);
+}
+
+export function spawnSession(taskId: string, input: SpawnSessionInput = {}): Promise<Session> {
+  return fetch(`/api/tasks/${taskId}/sessions`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  }).then(json<Session>);
+}
+
+export function sendSessionMessage(sessionId: string, text: string): Promise<{ ok: boolean }> {
+  return fetch(`/api/sessions/${sessionId}/messages`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ text }),
+  }).then(json<{ ok: boolean }>);
 }

@@ -4,6 +4,7 @@ import { AppShell, type ViewId } from "./components/AppShell";
 import { Board } from "./features/board/Board";
 import { Inbox } from "./features/inbox/Inbox";
 import { Projects } from "./features/projects/Projects";
+import { SessionPanel } from "./features/session/SessionPanel";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { cn } from "./lib/utils";
 
@@ -12,6 +13,7 @@ type Conn = "connecting" | "online" | "offline";
 export function App() {
   const [view, setView] = useState<ViewId>("inbox");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
 
@@ -62,7 +64,15 @@ export function App() {
       </AppShell>
 
       {selectedId ? (
-        <TaskDetail taskId={selectedId} onClose={() => setSelectedId(null)} />
+        <TaskDetail
+          taskId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onOpenSession={setActiveSessionId}
+        />
+      ) : null}
+
+      {activeSessionId ? (
+        <SessionPanel sessionId={activeSessionId} onClose={() => setActiveSessionId(null)} />
       ) : null}
     </>
   );

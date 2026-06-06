@@ -113,6 +113,23 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return Response.json(listSessions(ctx.db));
   }
 
+  const sessionMsgMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
+  if (sessionMsgMatch) {
+    const sessionId = sessionMsgMatch[1] as string;
+    if (method !== "POST") return methodNotAllowed();
+    let input: { text?: string };
+    try {
+      input = (await req.json()) as { text?: string };
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    const text = typeof input?.text === "string" ? input.text.trim() : "";
+    if (!text) return badRequest("text is required");
+    const sent = ctx.spawn.send(sessionId, text);
+    if (!sent) return Response.json({ error: "session_not_live", id: sessionId }, { status: 409 });
+    return Response.json({ ok: true });
+  }
+
   const ctxMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/context$/);
   if (ctxMatch) {
     const id = ctxMatch[1] as string;
