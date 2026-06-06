@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.7 (Deadline-aware prioritization)
-- **Next step:** 2.8 (Daily Digest: interactive morning plan → committed daily goal)
+- **Last completed step:** 2.8 (Daily Digest: interactive morning plan → committed goal)
+- **Next step:** 2.9 (Daily Digest gamification: ring/streak/personalized note + evening recap)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -221,7 +221,7 @@ Then stop and report.
     answers → Ready; `bun run build` green. The refinement loop is complete (the Phase-2 acceptance flow).
 - [x] 2.6 Lifecycle state machine enforced server-side + status timeline.
 - [x] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
-- [ ] 2.8 Daily Digest: interactive morning plan → committed daily goal.
+- [x] 2.8 Daily Digest: interactive morning plan → committed daily goal.
 - [ ] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
 - [ ] 2.10 Autonomy settings (per-project enable/disable).
 
@@ -697,3 +697,20 @@ review and revert a memory entry.
   fetches `sort=urgency` (urgent cards rise within each status column) and shows an Overdue/Due-soon
   badge; `getTasks` now takes `{status,sort}` (Inbox updated). Tests: prioritize unit (5) + gateway
   ordering (overdue-low ranks above far-off-urgent). Verify: 116 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 2.8 Daily Digest (interactive plan → committed goal).** New `server/src/digest.ts`
+  builds the morning ritual on the 2.7 prioritization core (no new heuristics): `proposePlan` ranks
+  the open tasks (everything but done/cancelled) via `sortByUrgency`, takes the top 7, and attaches a
+  deadline-first one-line `pickRationale` ("Overdue by 3d · P0", "Due tomorrow", "Ready to start").
+  `getDigest` returns the committed plan from `digests/<date>.md` if present, else a fresh proposal;
+  `commitDigest` writes an *ordered* set of task ids + goal/constraints to disk as status
+  "committed". `todayString(now)` keys by server-local date. Store: `readDigest`/`writeDigest`
+  (frontmatter + a readable plan body) + `paths.digestFile`; the nested `DigestPick.urgencyTier` is
+  always populated so js-yaml never hits the undefined-dump trap. API: `GET /api/digest[?date]`,
+  `POST /api/digest/commit` (broadcasts `digest:committed`); shared `DailyDigest`/`DigestPick`/
+  `CommitDigestInput`. Web: a **Today** view — the proposed shortlist with reorder (↑/↓) / remove /
+  click-to-open, a "what matters most" goal + constraints, and a Commit button that flips Planning →
+  Committed; Overdue/Due-soon badges reuse the board's vocabulary. "Today" is now the first nav item
+  (Sparkles), the **default landing view**, and a ⌘K target. Gamification (progress ring, streak,
+  personalized completion note) + the evening recap are deferred to **2.9** per the spec's split.
+  Tests: digest unit (4) + gateway propose→commit→re-fetch (+400 on a bad payload) + Today SSR.
+  Verify: 123 pass (×2 stable), build green across all three workspaces, secret scan clean.
