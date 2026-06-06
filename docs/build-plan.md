@@ -10,10 +10,10 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** none (fresh repo, docs only — not yet scaffolded)
+- **Last completed step:** 0.0 (repo safety: pre-commit secret guard + SECURITY.md)
 - **Next step:** 0.1
 - **Blockers:** none
-- **Last updated:** (set this when you touch the ledger)
+- **Last updated:** 2026-06-06
 
 ## Rules for the building agent (the idempotent loop)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md` (spec, the behavior source of truth),
@@ -57,7 +57,7 @@
 ## Phase 0 — Foundation
 Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watcher + design base.
 
-- [ ] **0.0 Repo safety.** Harden `.gitignore` (`.env*`, `*.key`, `*.pem`, `secrets/`, `/.cadence/`);
+- [x] **0.0 Repo safety.** Harden `.gitignore` (`.env*`, `*.key`, `*.pem`, `secrets/`, `/.cadence/`);
   add a **pre-commit secret scan** (gitleaks or a grep guard) that blocks commits containing secrets
   or real client identifiers; add a short `SECURITY.md` (no confidential data in the repo; runtime
   data lives in `~/.cadence/`; secrets in the OS keychain; examples use fictional names). See
@@ -211,4 +211,15 @@ review and revert a memory entry.
 
 ## Progress Journal (append-only — newest at bottom)
 <!-- Each entry: date · phase.step · what you did · decisions · deviations · notes for next session. -->
-- _(empty — the first building session appends here)_
+- **2026-06-06 · 0.0 Repo safety.** Added a tracked `.githooks/pre-commit` secret/client-identifier
+  scanner (high-confidence regexes: private keys, AWS/GitHub/Slack tokens, JWTs, `secret/token/api_key=…`
+  assignments, `sk-…`) + an optional machine-local denylist read from `~/.cadence/commit-denylist.txt`
+  (so real client names never enter the public repo) + a `cadence-allow-secret` bypass marker. Activated
+  via `git config core.hooksPath .githooks`. Added `SECURITY.md` (data-boundary policy). `.gitignore`
+  already covered the required patterns (done in 6aaa440), so no change there.
+  *Decisions:* hook lives under `.githooks/` (tracked) instead of `.git/hooks/` (untracked) so it
+  versions with the repo; client names are kept out of the tracked hook by design. *Deviations:* `bun`
+  was not installed on this machine — installed it (1.3.14) and symlinked into `~/.local/bin` (on PATH)
+  so future `bun` calls resolve; `bun test`/`bun run build` are N/A pre-scaffold. *Verified:* hook BLOCKS
+  a staged fake `API_KEY=` credential and PASSES the clean 0.0 commit. *Next:* 0.1 repo scaffold — when adding
+  `package.json`, wire a `prepare` script that runs `git config core.hooksPath .githooks` automatically.
