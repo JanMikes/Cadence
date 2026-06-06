@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.8 (Sessions view + past-transcript reader + sidechains)
-- **Next step:** 1.9 (Terminal handoff)
+- **Last completed step:** 1.9 (Terminal handoff + Settings)
+- **Next step:** 1.10 (Claude-assisted project import)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -124,7 +124,7 @@ converse → terminal handoff. No autonomy yet.
   sessions/*` (status/busy, verify pid alive); read past `projects/**/*.jsonl` (render the parentUuid
   DAG); nest `isSidechain` subagent activity.
   - Verify: a running session shows busy/idle; a past session renders; a subagent run nests.
-- [ ] **1.9 Terminal handoff.** Per session: copy `cd <cwd> && claude --resume <id>` + one-click
+- [x] **1.9 Terminal handoff.** Per session: copy `cd <cwd> && claude --resume <id>` + one-click
   "Open in <terminal>" (gateway runs `open`/`osascript`); preferred terminal in Settings.
   - Verify: button opens the configured terminal at cwd running resume; copy works.
 - [ ] **1.10 Claude-assisted project import.** Scan `~/.claude/projects` dirs; background `claude -p`
@@ -507,3 +507,19 @@ review and revert a memory entry.
   skipped, sidechain flagged), SessionsView SSR; **real-data smoke** (read-only, structure only):
   `readLiveSessions` saw 4 real processes (busy/idle/shell, all alive) and the 1.4 transcript now resolves
   + reads (3 entries) via the realpath path; `bun run build` green. *Next:* 1.9 terminal handoff.
+- **2026-06-06 · 1.9 Terminal handoff + Settings.** `server/src/terminal.ts`: `buildResumeCommand(cwd,
+  id)` → `cd <shell-quoted cwd> && claude --resume <id>` (control surfaces §5); `terminalLaunchArgs(app,
+  cmd)` builds the `osascript` argv for Terminal.app / iTerm; `openInTerminal(app, cmd, runner)` with an
+  **injectable runner** (so tests never open a window). API: `GET/PATCH /api/settings` (preferredTerminal
+  + global defaults) and `POST /api/sessions/:id/open-terminal` (builds the command, calls
+  `ctx.openTerminal`, returns the command). The gateway accepts an `openTerminal` override (tests inject a
+  recorder) and defaults to the real launcher. `GlobalSettings` moved to `@cadence/shared`. Web: a reusable
+  **HandoffButtons** (Copy command via the clipboard + Open in terminal) in the Sessions transcript drawer
+  header, and a real **Settings view** (preferred terminal, global default permission/delivery/model,
+  global system prompt) replacing the placeholder. *Decision:* honored the outward-facing concern — the
+  command-building + endpoint wiring are verified with a **mock runner** (no real window); a real launch is
+  offered on request. *Verified:* `bun test` (58 pass) — `buildResumeCommand` incl. single-quote escaping;
+  osascript argv for both terminals; `openInTerminal` → injected runner; the open-terminal endpoint builds
+  the resume command + invokes the mock launcher with the configured app (`Terminal`); settings GET
+  defaults + PATCH `preferredTerminal`; Settings + HandoffButtons SSR; `bun run build` green. *Next:*
+  1.10 Claude-assisted project import.
