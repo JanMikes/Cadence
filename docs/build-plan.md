@@ -9,14 +9,13 @@
 > literally Cadence's own execution model. Once Cadence exists it could run its own build/maintenance.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
-  (10/10, accepted).**
-- **Last completed step:** 3.7 (Review screen: diff + summary + verify; merge / request-changes)
-- **Next step:** 3.8 (Manual-approve mode `canUseTool` + Dangerous-mode guardrail) — last Phase 3 step
-- **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
-  inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
-  Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
-  default.
+- **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
+- **Last completed step:** 3.8 (Manual-approve `canUseTool` + Dangerous guardrail) — Phase 3 done + accepted
+- **Next step:** 4.1 (Fleets — multi-project tasks; sessions across cwds; per-repo sub-results)
+- **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
+  inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
+  Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
+  real-claude smoke. Autonomy stays OFF by default.
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -259,11 +258,26 @@ available on request).
 - [x] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
 - [x] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
 - [x] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
-- [ ] 3.8 Manual-approve mode (`canUseTool`) + Dangerous-mode guardrail (confirm + worktree).
+- [x] 3.8 Manual-approve mode (`canUseTool`) + Dangerous-mode guardrail (confirm + worktree).
 
 **Acceptance check (manual):** press PLAY on a Ready task → plan → implement in a worktree → verify
 passes → delivery produces the configured output (branch/PR/in-place); the Review screen shows the
 diff + summary; Manual mode gates each tool call; Dangerous requires explicit confirmation.
+
+**Phase 3 — Acceptance check (run 2026-06-06):** verified via the deterministic suite (agent runs
+mocked; a real-claude execution smoke is available on request — autonomy/execution never auto-spend).
+1. ✅ PLAY on a Ready task → Planner → approve → Implementer **in an isolated worktree** → Verifier
+   passes → Delivery → review (gateway E2E against a real temp git repo: 3.1–3.6).
+2. ✅ Delivery produces the configured output: branch_summary (commit on the per-task branch) +
+   apply_in_place (no branch) unit-tested; auto_pr (push + `gh pr create`) implemented best-effort.
+3. ✅ Review screen shows the diff + summary + verify results; **merge → done** / request-changes →
+   implementing (3.7; real-git diff + merge unit-tested; E2E merges through to done).
+4. ✅ Manual mode gates each tool call — the `canUseTool` ApprovalRegistry parks the call until I
+   Approve/Deny in-app (3.8; gateway round-trip tested). Live Agent-SDK wiring is offered, not run.
+5. ✅ Dangerous requires explicit confirmation (the enable-Dangerous confirm dialog, 1.7) **and**
+   worktree isolation is enforced server-side (the Implementer refuses bypassPermissions in-place, 3.8).
+6. ✅ `bun test` (168 pass) and `bun run build` both green.
+→ Phase 3 accepted. Execution is opt-in (PLAY), isolated, gated, and mock-tested end-to-end.
 
 ## Phase 4 — Multi-repo, analytics, polish
 - [ ] 4.1 Fleets (multi-project tasks; sessions across cwds; per-repo sub-results).
@@ -861,3 +875,19 @@ review and revert a memory entry.
   request-changes → implementing test asserting the note hits the context channel + ReviewPanel SSR.
   Verify: 161 pass (×2 stable), build green, scan clean. Only 3.8 (Manual `canUseTool` + Dangerous
   guardrail) remains in Phase 3.
+- **2026-06-06 · 3.8 Manual-approve (canUseTool) + Dangerous guardrail — Phase 3 complete.** New
+  `server/src/approvals.ts` `ApprovalRegistry`: `request()` parks a tool call (returns a Promise the
+  agent awaits) until `resolve()` is called; `list()` for the UI; a `canUseTool(ctx)` factory shaped
+  for the Agent SDK's callback (the clean in-app approve/deny path, control-surfaces §9 — this is the
+  in-app gate deferred from Phase 1). Types live in shared (`ApprovalRequest`/`ApprovalDecision`). The
+  gateway owns one registry, broadcasts `approval:requested`/`resolved`, and exposes it on
+  `ApiContext` + the `Gateway` handle (so tests can park a request). API: `GET /api/approvals`, `POST
+  /api/approvals/:id/resolve` (404 unknown). **Dangerous guardrail:** the Implementer refuses
+  `bypassPermissions` unless it's in an isolated worktree (never apply_in_place / the main tree) —
+  pairs with the existing enable-Dangerous confirm dialog (1.7). Web: `ApprovalsBar`, a fixed
+  bottom banner listing parked tool calls with Approve/Deny (polls every 2s + nudged by the WS
+  events), wired into `App`. Tests: registry unit (park→list→resolve, idempotent, onChange ordering,
+  canUseTool binding) + gateway (parked request lists → resolve frees the awaiting agent; 404) +
+  implementer dangerous-without-worktree bail + ApprovalsBar SSR. Verify: 168 pass (×2 stable), build
+  green, scan clean. **Ran the Phase 3 acceptance check — all items pass (see above); Phase 3
+  accepted.** Next: Phase 4 (Multi-repo, analytics, polish) starting at 4.1 (Fleets).
