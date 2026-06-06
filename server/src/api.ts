@@ -14,6 +14,7 @@ import {
   type UpdateTaskInput,
 } from "@cadence/shared";
 import { runDiscovery } from "./agents/discovery";
+import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
@@ -178,9 +179,22 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (planApproveMatch) {
     if (method !== "POST") return methodNotAllowed();
     const taskId = planApproveMatch[1] as string;
-    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
     const plan = approvePlan(taskId);
     ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+    // Approving the plan starts implementation (only while executing). The
+    // Implementer runs in the isolated worktree; it bails gracefully if it can't.
+    if (task.status === "implementing") {
+      void runImplementer(ctx.db, taskId, ctx.runAgent)
+        .then((r) => {
+          if (r.ran) {
+            ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+            ctx.hub.broadcast({ type: "event", name: "task:implemented", payload: taskId });
+          }
+        })
+        .catch((err) => console.error(`[cadence] implementer failed for ${taskId}:`, err));
+    }
     return Response.json(plan);
   }
 

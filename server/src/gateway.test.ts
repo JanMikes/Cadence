@@ -39,6 +39,8 @@ beforeAll(() => {
         json = { questions: [{ id: "q1", rank: 1, type: "text", text: "Which auth provider?" }] };
       } else if (opts.role === "planner") {
         json = { steps: [{ title: "Wire the endpoint", files: ["api.ts"] }, { title: "Add a test" }] };
+      } else if (opts.role === "implementer") {
+        json = { ok: true }; // the implementer only checks for errors, not JSON shape
       } else {
         json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
       }
@@ -276,6 +278,57 @@ test("PLAY runs the Planner (mock) → an approvable plan that POST approve conf
   )) as { approved: boolean; steps: Array<{ title: string }> };
   expect(approved.approved).toBe(true);
   expect(approved.steps.length).toBe(2); // steps preserved through approval
+});
+
+test("execution slice: PLAY → plan → approve → Implementer runs in a worktree → verifying", async () => {
+  // a real git repo + an isolated worktree base for this task
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-repo-"));
+  const wtBase = mkdtempSync(join(tmpdir(), "cadence-gw-wt-"));
+  process.env.CADENCE_WORKTREES = wtBase;
+  const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@e.com"]);
+  g(["config", "user.name", "T"]);
+  writeFileSync(join(repo, "README.md"), "# x\n");
+  g(["add", "."]);
+  g(["commit", "-q", "-m", "init"]);
+
+  try {
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "GW Repo", rootPath: repo }),
+    }).then((r) => r.json())) as { slug: string };
+
+    const task = await createViaApi("Implement via gateway");
+    await fetch(`${gw.url}/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project: project.slug, status: "ready" }),
+    });
+    await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+
+    // wait for the Planner (background) to produce steps, then approve
+    let plan = { steps: [] as unknown[] };
+    for (let i = 0; i < 50 && plan.steps.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as typeof plan;
+    }
+    expect(plan.steps.length).toBe(2);
+    await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
+
+    // the Implementer runs in the worktree (background) and advances → verifying
+    let status = "";
+    for (let i = 0; i < 50 && status !== "verifying"; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
+    }
+    expect(status).toBe("verifying");
+  } finally {
+    delete process.env.CADENCE_WORKTREES;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
 });
 
 test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome", async () => {
