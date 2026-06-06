@@ -295,6 +295,30 @@ test("POST /api/digest/commit rejects a non-array picks payload", async () => {
   expect(res.status).toBe(400);
 });
 
+test("POST /api/digest/recap closes the day with progress + a positive note", async () => {
+  const a = await createViaApi("Recap A");
+  const b = await createViaApi("Recap B");
+  await fetch(`${gw.url}/api/digest/commit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ picks: [a.id, b.id] }),
+  });
+  // ship one pick through the lifecycle (inbox → ready → done)
+  for (const status of ["ready", "done"]) {
+    await fetch(`${gw.url}/api/tasks/${a.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+  }
+  const recapped = (await fetch(`${gw.url}/api/digest/recap`, { method: "POST" }).then((r) =>
+    r.json(),
+  )) as { status: string; progress: { done: number; total: number }; recap: { note: string } };
+  expect(recapped.status).toBe("recapped");
+  expect(recapped.progress).toEqual({ done: 1, total: 2 });
+  expect(recapped.recap.note.length).toBeGreaterThan(0);
+});
+
 test("GET /api/search finds a task by body text (FTS)", async () => {
   await fetch(`${gw.url}/api/tasks`, {
     method: "POST",

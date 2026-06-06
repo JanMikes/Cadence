@@ -6,6 +6,7 @@ import {
   type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
+  type RecapDigestInput,
   type ResolveSuggestionInput,
   SCHEMA_VERSION,
   type SpawnSessionInput,
@@ -18,7 +19,7 @@ import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
-import { commitDigest, getDigest } from "./digest";
+import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents } from "./events";
 import { importProjects, scanClaudeProjects } from "./import";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
@@ -251,6 +252,19 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (!Array.isArray(input?.picks)) return badRequest("picks must be an array of task ids");
     const digest = commitDigest(ctx.db, input, Date.now());
     ctx.hub.broadcast({ type: "event", name: "digest:committed", payload: digest.date });
+    return Response.json(digest);
+  }
+
+  if (pathname === "/api/digest/recap") {
+    if (method !== "POST") return methodNotAllowed();
+    let input: RecapDigestInput;
+    try {
+      input = (await req.json().catch(() => ({}))) as RecapDigestInput;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    const digest = recapDigest(ctx.db, Date.now(), input?.date);
+    ctx.hub.broadcast({ type: "event", name: "digest:recapped", payload: digest.date });
     return Response.json(digest);
   }
 

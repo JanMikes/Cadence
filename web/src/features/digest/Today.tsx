@@ -1,9 +1,10 @@
 import type { DigestPick } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, CalendarCheck, Check, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarCheck, Check, Flame, Moon, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { commitDigest, getDigest } from "../../lib/api";
+import { commitDigest, getDigest, recapDigest } from "../../lib/api";
+import { ProgressRing } from "./ProgressRing";
 
 const TIER_BADGE: Record<string, { label: string; className: string }> = {
   overdue: { label: "Overdue", className: "bg-red-500/15 text-red-400" },
@@ -43,6 +44,11 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest"] }),
   });
 
+  const recap = useMutation({
+    mutationFn: () => recapDigest(),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest"] }),
+  });
+
   const move = (i: number, dir: -1 | 1) => {
     const j = i + dir;
     if (j < 0 || j >= picks.length) return;
@@ -52,29 +58,69 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
   };
   const remove = (i: number) => setPicks(picks.filter((_, k) => k !== i));
 
-  const committed = digest.data?.status === "committed";
+  const status = digest.data?.status;
+  const committed = status === "committed" || status === "recapped";
+  const recapped = status === "recapped";
+  const progress = digest.data?.progress;
+  const streak = digest.data?.streak ?? 0;
 
   return (
     <div className="flex h-full flex-col overflow-auto p-6">
-      <div className="flex items-center gap-2">
-        <Sparkles className="size-5 text-primary" />
-        <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
-        {digest.data ? (
-          <span className="ml-1 text-sm text-muted-foreground">{digest.data.date}</span>
+      <div className="flex items-start gap-2">
+        <Sparkles className="mt-1 size-5 text-primary" />
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
+            {digest.data ? (
+              <span className="text-sm text-muted-foreground">{digest.data.date}</span>
+            ) : null}
+            {recapped ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-300">
+                <Moon className="size-3.5" /> Recapped
+              </span>
+            ) : committed ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-400">
+                <CalendarCheck className="size-3.5" /> Committed
+              </span>
+            ) : (
+              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                Planning
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            A deadline-first shortlist. Reorder, trim to what matters, then commit your plan.
+          </p>
+        </div>
+
+        {committed && progress ? (
+          <div className="ml-auto flex items-center gap-4 text-primary">
+            {streak > 0 ? (
+              <span
+                className="inline-flex items-center gap-1 text-sm font-medium text-amber-400"
+                title={`${streak}-day streak of meeting your plan`}
+              >
+                <Flame className="size-4" /> {streak}
+              </span>
+            ) : null}
+            <ProgressRing done={progress.done} total={progress.total} />
+          </div>
         ) : null}
-        {committed ? (
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2.5 py-1 text-xs font-medium text-green-400">
-            <CalendarCheck className="size-3.5" /> Committed
-          </span>
-        ) : (
-          <span className="ml-auto rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-            Planning
-          </span>
-        )}
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        A deadline-first shortlist. Reorder, trim to what matters, then commit your plan for the day.
-      </p>
+
+      {recapped && digest.data?.recap ? (
+        <div className="mt-4 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium text-indigo-300">
+            <Moon className="size-4" /> Evening recap
+          </div>
+          <p className="mt-1.5 text-sm text-foreground/90">{digest.data.recap.note}</p>
+          {digest.data.recap.shipped.length ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Shipped: {digest.data.recap.shipped.join(" · ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {digest.isError ? (
         <p className="mt-4 text-sm text-red-400">Couldn’t load today’s digest.</p>
@@ -175,10 +221,21 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
           onClick={() => commit.mutate()}
           disabled={commit.isPending}
         />
+        {committed ? (
+          <LabeledIconButton
+            icon={<Moon />}
+            label={recapped ? "Refresh recap" : "Evening recap"}
+            variant="ghost"
+            onClick={() => recap.mutate()}
+            disabled={recap.isPending}
+          />
+        ) : null}
         {commit.isSuccess && !commit.isPending ? (
           <span className="text-xs text-green-400">Saved.</span>
         ) : null}
-        {commit.isError ? <span className="text-xs text-red-400">Couldn’t save.</span> : null}
+        {commit.isError || recap.isError ? (
+          <span className="text-xs text-red-400">Couldn’t save.</span>
+        ) : null}
       </div>
     </div>
   );

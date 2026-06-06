@@ -421,15 +421,31 @@ export interface DigestPick {
   urgencyTier: UrgencyTier;
 }
 
-export type DigestStatus = "planning" | "committed";
+export type DigestStatus = "planning" | "committed" | "recapped";
+
+/** The evening recap (§10.3): what shipped, what rolled over, a positive note. */
+export interface DigestRecap {
+  done: number;
+  total: number;
+  met: boolean; // the plan was met (every pick shipped)
+  shipped: string[]; // titles of picks completed today
+  rolledOver: string[]; // task ids still open → seed tomorrow
+  note: string; // personalized, encouragement-only (never guilt)
+  recappedAt: number;
+}
 
 export interface DailyDigest {
   date: string; // YYYY-MM-DD (server-local)
-  status: DigestStatus; // "planning" = a fresh proposal; "committed" = my locked-in plan
+  status: DigestStatus; // planning = fresh proposal; committed = locked plan; recapped = day closed
   picks: DigestPick[];
   goal: string | null; // free-form "what matters most today"
   constraints: string | null; // meetings / energy / etc.
   committedAt: number | null;
+  recap?: DigestRecap | null;
+  /** Computed at request time (not persisted): live goal-progress ring. */
+  progress?: { done: number; total: number };
+  /** Computed at request time: consecutive days the plan was met. */
+  streak?: number;
 }
 
 export interface CommitDigestInput {
@@ -438,4 +454,8 @@ export interface CommitDigestInput {
   picks: string[];
   goal?: string | null;
   constraints?: string | null;
+}
+
+export interface RecapDigestInput {
+  date?: string; // defaults to today
 }

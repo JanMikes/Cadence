@@ -146,13 +146,16 @@ export function readDigest(date: string): DailyDigest | null {
   const file = paths.digestFile(date);
   if (!existsSync(file)) return null;
   const { data } = parseMarkdown<Partial<DailyDigest>>(readFileSync(file, "utf8"));
+  const status =
+    data.status === "committed" || data.status === "recapped" ? data.status : "planning";
   return {
     date: data.date ?? date,
-    status: data.status === "committed" ? "committed" : "planning",
+    status,
     picks: data.picks ?? [],
     goal: data.goal ?? null,
     constraints: data.constraints ?? null,
     committedAt: data.committedAt ?? null,
+    recap: data.recap ?? null,
   };
 }
 
@@ -167,6 +170,10 @@ function renderDigestBody(digest: DailyDigest): string {
     for (const p of digest.picks.slice().sort((a, b) => a.order - b.order)) {
       lines.push(`${p.order + 1}. ${p.title} — _${p.rationale}_ (${p.status})`);
     }
+  }
+  if (digest.recap) {
+    lines.push("", "## Recap", `**${digest.recap.done}/${digest.recap.total} shipped.** ${digest.recap.note}`);
+    if (digest.recap.shipped.length) lines.push("", `Shipped: ${digest.recap.shipped.join("; ")}`);
   }
   return lines.join("\n");
 }
@@ -184,6 +191,7 @@ export function writeDigest(digest: DailyDigest): void {
         goal: digest.goal,
         constraints: digest.constraints,
         committedAt: digest.committedAt,
+        recap: digest.recap ?? null,
       },
       renderDigestBody(digest),
     ),

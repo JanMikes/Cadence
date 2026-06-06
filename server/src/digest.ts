@@ -1,6 +1,14 @@
-import type { CommitDigestInput, DailyDigest, DigestPick, Task } from "@cadence/shared";
+import type {
+  CommitDigestInput,
+  DailyDigest,
+  DigestPick,
+  DigestRecap,
+  Task,
+} from "@cadence/shared";
+import { existsSync, readdirSync } from "node:fs";
 import type { Db } from "./db/client";
 import { sortByUrgency, urgencyTier } from "./prioritize";
+import { paths } from "./store/paths";
 import { readDigest, writeDigest } from "./store/store";
 import { getTask, listTasks } from "./tasks";
 
@@ -70,12 +78,104 @@ export function proposePlan(db: Db, date: string, now: number): DailyDigest {
   };
 }
 
+const DAY = 86_400_000;
+
 /**
- * The digest for a date: the committed plan if one exists on disk, else a fresh
- * proposal computed from the current open tasks.
+ * Live goal progress for a digest: how many picks are now done. Recapped days
+ * use their frozen recap counts; otherwise we count current task statuses.
+ */
+export function computeProgress(db: Db, digest: DailyDigest): { done: number; total: number } {
+  if (digest.recap) return { done: digest.recap.done, total: digest.recap.total };
+  const total = digest.picks.length;
+  const done = digest.picks.filter((p) => getTask(db, p.taskId)?.status === "done").length;
+  return { done, total };
+}
+
+/**
+ * The streak: consecutive days (ending today, or yesterday if today isn't
+ * recapped yet) whose plan was *met*. Reads the recorded recap of each
+ * digests/<date>.md, so it reflects each day's outcome, not current state.
+ */
+export function computeStreak(now: number): number {
+  const dir = paths.digestsDir();
+  if (!existsSync(dir)) return 0;
+  const met = new Set<string>();
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith(".md")) continue;
+    const date = f.slice(0, -3);
+    const d = readDigest(date);
+    if (d?.status === "recapped" && d.recap?.met) met.add(date);
+  }
+  // Don't penalize an in-progress today: if today isn't met yet, start at yesterday.
+  let cursor = met.has(todayString(now)) ? now : now - DAY;
+  let streak = 0;
+  while (met.has(todayString(cursor))) {
+    streak++;
+    cursor -= DAY;
+  }
+  return streak;
+}
+
+/**
+ * The digest for a date: the committed/recapped plan if one exists on disk,
+ * else a fresh proposal — annotated with live progress + the current streak.
  */
 export function getDigest(db: Db, now: number, date = todayString(now)): DailyDigest {
-  return readDigest(date) ?? proposePlan(db, date, now);
+  const base = readDigest(date) ?? proposePlan(db, date, now);
+  return { ...base, progress: computeProgress(db, base), streak: computeStreak(now) };
+}
+
+/** A tasteful, positive completion note (never guilt) from what actually shipped. */
+export function generateNote(shipped: string[], done: number, total: number, met: boolean): string {
+  if (total === 0) {
+    return "No plan was set — capture a few tasks tomorrow and Cadence will line them up.";
+  }
+  if (met) {
+    const head = total === 1 ? "Shipped your one focus" : `Cleared all ${total}`;
+    const lead = shipped[0] ? ` — ${shipped[0]}` : "";
+    const more = shipped.length > 1 ? ` and ${shipped.length - 1} more` : "";
+    return `${head}${lead}${more}. Strong day. 🔥`;
+  }
+  if (done === 0) {
+    return `Fresh start tomorrow — your ${total} ${total === 1 ? "task is" : "tasks are"} already queued up.`;
+  }
+  const lead = shipped[0] ? ` — ${shipped[0]}` : "";
+  const more = shipped.length > 1 ? ` +${shipped.length - 1} more` : "";
+  return `Shipped ${done} of ${total}${lead}${more}. Solid progress; the rest roll into tomorrow.`;
+}
+
+/**
+ * Close out the day: tally shipped vs rolled-over from current task statuses,
+ * write a positive recap into digests/<date>.md (status → "recapped"), and
+ * return it. Incomplete picks are still open, so tomorrow's proposal re-surfaces
+ * them automatically (the "seed tomorrow" behaviour).
+ */
+export function recapDigest(db: Db, now: number, date = todayString(now)): DailyDigest {
+  const base = readDigest(date) ?? proposePlan(db, date, now);
+  const shipped: string[] = [];
+  const rolledOver: string[] = [];
+  for (const p of base.picks) {
+    const status = getTask(db, p.taskId)?.status;
+    if (status === "done") shipped.push(p.title);
+    else rolledOver.push(p.taskId);
+  }
+  const total = base.picks.length;
+  const done = shipped.length;
+  const met = total > 0 && done === total;
+  const recap: DigestRecap = {
+    done,
+    total,
+    met,
+    shipped,
+    rolledOver,
+    note: generateNote(shipped, done, total, met),
+    recappedAt: now,
+  };
+  const digest: DailyDigest = { ...base, status: "recapped", recap };
+  delete digest.progress;
+  delete digest.streak;
+  writeDigest(digest);
+  return { ...digest, progress: { done, total }, streak: computeStreak(now) };
 }
 
 /** Commit an (ordered) set of task ids as today's plan → digests/<date>.md. */

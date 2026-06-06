@@ -100,6 +100,14 @@ export function commitDigest(input: CommitDigestInput): Promise<DailyDigest> {
   }).then(json<DailyDigest>);
 }
 
+export function recapDigest(date?: string): Promise<DailyDigest> {
+  return fetch("/api/digest/recap", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(date ? { date } : {}),
+  }).then(json<DailyDigest>);
+}
+
 export function submitAnswers(
   taskId: string,
   answers: Record<string, string | string[]>,
