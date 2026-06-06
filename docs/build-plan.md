@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.6 (Context composition v1)
-- **Next step:** 1.7 (Permission mode selector)
+- **Last completed step:** 1.7 (Permission mode selector + resolution + Dangerous confirm)
+- **Next step:** 1.8 (Sessions view + past-transcript reader + sidechains)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -117,7 +117,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.6 Context composition v1.** Compose Global → Project → Task (spec/context/qa) into
   `--append-system-prompt` at spawn.
   - Verify: a project systemPrompt marker visibly affects behavior.
-- [ ] **1.7 Permission mode selector.** Auto (default) / Manual / Dangerous per session+task
+- [x] **1.7 Permission mode selector.** Auto (default) / Manual / Dangerous per session+task
   (resolved task ?? project ?? global); mode shown on tile; Dangerous needs confirm.
   - Verify: each mode maps to the right `--permission-mode`; Dangerous prompts a confirm.
 - [ ] **1.8 Sessions view + past-transcript reader + sidechains.** Live tiles from `~/.claude/
@@ -477,3 +477,18 @@ review and revert a memory entry.
   `--append-system-prompt`" (composition + delivery); the real-model effect follows from claude's
   documented `--append-system-prompt` semantics — honored the one-real-spawn boundary; a real marker
   smoke is available on request. *Next:* 1.7 permission mode selector.
+- **2026-06-06 · 1.7 Permission mode selector.** Schema: `tasks.permission_mode` (migration **0002**, a
+  clean `ADD COLUMN` — verified it doesn't disturb the FTS triggers; applied to the real `~/.cadence` db);
+  `reindexTask` maps the frontmatter `permissionMode`. Shared: `Task.permissionMode`,
+  `TaskDetail.resolvedPermissionMode`, `UpdateTaskInput.permissionMode`. `resolvePermissionMode(db,
+  taskId)` = task ?? project ?? global ?? "auto"; `getTaskDetail` exposes the effective mode; the spawn
+  endpoint now uses `input.permissionMode ?? resolved`. Web: a Permission selector in TaskDetail
+  (Inherit/Auto/Manual/Dangerous) that shows the **effective** mode (red for Dangerous); picking
+  **Dangerous opens a confirm dialog** before it applies; session tiles show the mode. *Decisions:*
+  "Inherit" (null) is the default so the project/global default flows through; the confirm gates the
+  *selection* of Dangerous (execution-time guardrail is 3.8). *Verified:* `bun test` (47 pass) —
+  `claudePermissionMode` mapping (auto→acceptEdits, manual→default, dangerous→bypassPermissions, safe
+  fallback, raw passthrough); full resolution chain with task/project/global overrides + clearing; and
+  the **mapped mode reaching the spawned binary** (the mock echoes `--permission-mode`:
+  dangerous→bypassPermissions); `bun run build` green. *Next:* 1.8 sessions view + past-transcript
+  reader + sidechains (incl. confirming claude's transcript-path encoding, the 1.4 open item).
