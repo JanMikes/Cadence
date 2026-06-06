@@ -1,13 +1,8 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
-import {
-  APP_NAME,
-  APP_TAGLINE,
-  SCHEMA_VERSION,
-  type HealthStatus,
-  type ServerMessage,
-} from "@cadence/shared";
+import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
+import { handleApi } from "./api";
 import { type Db, openAndMigrate } from "./db/client";
 import { bootstrap } from "./store/store";
 import { startWatcher, type WatcherHandle } from "./store/watcher";
@@ -67,13 +62,8 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
         return ok ? undefined : new Response("WebSocket upgrade failed", { status: 426 });
       }
 
-      if (url.pathname === "/api/health") {
-        const body: HealthStatus = { ok: true, app: APP_NAME, version: SCHEMA_VERSION };
-        return Response.json(body);
-      }
-
       if (url.pathname.startsWith("/api/")) {
-        return Response.json({ error: "not_found", path: url.pathname }, { status: 404 });
+        return handleApi(req, url, { db, hub });
       }
 
       return serveStatic(url.pathname, webDir);

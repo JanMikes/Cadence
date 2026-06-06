@@ -1,8 +1,7 @@
 import type { HealthStatus } from "@cadence/shared";
-import { Plus, RefreshCw, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import { LabeledIconButton } from "./components/LabeledIconButton";
 import { AppShell } from "./components/AppShell";
+import { Inbox } from "./features/inbox/Inbox";
 import { cn } from "./lib/utils";
 
 type Conn = "connecting" | "online" | "offline";
@@ -43,34 +42,7 @@ export function App() {
         </span>
       }
     >
-      <div className="max-w-3xl p-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Your backlog, in flow.</h1>
-        <p className="mt-1 text-muted-foreground">
-          Phase 0 design base — themed shell, gateway-connected. Real views land in Phase 1.
-        </p>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <LabeledIconButton icon={<Plus />} label="New task" />
-          <LabeledIconButton icon={<Search />} label="Search" variant="secondary" />
-          <LabeledIconButton
-            icon={<RefreshCw />}
-            label="Refresh"
-            variant="outline"
-            onClick={() => window.location.reload()}
-          />
-        </div>
-
-        <p className="mt-8 text-sm text-muted-foreground">
-          Gateway health:{" "}
-          {conn === "online" && health ? (
-            <span className="text-foreground">ok (schema v{health.version})</span>
-          ) : conn === "offline" ? (
-            <span className="text-red-400">offline</span>
-          ) : (
-            "…"
-          )}
-        </p>
-      </div>
+      <Inbox />
     </AppShell>
   );
 }

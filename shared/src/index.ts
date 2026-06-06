@@ -35,3 +35,44 @@ export interface EventMessage {
 export type ServerMessage = HelloMessage | EventMessage;
 
 export type ClientMessage = { type: "ping" } | { type: "subscribe"; topic?: string };
+
+// -------------------------------------------------------------------- entities
+// DTOs returned by the REST API — the indexed (queryable) view of each entity.
+// The markdown under ~/.cadence/ remains the source of truth (spec §5).
+
+/** Lifecycle states (spec §6). */
+export const TASK_STATUSES = [
+  "inbox",
+  "triaged",
+  "refining",
+  "needs_feedback",
+  "ready",
+  "implementing",
+  "verifying",
+  "review",
+  "done",
+  "blocked",
+  "cancelled",
+] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export interface Task {
+  id: string;
+  title: string;
+  body: string;
+  status: string;
+  priority: string | null;
+  projectId: string | null;
+  fleetId: string | null;
+  deadline: number | null;
+  estimate: number | null;
+  deliveryMode: string | null;
+  parentTaskId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateTaskInput {
+  title: string;
+  body?: string;
+}
