@@ -365,6 +365,27 @@ export interface ContextChannel {
   content: string;
 }
 
+/** A ranked Q&A card from the Questioner agent (agent-prompts §3). */
+export type QAQuestionType = "text" | "single_choice" | "multi_choice" | "boolean";
+export interface QAQuestion {
+  id: string;
+  rank: number;
+  type: string; // QAQuestionType
+  text: string;
+  options?: string[];
+  why?: string;
+}
+
+/** The structured Q&A channel (qa.md frontmatter) for a task. */
+export interface QAChannel {
+  questions: QAQuestion[];
+  answers: Record<string, string | string[]>;
+}
+
+export interface SubmitAnswersInput {
+  answers: Record<string, string | string[]>;
+}
+
 export interface AppendContextInput {
   text: string;
 }

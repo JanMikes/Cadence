@@ -12,6 +12,7 @@ import {
   type UpdateTaskInput,
 } from "@cadence/shared";
 import { runDiscovery } from "./agents/discovery";
+import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
 import { composeContext } from "./context";
 import type { Db } from "./db/client";
@@ -19,7 +20,7 @@ import { searchTaskHits } from "./db/search";
 import { importProjects, scanClaudeProjects } from "./import";
 import { notifyOnTransition } from "./notify";
 import { createProject, getProject, listProjects, updateProject } from "./projects";
-import { appendContext, readContext, readSettings, writeSettings } from "./store/store";
+import { appendContext, readContext, readQa, readSettings, writeSettings } from "./store/store";
 import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
@@ -123,6 +124,34 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       }
     }
     return Response.json(outcome);
+  }
+
+  const qaMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/qa$/);
+  if (qaMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    if (!getTask(ctx.db, qaMatch[1] as string)) return notFound(pathname);
+    return Response.json(readQa(qaMatch[1] as string));
+  }
+
+  const answersMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/qa\/answers$/);
+  if (answersMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = answersMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    let body: { answers?: Record<string, string | string[]> };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    if (!body?.answers || typeof body.answers !== "object") return badRequest("answers required");
+    const before = getTask(ctx.db, taskId);
+    const result = answerQuestions(ctx.db, taskId, body.answers);
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    if (before?.status === "needs_feedback" && result.status === "ready") {
+      ctx.hub.broadcast({ type: "event", name: "task:ready", payload: taskId });
+    }
+    return Response.json(result);
   }
 
   const taskSessionsMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/sessions$/);
@@ -398,6 +427,17 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
       if (disc.status === "needs_feedback") {
         const t = getTask(ctx.db, taskId);
         if (t) notifyOnTransition(ctx.hub, "refining", t);
+        return;
+      }
+      // Refining with unknowns → the Questioner turns them into Q&A cards.
+      if (disc.status === "refining") {
+        const q = await runQuestioner(ctx.db, taskId, ctx.runAgent);
+        if (!q.ran) return;
+        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+        if (q.status === "needs_feedback") {
+          const t = getTask(ctx.db, taskId);
+          if (t) notifyOnTransition(ctx.hub, "refining", t);
+        }
       }
     })
     .catch((err) => console.error(`[cadence] autonomy pipeline failed for ${taskId}:`, err));

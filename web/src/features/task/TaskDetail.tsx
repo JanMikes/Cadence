@@ -19,6 +19,7 @@ import {
   updateTask,
 } from "../../lib/api";
 import { statusLabel } from "../../lib/status";
+import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 
 export function TaskDetail({
@@ -114,6 +115,8 @@ export function TaskDetail({
 
         {task ? (
           <>
+            <QACards taskId={taskId} onResolved={invalidateTask} />
+
             <dl className="mt-5 grid grid-cols-[6rem_1fr] items-center gap-y-3 text-sm">
               <dt className="text-muted-foreground">Status</dt>
               <dd>

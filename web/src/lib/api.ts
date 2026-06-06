@@ -9,6 +9,7 @@ import type {
   LiveSession,
   OpenTerminalResult,
   Project,
+  QAChannel,
   SearchHit,
   Session,
   SpawnSessionInput,
@@ -70,6 +71,21 @@ export function appendContext(id: string, text: string): Promise<ContextChannel>
     headers: JSON_HEADERS,
     body: JSON.stringify({ text }),
   }).then(json<ContextChannel>);
+}
+
+export function getQa(taskId: string): Promise<QAChannel> {
+  return fetch(`/api/tasks/${taskId}/qa`).then(json<QAChannel>);
+}
+
+export function submitAnswers(
+  taskId: string,
+  answers: Record<string, string | string[]>,
+): Promise<{ status: string }> {
+  return fetch(`/api/tasks/${taskId}/qa/answers`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ answers }),
+  }).then(json<{ status: string }>);
 }
 
 export function getProjects(): Promise<Project[]> {

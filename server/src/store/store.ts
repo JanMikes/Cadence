@@ -6,6 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import type { QAChannel } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, tasks } from "../db/schema";
@@ -104,6 +105,38 @@ export function readSpec(id: string): string {
 export function writeSpec(id: string, content: string): void {
   mkdirSync(paths.taskDir(id), { recursive: true });
   writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
+}
+
+// ----------------------------------------------------- task Q&A channel (qa.md)
+
+/** Read a task's structured Q&A (qa.md frontmatter); empty if none yet. */
+export function readQa(id: string): QAChannel {
+  const file = paths.taskQa(id);
+  if (!existsSync(file)) return { questions: [], answers: {} };
+  const { data } = parseMarkdown<Partial<QAChannel>>(readFileSync(file, "utf8"));
+  return { questions: data.questions ?? [], answers: data.answers ?? {} };
+}
+
+function renderQaBody(qa: QAChannel): string {
+  return qa.questions
+    .slice()
+    .sort((a, b) => a.rank - b.rank)
+    .map((q) => {
+      const ans = qa.answers[q.id];
+      const a = Array.isArray(ans) ? ans.join(", ") : (ans ?? "");
+      const opts = q.options?.length ? ` (${q.options.join(" / ")})` : "";
+      return `### ${q.rank}. ${q.text}${opts}\n_${q.why ?? ""}_\n\n**Answer:** ${a || "—"}`;
+    })
+    .join("\n\n");
+}
+
+/** Write a task's Q&A (questions + answers) to qa.md (frontmatter + readable body). */
+export function writeQa(id: string, qa: QAChannel): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(
+    paths.taskQa(id),
+    stringifyMarkdown({ questions: qa.questions, answers: qa.answers }, renderQaBody(qa)),
+  );
 }
 
 /** Append a timestamped note to a task's context.md (append-only, spec §5). */

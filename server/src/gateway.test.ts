@@ -30,16 +30,17 @@ beforeAll(() => {
     startWatcher: false,
     openTerminal: (app, command) => terminalLaunches.push({ app, command }),
     enrich: async (cwd) => ({ description: `mock description for ${cwd}`, stack: "bun" }),
-    runAgent: async () => {
-      const triage = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] };
-      return {
-        text: JSON.stringify(triage),
-        json: triage,
-        costUsd: 0,
-        sessionId: "mock",
-        isError: false,
-        raw: {},
-      };
+    // Role-aware mock so the autonomy pipeline runs a realistic refinement loop.
+    runAgent: async (opts) => {
+      let json: object;
+      if (opts.role === "discovery") {
+        json = { sufficiency: "ok", spec: "Spec body", unknowns: ["which auth provider?"] };
+      } else if (opts.role === "questioner") {
+        json = { questions: [{ id: "q1", rank: 1, type: "text", text: "Which auth provider?" }] };
+      } else {
+        json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
+      }
+      return { text: JSON.stringify(json), json, costUsd: 0, sessionId: "mock", isError: false, raw: {} };
     },
   });
 });
@@ -151,15 +152,29 @@ test("autonomy on: capturing runs the triage→discovery pipeline in the backgro
   });
   try {
     const task = await createViaApi("refine me automatically");
+    const statusNow = async () =>
+      ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as { status: string })
+        .status;
     let status = "";
-    for (let i = 0; i < 80; i++) {
-      status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as {
-        status: string;
-      }).status;
-      if (status === "ready") break;
+    for (let i = 0; i < 100; i++) {
+      status = await statusNow();
+      if (status === "needs_feedback") break;
       await new Promise((r) => setTimeout(r, 20));
     }
-    expect(status).toBe("ready"); // moved past Inbox through the autonomy pipeline
+    // triage → discovery (unknowns) → questioner → Needs-Feedback with a Q&A card
+    expect(status).toBe("needs_feedback");
+    const qa = (await fetch(`${gw.url}/api/tasks/${task.id}/qa`).then((r) => r.json())) as {
+      questions: Array<{ id: string }>;
+    };
+    expect(qa.questions.map((q) => q.id)).toContain("q1");
+
+    // answering the question advances it to Ready
+    await fetch(`${gw.url}/api/tasks/${task.id}/qa/answers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers: { q1: "OAuth" } }),
+    });
+    expect(await statusNow()).toBe("ready");
   } finally {
     await fetch(`${gw.url}/api/settings`, {
       method: "PATCH",
@@ -175,8 +190,8 @@ test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome",
     r.json(),
   )) as { ran: boolean; status: string };
   expect(outcome.ran).toBe(true);
-  // the shared mock returns ok/no-unknowns → Ready
-  expect(outcome.status).toBe("ready");
+  // the role-aware mock's discovery returns unknowns → stays in Refining
+  expect(outcome.status).toBe("refining");
 });
 
 test("GET /api/search finds a task by body text (FTS)", async () => {
