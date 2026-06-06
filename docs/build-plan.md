@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.1 (task model + quick-capture → Inbox)
-- **Next step:** 1.2 (Board + task detail + context channel)
+- **Last completed step:** 1.2 (Board + task detail + context channel)
+- **Next step:** 1.3 (Projects CRUD)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -100,7 +100,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.1 Task model + quick-capture → Inbox.** Persistent capture input → `~/.cadence/tasks/<id>/
   task.md` + index; shows in Inbox.
   - Verify: capture a task; file + DB row exist; reload shows it.
-- [ ] **1.2 Board + task detail + context channel.** Kanban by status; detail (body, priority,
+- [x] **1.2 Board + task detail + context channel.** Kanban by status; detail (body, priority,
   deadline, estimate, labels); always-on free-form `context.md` editor.
   - Verify: drag across columns (status persists); add a context note (appends to `context.md`).
 - [ ] **1.3 Projects CRUD.** Create/list/edit projects (rootPath, color, default model/permission/
@@ -379,3 +379,22 @@ review and revert a memory entry.
   listed in Inbox; **restart the gateway → the task still shows** (persists via the DB file + the
   watcher's startup reconcile from markdown) — satisfies "reload shows it". *Next:* 1.2 Board + task
   detail + context channel.
+- **2026-06-06 · 1.2 Board + detail + context.** Server: `updateTask` merges a patch into the task.md
+  frontmatter (status/priority/estimate/labels/body; deadline ms→ISO) and reindexes; `getTaskDetail`
+  adds the markdown-only `labels`; append-only context channel (`store.appendContext`/`readContext` →
+  timestamped `context.md`). API: `PATCH /api/tasks/:id`, `GET` detail (now returns `TaskDetail` with
+  labels), `GET`/`POST /api/tasks/:id/context`; broadcasts `task:updated`/`task:context`. Web: the shell
+  nav is now interactive (`AppShell` `activeView`/`onNavigate` → Inbox/Board/Settings, active state
+  shown). **Board** = lifecycle columns with plain-language labels (`lib/status.ts`: "Needs input", "In
+  progress") + **native HTML5 drag-and-drop** (card `draggable` + `dataTransfer`, column `onDrop` →
+  PATCH status) — no DnD dependency. **TaskDetail** drawer = status `<select>`, priority/deadline/
+  estimate/labels, body, and the always-on context channel (scrollable read + textarea append). Inbox
+  rows + board cards open the drawer. *Decisions:* (a) native HTML5 DnD instead of @dnd-kit — adequate
+  for a simple kanban, zero deps; (b) task detail is an overlay drawer (no router dependency yet) with
+  in-`App` view state — a real router can come when deep-linking is needed; (c) context.md is raw
+  timestamped markdown (structured Q&A is Phase 2). *Verified:* `bun test` (28 pass) — updateTask
+  persists status+fields to markdown+index, context appends in order + timestamped, PATCH over the API,
+  context POST/GET, board renders plain-language columns; `bun run build` green (tsc caught a stale
+  AppShell test missing the new required props — fixed); **E2E smoke**: PATCH status→ready writes
+  `status: ready` to task.md and **survives a gateway restart**, and a context note appends to
+  context.md on disk. *Next:* 1.3 Projects CRUD.
