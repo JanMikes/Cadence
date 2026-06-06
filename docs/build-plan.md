@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 2 — Autonomy (triage-on-capture + refinement) · user gave go-ahead by re-running /loop
-- **Last completed step:** 2.8 (Daily Digest: interactive morning plan → committed goal)
-- **Next step:** 2.9 (Daily Digest gamification: ring/streak/personalized note + evening recap)
+- **Last completed step:** 2.9 (Daily Digest gamification + evening recap)
+- **Next step:** 2.10 (Autonomy settings: per-project enable/disable + UI toggle) — last Phase 2 step
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
@@ -222,7 +222,7 @@ Then stop and report.
 - [x] 2.6 Lifecycle state machine enforced server-side + status timeline.
 - [x] 2.7 Deadline-aware prioritization (urgency = f(deadline, priority)).
 - [x] 2.8 Daily Digest: interactive morning plan → committed daily goal.
-- [ ] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
+- [x] 2.9 Daily Digest gamification (ring, streaks, personalized note) + evening recap → `digests/<date>.md`.
 - [ ] 2.10 Autonomy settings (per-project enable/disable).
 
 **Acceptance check (manual):** capture a task → triage auto-fills project/priority/deadline; refine
@@ -714,3 +714,19 @@ review and revert a memory entry.
   personalized completion note) + the evening recap are deferred to **2.9** per the spec's split.
   Tests: digest unit (4) + gateway propose→commit→re-fetch (+400 on a bad payload) + Today SSR.
   Verify: 123 pass (×2 stable), build green across all three workspaces, secret scan clean.
+- **2026-06-06 · 2.9 Daily Digest gamification + evening recap.** Built the momentum layer on the 2.8
+  plan. `computeProgress` is the live goal ring (done/total from current task statuses, frozen to the
+  recap's counts once the day is closed). `computeStreak` walks the `digests/` files and counts
+  consecutive days whose recorded `recap.met` is true — keyed off each day's *recorded outcome*, not
+  current state, and an un-recapped today never breaks the streak (it starts the walk at yesterday).
+  `recapDigest` tallies shipped (picks now done) vs rolled-over (still-open task ids) and writes a
+  `recap` block to `digests/<date>.md` with status "recapped"; rolled-over tasks remain open, so
+  tomorrow's `proposePlan` re-surfaces them (the spec's "seed tomorrow" without a separate carry
+  mechanism). `generateNote` is deterministic and **positive in every branch** (met / partial / none /
+  no-plan) — no LLM call, no guilt framing; an LLM-authored note is a future enhancement. Store
+  round-trips the new status + recap. API: `POST /api/digest/recap` (broadcasts `digest:recapped`);
+  shared gained `DigestRecap`/`RecapDigestInput` and request-time `progress`/`streak` on `DailyDigest`.
+  Web: a `ProgressRing` SVG ("3/5", green at 100%) + a 🔥 streak chip in the Today header, an
+  Evening-recap button that surfaces the note + shipped list, and a "Recapped" state. Tests: digest
+  unit (progress, note positivity, recap tally + streak build) + gateway recap (1/2 + note) +
+  ProgressRing SSR. Verify: 129 pass (×2 stable), build green, scan clean.
