@@ -612,6 +612,30 @@ test("GET /api/search finds a task by body text (FTS)", async () => {
   expect(await fetch(`${gw.url}/api/search?q=`).then((r) => r.json())).toEqual([]);
 });
 
+test("saved searches: create, list, delete via the API", async () => {
+  const created = (await fetch(`${gw.url}/api/searches`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Blocked", query: "status:blocked" }),
+  }).then((r) => r.json())) as { id: string; name: string };
+  expect(created.name).toBe("Blocked");
+
+  const list = (await fetch(`${gw.url}/api/searches`).then((r) => r.json())) as Array<{ id: string }>;
+  expect(list.map((s) => s.id)).toContain(created.id);
+
+  const del = await fetch(`${gw.url}/api/searches/${created.id}`, { method: "DELETE" });
+  expect(del.status).toBe(200);
+  const after = (await fetch(`${gw.url}/api/searches`).then((r) => r.json())) as unknown[];
+  expect(after).toHaveLength(0);
+});
+
+test("GET /api/search/transcripts returns [] for an empty query", async () => {
+  expect(await fetch(`${gw.url}/api/search/transcripts?q=`).then((r) => r.json())).toEqual([]);
+  // a non-empty query is valid even with no matching transcripts on disk
+  const hits = await fetch(`${gw.url}/api/search/transcripts?q=elasticsearch`).then((r) => r.json());
+  expect(Array.isArray(hits)).toBe(true);
+});
+
 test("settings: GET defaults, PATCH preferredTerminal", async () => {
   const before = (await fetch(`${gw.url}/api/settings`).then((r) => r.json())) as {
     preferredTerminal: string;

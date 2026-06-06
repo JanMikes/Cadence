@@ -99,6 +99,26 @@ export interface SearchHit {
   status: string;
 }
 
+/** A match inside a session transcript (§10 — search across sessions). */
+export interface TranscriptHit {
+  sessionId: string;
+  taskId: string | null;
+  snippet: string;
+}
+
+/** A saved search/filter the user can re-run from the palette. */
+export interface SavedSearch {
+  id: string;
+  name: string;
+  query: string;
+  createdAt: number;
+}
+
+export interface CreateSavedSearchInput {
+  name: string;
+  query: string;
+}
+
 // ------------------------------------------------------- suggestions (§10.2)
 // "Propose, don't impose": every decidable field can carry a Claude suggestion
 // the user can Accept / Edit / Override / Dismiss, with per-field provenance.

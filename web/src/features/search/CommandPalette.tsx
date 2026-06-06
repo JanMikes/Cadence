@@ -1,15 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CornerDownLeft, Search } from "lucide-react";
 import { type KeyboardEvent, useEffect, useState } from "react";
 import type { ViewId } from "../../components/AppShell";
-import { search } from "../../lib/api";
+import { createSavedSearch, getSavedSearches, search, searchTranscripts } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
 interface PaletteItem {
   id: string;
   label: string;
   sub?: string;
-  run: () => void;
+  /** Return true to keep the palette open after running (e.g. apply a saved query). */
+  run: () => void | boolean;
 }
 
 const NAV: Array<{ id: ViewId; label: string }> = [
@@ -56,11 +57,18 @@ export function CommandPalette({
     }
   }, [open]);
 
+  const qc = useQueryClient();
   const results = useQuery({
     queryKey: ["search", q],
     queryFn: () => search(q),
     enabled: open && q.trim().length > 0,
   });
+  const transcripts = useQuery({
+    queryKey: ["search", "transcripts", q],
+    queryFn: () => searchTranscripts(q),
+    enabled: open && q.trim().length > 0,
+  });
+  const saved = useQuery({ queryKey: ["searches"], queryFn: getSavedSearches, enabled: open });
 
   if (!open) return null;
 
@@ -76,14 +84,54 @@ export function CommandPalette({
     sub: h.status,
     run: () => onOpenTask(h.taskId),
   }));
-  const items = [...taskItems, ...actions];
+  const transcriptItems: PaletteItem[] = (transcripts.data ?? [])
+    .filter((h) => h.taskId)
+    .map((h) => ({
+      id: `transcript:${h.sessionId}`,
+      label: h.snippet,
+      sub: "transcript",
+      run: () => {
+        if (h.taskId) onOpenTask(h.taskId);
+      },
+    }));
+
+  const hasQuery = q.trim().length > 0;
+  const saveItem: PaletteItem[] = hasQuery
+    ? [
+        {
+          id: "save-search",
+          label: `★ Save search “${q.trim()}”`,
+          run: () => {
+            void createSavedSearch(q.trim(), q.trim()).then(() =>
+              qc.invalidateQueries({ queryKey: ["searches"] }),
+            );
+          },
+        },
+      ]
+    : [];
+  const savedItems: PaletteItem[] = hasQuery
+    ? []
+    : (saved.data ?? []).map((s) => ({
+        id: `saved:${s.id}`,
+        label: s.name,
+        sub: "saved · " + s.query,
+        run: () => {
+          setQ(s.query);
+          setActive(0);
+          return true; // keep the palette open to show the applied query's results
+        },
+      }));
+
+  const items = hasQuery
+    ? [...taskItems, ...transcriptItems, ...actions, ...saveItem]
+    : [...savedItems, ...actions];
 
   const close = () => setOpen(false);
   const select = (i: number) => {
     const it = items[i];
     if (it) {
-      it.run();
-      close();
+      const keepOpen = it.run();
+      if (!keepOpen) close();
     }
   };
 

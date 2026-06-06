@@ -4,6 +4,7 @@ import {
   type CommitDigestInput,
   type CreateFleetInput,
   type CreateProjectInput,
+  type CreateSavedSearchInput,
   type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
@@ -34,6 +35,8 @@ import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents } from "./events";
 import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
+import { createSavedSearch, deleteSavedSearch, listSavedSearches } from "./searches";
+import { searchTranscripts } from "./transcript-search";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
 import { notifyOnTransition } from "./notify";
 import { mergeTask, taskDiff } from "./review";
@@ -428,6 +431,37 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (pathname === "/api/search" && method === "GET") {
     const q = url.searchParams.get("q") ?? "";
     return Response.json(q.trim() ? searchTaskHits(ctx.db, q) : []);
+  }
+
+  if (pathname === "/api/search/transcripts" && method === "GET") {
+    const q = url.searchParams.get("q") ?? "";
+    return Response.json(q.trim() ? searchTranscripts(ctx.db, q) : []);
+  }
+
+  if (pathname === "/api/searches") {
+    if (method === "GET") return Response.json(listSavedSearches());
+    if (method === "POST") {
+      let input: CreateSavedSearchInput;
+      try {
+        input = (await req.json()) as CreateSavedSearchInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (!input?.name?.trim() || typeof input.query !== "string") {
+        return badRequest("name and query are required");
+      }
+      const saved = createSavedSearch(input);
+      ctx.hub.broadcast({ type: "event", name: "search:saved", payload: saved.id });
+      return Response.json(saved, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const searchDeleteMatch = pathname.match(/^\/api\/searches\/([^/]+)$/);
+  if (searchDeleteMatch) {
+    if (method !== "DELETE") return methodNotAllowed();
+    const ok = deleteSavedSearch(searchDeleteMatch[1] as string);
+    return ok ? Response.json({ deleted: true }) : notFound(pathname);
   }
 
   if (pathname === "/api/approvals" && method === "GET") {

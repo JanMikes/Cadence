@@ -8,6 +8,7 @@ import { cadenceHome } from "../db/client";
 export const paths = {
   home: () => cadenceHome(),
   settings: () => join(cadenceHome(), "settings.json"),
+  savedSearches: () => join(cadenceHome(), "searches.json"),
 
   tasksDir: () => join(cadenceHome(), "tasks"),
   taskDir: (id: string) => join(cadenceHome(), "tasks", id),

@@ -17,6 +17,7 @@ import type {
   OpenTerminalResult,
   Project,
   QAChannel,
+  SavedSearch,
   SearchHit,
   Session,
   SpawnSessionInput,
@@ -29,6 +30,7 @@ import type {
   TaskEvent,
   TaskPlan,
   TranscriptEntry,
+  TranscriptHit,
   UpdateFleetInput,
   VerifyReport,
   UpdateProjectInput,
@@ -289,6 +291,26 @@ export function getUsage(): Promise<UsageResponse> {
 
 export function search(q: string): Promise<SearchHit[]> {
   return fetch(`/api/search?q=${encodeURIComponent(q)}`).then(json<SearchHit[]>);
+}
+
+export function searchTranscripts(q: string): Promise<TranscriptHit[]> {
+  return fetch(`/api/search/transcripts?q=${encodeURIComponent(q)}`).then(json<TranscriptHit[]>);
+}
+
+export function getSavedSearches(): Promise<SavedSearch[]> {
+  return fetch("/api/searches").then(json<SavedSearch[]>);
+}
+
+export function createSavedSearch(name: string, query: string): Promise<SavedSearch> {
+  return fetch("/api/searches", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ name, query }),
+  }).then(json<SavedSearch>);
+}
+
+export function deleteSavedSearch(id: string): Promise<{ deleted: boolean }> {
+  return fetch(`/api/searches/${id}`, { method: "DELETE" }).then(json<{ deleted: boolean }>);
 }
 
 export function getSuggestions(entityType: string, entityId: string): Promise<Suggestion[]> {
