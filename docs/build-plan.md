@@ -10,13 +10,19 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 4 — Multi-repo, analytics, polish. **Phase 3 COMPLETE (8/8, accepted).**
-- **Last completed step:** 4.5 (Calendar / deadline view)
-- **Next step:** 4.6 (Scheduled / background sweep mode)
+- **Last completed step:** 4.6 (Scheduled / background sweep mode) — Phase 4 substantive work done + accepted
+- **Next step:** 4.7 (optional) Tauri wrap — **DECISION PENDING (see Blockers); loop paused for input**
 - **Safety posture (carries forward):** execution auto-modifies repos only on user-initiated **PLAY**,
   inside a per-task **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous;
   Dangerous requires isolation). Keep agent runs **mock-tested**; offer (don't auto-run) any
   real-claude smoke. Autonomy stays OFF by default.
-- **Blockers:** none
+- **Blockers:** **4.7 (optional) Tauri wrap — needs a human decision.** A real Tauri wrap (native
+  menubar + OS-global hotkey) requires a **Rust/Tauri toolchain** that this build's verification gates
+  (`bun test` + `bun run build`) cannot exercise, so the step can't be VERIFIED under the loop's hard
+  rules; it's also explicitly **optional** and the locked decision is **web-first, Tauri-wrappable
+  *later* (additive)**. Options for Jan: (a) **defer 4.7** and treat Phase 4 as complete → proceed to
+  Phase 5 (Self-improving layer); (b) have me add an **unbuilt Tauri scaffold** (config + Rust shell)
+  knowing it can't be verified here; (c) declare it **out of scope** (web-first stands). Recommend (a).
 - **Last updated:** 2026-06-06
 - **Phase 2 safety posture:** autonomy OFF by default (per-project toggle in 2.10); tests use the mock
   agent (no real model/cost); real-agent smokes are offered, not auto-run.
@@ -285,12 +291,27 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 - [x] 4.3 Cost & throughput analytics.
 - [x] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [x] 4.5 Calendar / deadline view.
-- [ ] 4.6 Scheduled / background sweep mode.
+- [x] 4.6 Scheduled / background sweep mode.
 - [ ] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey.
 
 **Acceptance check (manual):** a fleet task spawns sessions across multiple repos with per-repo
 sub-results; analytics show per-project throughput + cost; transcript search returns matches across
 sessions; the calendar shows deadlines.
+
+**Phase 4 — Acceptance check (run 2026-06-06):** verified via the deterministic suite (agent runs
+mocked; real git used for fleet/worktree tests).
+1. ✅ A fleet task runs the Implementer across multiple repos with per-repo sub-results (4.1 — fleet
+   CRUD + `runFleetImplementer` across 2 real git repos, one isolated worktree each).
+2. ✅ Analytics show per-project throughput + cost (4.3 — `computeAnalytics`: per-project
+   tasks/done/sessions/cost + 14-day completions, served + viewed).
+3. ✅ Transcript search returns matches across sessions (4.4 — `searchTranscripts` over `*.jsonl`,
+   surfaced in ⌘K; + saved filters).
+4. ✅ The calendar shows deadlines (4.5 — month grid places tasks on their deadline day).
+5. ✅ Plus: dependency graph + subtasks (4.2) and the background sweep nudges (4.6).
+6. ✅ `bun test` (203 pass) and `bun run build` both green.
+→ Phase 4 substantive work (4.1–4.6) accepted. **4.7 (Tauri wrap) is optional + deferred — pending a
+  human decision (see Status → Blockers): a native wrap can't be verified by this build's gates and
+  the locked decision is web-first/Tauri-later.**
 
 ## Phase 5 — Self-improving layer
 - [ ] 5.1 Memory layer (global + per-project markdown + `MEMORY.md` + `communication.md`) composed into context.
@@ -953,3 +974,20 @@ review and revert a memory entry.
   change**. Tests: calendar util (grid shape, leading-day padding into the previous month, day
   grouping skipping deadline-less tasks) + Calendar SSR. Verify: 198 pass (×2 stable), build green,
   scan clean. Phase 4: 4.6 (scheduled sweep) + the optional 4.7 (Tauri wrap) remain.
+- **2026-06-06 · 4.6 Scheduled / background sweep mode.** New `sweep.ts`: `runSweep` (pure,
+  now-injected) scans non-terminal tasks and emits **at-risk/overdue deadline** findings (precedence)
+  or **stale** findings (idle past a threshold, from the index `updatedAt`); done/cancelled skipped;
+  one finding per task. `startSweep(db, hub)` schedules it on `CADENCE_SWEEP_MS` — **disabled by
+  default** (off in tests + the default install), broadcasting `sweep:ran` per tick; the gateway runs
+  it gated like the watcher and closes it on stop. `GET /api/sweep` computes a report on demand. shared
+  `SweepReport`/`SweepFinding`. Web: a `SweepPanel` ("Needs attention") in the Today view lists the
+  findings (at-risk in red, stale muted), click-to-open, and renders **nothing when clean** (no noise,
+  propose-don't-impose). Tests: sweep unit (stale threshold, deadline precedence/overdue, skips
+  done/cancelled) + gateway shape + SweepPanel SSR. Verify: 203 pass (×2 stable), build green, scan
+  clean. **Phase 4 acceptance check run (4.1–4.6 pass).**
+- **2026-06-06 · 4.7 (optional) Tauri wrap — DECISION PENDING; loop paused.** This is the one backlog
+  step the loop's verification can't cover: a real Tauri wrap (native menubar + OS-global hotkey) needs
+  a Rust/Tauri toolchain outside `bun test`/`bun run build`, so it can't be VERIFIED here, and it's
+  explicitly **optional** with a locked **web-first / Tauri-later (additive)** decision. Rather than
+  commit unverifiable native scaffolding or silently skip an explicit backlog item, I'm ending the loop
+  and surfacing the choice (defer → Phase 5 [recommended] / add an unbuilt scaffold / out-of-scope).
