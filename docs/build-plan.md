@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 1 — Task core + manual spawn (MVP) · **Phase 0 COMPLETE + accepted**
-- **Last completed step:** 1.11 (Usage bar + cost)
-- **Next step:** 1.12 (Notifications)
+- **Last completed step:** 1.12 (Notifications)
+- **Next step:** 1.13 (Global search + ⌘K palette)
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -133,7 +133,7 @@ converse → terminal handoff. No autonomy yet.
 - [x] **1.11 Usage bar + cost.** Ambient subscription-window bar (5h+weekly from `rate_limit_info` +
   `stats-cache.json`); per-session/task cost.
   - Verify: bar reflects usage; cost accrues per session.
-- [ ] **1.12 Notifications.** In-app badges + Web Notifications API (needs-feedback / delivered).
+- [x] **1.12 Notifications.** In-app badges + Web Notifications API (needs-feedback / delivered).
   - Verify: a needs-input event raises a badge + desktop notification.
 - [ ] **1.13 Global search + ⌘K palette.** FTS5 over tasks; palette for jump-to + actions.
   - Verify: search finds a task by body text; ⌘K jumps to it.
@@ -553,3 +553,17 @@ review and revert a memory entry.
   stats-cache + zeros when missing; task cost = sum of session costs (and via `getTaskDetail`); UsageBar
   SSR. **Real-data smoke**: real stats-cache → 1183 all-time sessions, this week 80 sessions / 49.7M
   tokens, top models by tokens; `bun run build` green. *Next:* 1.12 notifications.
+- **2026-06-06 · 1.12 Notifications.** `server/src/notify.ts` `notifyOnTransition(hub, oldStatus, task)`
+  broadcasts a `notify` ServerMessage when a task crosses **into** `needs_feedback` ("Needs your
+  input") or `done` ("Task delivered") — the PATCH task handler captures the prior status and calls it
+  (no notify for plain status moves). shared: `NotifyPayload`. Web: a notification store
+  (`features/notifications/store.ts`) wired to WS `notify` events — keeps an in-app list, tracks unread,
+  and fires an **OS notification (Web Notifications API)** when permission is granted; exposed via
+  `useNotifications()` (`useSyncExternalStore`). A **Notifications** nav item with an **unread badge**
+  (new `AppShell` `navBadges` slot) + a `NotificationsView` (list, "Enable desktop alerts" permission
+  request, viewing marks-all-read, click opens the task). *Decision:* desktop popups are best-effort
+  (guarded by `typeof Notification`/permission) so SSR + no-permission degrade to the in-app badge.
+  *Verified:* `bun test` (71 pass) — notifier fires on needs_feedback/done, not on plain moves; a **WS
+  integration test** confirms PATCH→needs_feedback broadcasts the notify event to a connected client;
+  the store prepends/tracks-unread/markAllRead; NotificationsView SSR; `bun run build` green. *Next:*
+  1.13 global search + ⌘K palette.
