@@ -11,8 +11,8 @@
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 3 — Execution (PLAY → implement → verify → deliver). **Phase 2 COMPLETE
   (10/10, accepted).**
-- **Last completed step:** 3.3 (git worktree per task provisioning + branch naming)
-- **Next step:** 3.4 (Implementer in the worktree, permission mode per task)
+- **Last completed step:** 3.4 (Implementer in the worktree, permission mode per task)
+- **Next step:** 3.5 (Verifier + diverse reviewer subagents → pass/fail)
 - **Phase 3 safety posture:** execution auto-modifies repos, but only on user-initiated **PLAY**,
   inside a per-task **git worktree** (3.3), under the resolved permission mode (Auto/Manual/Dangerous).
   Keep agent runs **mock-tested**; offer (don't auto-run) any real-claude smoke. Autonomy stays OFF by
@@ -255,7 +255,7 @@ available on request).
 - [x] 3.1 Ready state + PLAY button.
 - [x] 3.2 Planner (plan mode) → approvable plan.
 - [x] 3.3 git worktree per task provisioning + branch naming.
-- [ ] 3.4 Implementer in the worktree (permission mode per task).
+- [x] 3.4 Implementer in the worktree (permission mode per task).
 - [ ] 3.5 Verifier (+ diverse reviewer subagents) → pass/fail.
 - [ ] 3.6 Delivery + delivery-mode resolution (branch_summary / auto_pr / apply_in_place).
 - [ ] 3.7 Review screen: in-app diff + summary + verify results; merge / request-changes.
@@ -800,3 +800,19 @@ review and revert a memory entry.
   has a HEAD): naming, repo detection, provision creates/lists the worktree + branch, idempotent
   re-call, refusal on no-project/non-repo, and `CADENCE_WORKTREES` honored. Wired into the Implementer
   in 3.4. Verify: 143 pass (×2 stable), build green, scan clean.
+- **2026-06-06 · 3.4 Implementer in the worktree (permission mode per task).** New
+  `agents/implementer.ts` — the execution core. `runImplementer` gates on an **approved** plan
+  (3.2 `readPlan(...).approved`), provisions the isolated **worktree** (3.3), runs a one-shot Opus
+  agent with cwd = the worktree path under the task's resolved permission mode
+  (`claudePermissionMode(resolvePermissionMode(...))`: Auto→acceptEdits, Manual→default,
+  Dangerous→bypassPermissions), then advances **implementing → verifying**. It **never throws** —
+  returns `{ran:false, reason}` when the plan isn't approved or a worktree can't be provisioned
+  (no project / non-repo), so the background launch can't crash the gateway. `buildImplementerPrompt`
+  embeds the approved steps + the "you're in an isolated worktree, make focused commits, stop on
+  blockers" instruction. **Wiring:** approving the plan now starts implementation in the background
+  *only while the task is executing*. Tests: implementer unit (4 — prompt, approval gate, runs in the
+  worktree with acceptEdits → verifying [captures the agent opts], no-project bail) + a gateway **E2E
+  against a real temp git repo**: PLAY → poll plan → approve → poll status → verifying (polled to
+  completion so no background work dangles past teardown). Caught a tsc-only error (the
+  `seen: T | null` capture pattern broke the `expect().toBe()` overload — switched to a calls array).
+  Verify: 148 pass (×2 stable), build green, scan clean.
