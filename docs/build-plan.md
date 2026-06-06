@@ -10,8 +10,8 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **Current phase:** Phase 0 — Foundation
-- **Last completed step:** 0.4 (storage layer: markdown ⇄ index, bootstrap + reindex)
-- **Next step:** 0.5
+- **Last completed step:** 0.5 (file watcher: mtime polling → reindex into SQLite + FTS)
+- **Next step:** 0.6
 - **Blockers:** none
 - **Last updated:** 2026-06-06
 
@@ -76,7 +76,7 @@ Goal: a booting Bun gateway + Vite/React shell + SQLite/Drizzle + storage + watc
   Helpers to read/write a task folder (`task.md` frontmatter+body, `context.md`, `qa.md`, …),
   project/fleet markdown, and reindex `task.md` → SQLite.
   - Verify: write a task folder, reindex; DB row matches frontmatter (round-trip test).
-- [ ] **0.5 File watcher.** Watch `~/.cadence/**` → reindex changed `task.md` into SQLite (+FTS).
+- [x] **0.5 File watcher.** Watch `~/.cadence/**` → reindex changed `task.md` into SQLite (+FTS).
   - Verify: edit a `task.md` on disk → DB + FTS update (watcher-event test).
 - [ ] **0.6 Gateway HTTP+WS skeleton.** REST router (`/api/health` + stubs), WS hub (broadcast),
   serves built `web/`. Typed API contract in `shared/`.
@@ -296,3 +296,24 @@ review and revert a memory entry.
   reindex → DB row matches frontmatter (incl. slug→id, deadline→ms), labels round-trip in markdown, FTS
   finds it, re-reindex reflects edits; real `~/.cadence` bootstrap creates all dirs + settings.json;
   `bun run build` green. *Next:* 0.5 file watcher (`~/.cadence/**` → reindex changed task.md).
+- **2026-06-06 · 0.5 File watcher.** `server/src/store/watcher.ts`: `classifyPath` (rel path → task/
+  project/fleet entity) + `dispatchChange(db, rel)` (reindex if the markdown exists, else delete the
+  index row — the deterministic, unit-tested core) + `startWatcher(db, {intervalMs, onChange})` which
+  polls file mtimes and applies diffs; `scan()` is exposed and the first scan doubles as a startup
+  reconcile. *Big decision — polling, not `fs.watch`:* I implemented `fs.watch` first (recursive, then
+  container+per-subdir) but **Bun's `fs.watch` does not reliably deliver events for task subdirs created
+  after the watch starts** — under prior-test churn it dropped them entirely (measured: zero events in
+  20s, reproducibly). Polling mtimes is deterministic, cross-platform, and trivially cheap for a local
+  single user's file set; latency = poll interval (default 700ms). *Bug found + fixed (important):*
+  `opts.onChange?.(dispatchChange(...), rel)` — optional-chaining a call **short-circuits argument
+  evaluation**, so `dispatchChange` never ran when no `onChange` was passed (this silently broke the
+  live watcher and confounded hours of fs.watch debugging — every probe that *had* an onChange passed,
+  every one without it failed). Now `dispatchChange` runs first, then `onChange` is notified. *Testing:*
+  the setInterval scheduler can't be reliably tested under `bun test` (its test-runner starves timers),
+  so the unit test drives `scan()` directly (create/edit/delete → DB + FTS, deterministic), and
+  `server/src/store/watcher.live.ts` (run with `bun`, not `bun test`) smoke-tests the real timer path
+  (create/edit/delete detected ~50ms). *Tooling note:* git commit `-m` with backticks triggers shell
+  command substitution and silently drops the backtick content — **use `git commit -F <file>`** (write
+  the message with the Write tool) for messages containing backticks/`$`/`()`. *Verified:* `bun test`
+  (11 pass, ~70ms, stable across repeated runs); `watcher.live.ts` exits 0 across repeated runs;
+  `bun run build` green. *Next:* 0.6 gateway HTTP+WS skeleton.
