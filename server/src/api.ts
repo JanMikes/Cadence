@@ -20,6 +20,7 @@ import {
   type UpdateTaskInput,
 } from "@cadence/shared";
 import { runDelivery } from "./agents/delivery";
+import { ActivityTracker } from "./activity";
 import { runDiscovery } from "./agents/discovery";
 import { runFleetImplementer } from "./agents/fleet";
 import { runImplementer } from "./agents/implementer";
@@ -100,6 +101,8 @@ export interface ApiContext {
   db: Db;
   hub: WsHub;
   spawn: SpawnManager;
+  /** Tracks in-flight autonomy work so the UI can show a spinner (injectable for tests). */
+  activity: ActivityTracker;
   /** Launch a terminal app running `command` (injectable for tests). */
   openTerminal: (app: string, command: string) => void;
   /** Enrich an import candidate via a one-shot claude (injectable for tests). */
@@ -307,13 +310,20 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return Response.json(plan);
   }
 
+  // In-flight autonomy work (drives the board/task spinner); hydrates on a fresh page load.
+  if (pathname === "/api/activity" && method === "GET") {
+    return Response.json(ctx.activity.list());
+  }
+
   const refineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/refine$/);
   if (refineMatch) {
     if (method !== "POST") return methodNotAllowed();
     const taskId = refineMatch[1] as string;
     if (!getTask(ctx.db, taskId)) return notFound(pathname);
     const before = getTask(ctx.db, taskId);
-    const outcome = await runDiscovery(ctx.db, taskId, ctx.runAgent);
+    const outcome = await ctx.activity.track(taskId, "discovery", () =>
+      runDiscovery(ctx.db, taskId, ctx.runAgent),
+    );
     if (outcome.ran) {
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       if (outcome.status === "needs_feedback") {
@@ -936,7 +946,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
  */
 function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
   if (!readSettings().global.autonomy) return;
-  void runTriage(ctx.db, taskId, ctx.runAgent)
+  void ctx.activity
+    .track(taskId, "triage", () => runTriage(ctx.db, taskId, ctx.runAgent))
     .then(async (outcome) => {
       if (!outcome.ran) return;
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
@@ -950,7 +961,9 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
       ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
       const triaged = getTask(ctx.db, taskId);
       if (!resolveProjectAutonomy(ctx.db, triaged?.projectId ?? null)) return;
-      const disc = await runDiscovery(ctx.db, taskId, ctx.runAgent);
+      const disc = await ctx.activity.track(taskId, "discovery", () =>
+        runDiscovery(ctx.db, taskId, ctx.runAgent),
+      );
       if (!disc.ran) return;
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       if (disc.status === "needs_feedback") {
@@ -960,7 +973,9 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
       }
       // Refining with unknowns → the Questioner turns them into Q&A cards.
       if (disc.status === "refining") {
-        const q = await runQuestioner(ctx.db, taskId, ctx.runAgent);
+        const q = await ctx.activity.track(taskId, "questioner", () =>
+          runQuestioner(ctx.db, taskId, ctx.runAgent),
+        );
         if (!q.ran) return;
         ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         if (q.status === "needs_feedback") {

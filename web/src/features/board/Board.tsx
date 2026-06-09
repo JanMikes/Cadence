@@ -1,6 +1,7 @@
 import type { Task } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type DragEvent, useState } from "react";
+import { useActivity, stageLabel } from "../../lib/activity";
 import { getTasks, updateTask } from "../../lib/api";
 import { BOARD_COLUMNS, type StatusColumn } from "../../lib/status";
 import { cn } from "../../lib/utils";
@@ -94,19 +95,37 @@ const URGENCY_BADGE: Record<string, { label: string; className: string }> = {
   due_soon: { label: "Due soon", className: "bg-amber-500/15 text-amber-400" },
 };
 
+/** A small inline spinner shown while an autonomy stage is working a task. */
+export function WorkingSpinner({ stage, className }: { stage: string; className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-primary", className)}>
+      <span
+        aria-hidden
+        className="inline-block size-3 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
+      />
+      {stageLabel(stage)}
+    </span>
+  );
+}
+
 function BoardCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void }) {
   const onDragStart = (e: DragEvent) => e.dataTransfer.setData("text/plain", task.id);
   const badge = task.urgencyTier ? URGENCY_BADGE[task.urgencyTier] : undefined;
+  const stage = useActivity(task.id);
   return (
     <button
       type="button"
       draggable
       onDragStart={onDragStart}
       onClick={() => onOpen(task.id)}
-      className="cursor-grab rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50 active:cursor-grabbing"
+      className={cn(
+        "cursor-grab rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50 active:cursor-grabbing",
+        stage && "border-primary/40",
+      )}
     >
       <div className="text-sm font-medium">{task.title}</div>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        {stage ? <WorkingSpinner stage={stage} /> : null}
         {badge ? (
           <span className={cn("rounded px-1.5 py-0.5 font-medium", badge.className)}>{badge.label}</span>
         ) : null}
