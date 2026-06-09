@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 5 — in progress (native shell — full pass).
-- **Last completed step:** 5.4 (single-instance).
-- **Next step:** 5.5 (autostart).
+- **Current stage:** Stage 5 — complete. Next: Stage 6 (release, docs, acceptance).
+- **Last completed step:** 5.5 (autostart).
+- **Next step:** 6.1 (release build + docs).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (5.4 done — app:smoke single-instance green: 2nd launch → still one sidecar).
+- **Last updated:** 2026-06-09 (Stage 5 done — full native shell; app:smoke covers single-instance + autostart).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -196,7 +196,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   - Verify `[auto]`: `bun test` — the web path is unchanged when `__TAURI__` is absent; the Tauri branch is taken when it's mocked present; `bun run build` green. §Visual: a `needs_feedback`/`delivered` event raises a real macOS banner.
 - [x] **5.4 Single-instance.** `[auto]` `tauri-plugin-single-instance`; on 2nd launch focus the existing window (+ optionally fire `quick-capture`).
   - Verify `[auto]`: `cargo build`; extend `app:smoke` — relaunch while running asserts exactly one `cadence-server` and one window. §Visual: 2nd launch visibly focuses the running window.
-- [ ] **5.5 Autostart.** `[auto]` `tauri-plugin-autostart` (LaunchAgent) + a "Launch at login" toggle in web Settings (via the `__TAURI__` bridge).
+- [x] **5.5 Autostart.** `[auto]` `tauri-plugin-autostart` (LaunchAgent) + a "Launch at login" toggle in web Settings (via the `__TAURI__` bridge).
   - Verify `[auto]`: `cargo build`; `bun run build`; extend `app:smoke` — enabling autostart creates `~/Library/LaunchAgents/<id>.plist`, disabling removes it. §Visual: after enabling + reboot, Cadence launches to the tray.
 
 **Stage 5 acceptance:** tray, hotkey, notifications, single-instance, autostart implemented; all `[auto]` checks green; §Visual items queued.
@@ -467,3 +467,20 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   clean shutdown, no orphan; `bun test` 241 pass; `bun run build` green. §Visual (5.4) item already
   queued. *Next:* 5.5 — autostart (`tauri-plugin-autostart` + a "Launch at login" toggle; extend
   `app:smoke` to assert the LaunchAgent plist appears/disappears).
+
+- **2026-06-09 · 5.5 (autostart).** Added `tauri-plugin-autostart` (desktop target,
+  `MacosLauncher::LaunchAgent`) + `autostart:default` in the capability. Web: `lib/tauri.ts` gains
+  `getAutostart`/`setAutostart` via `window.__TAURI__.core.invoke("plugin:autostart|…")` (no npm dep);
+  `SettingsView` shows a "Launch at login" toggle **only inside the Tauri shell** (`isTauri()`),
+  loading state from `getAutostart` and toggling via `setAutostart` (a native action, independent of
+  the Save form). For `app:smoke` to drive it without a webview, `setup()` has a desktop test seam:
+  `CADENCE_AUTOSTART_TEST=enable|disable` → `app.autolaunch().enable()/.disable()` (never set in normal
+  use). `app:smoke` launches with each mode and asserts the LaunchAgent plist appears/disappears, with
+  cleanup that never leaves a stray plist. **Gotcha (recorded):** with `use_launch_agent=true` the plist
+  is `~/Library/LaunchAgents/{package_info().name}.plist` = **`Cadence.plist`** (the product name), NOT
+  `<bundle-id>.plist` — my first guess (`me.cadence.app.plist`) made the check fail while enable had
+  actually worked; fixed the path + removed the stray plist. **Verified:** `cargo test` 10 pass;
+  `bun test` 243 pass (+2: autostart bridge inert without `__TAURI__`, calls the right plugin commands
+  when mocked); `bun run app:smoke` exits 0 — *"autostart ok — plist created on enable, removed on
+  disable"*, no leftover; `bun run build` + `typecheck` green. Stage 5 (full native shell) complete.
+  *Next:* 6.1 — release build + `docs/tauri-wrap.md`.

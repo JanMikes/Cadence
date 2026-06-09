@@ -4,6 +4,7 @@ import { Check, Save } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { getSettings, updateSettings } from "../../lib/api";
+import { getAutostart, isTauri, setAutostart } from "../../lib/tauri";
 
 const FIELD =
   "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring";
@@ -19,6 +20,8 @@ export function SettingsView() {
   const [prompt, setPrompt] = useState("");
   const [autonomy, setAutonomy] = useState(false);
   const [claudeBin, setClaudeBin] = useState("");
+  const inTauri = isTauri();
+  const [launchAtLogin, setLaunchAtLogin] = useState(false);
 
   useEffect(() => {
     const s = settings.data;
@@ -31,6 +34,20 @@ export function SettingsView() {
     setAutonomy(s.global.autonomy ?? false);
     setClaudeBin(s.claudeBinPath ?? "");
   }, [settings.data]);
+
+  // "Launch at login" is a native (autostart) toggle, not a settings.json field — load + set it via
+  // the Tauri bridge. Only present inside Cadence.app.
+  useEffect(() => {
+    if (!inTauri) return;
+    void getAutostart().then((v) => {
+      if (v !== null) setLaunchAtLogin(v);
+    });
+  }, [inTauri]);
+
+  const toggleLaunchAtLogin = async () => {
+    const next = !launchAtLogin;
+    if (await setAutostart(next)) setLaunchAtLogin(next);
+  };
 
   const save = useMutation({
     mutationFn: () =>
@@ -86,6 +103,33 @@ export function SettingsView() {
             />
           </button>
         </div>
+
+        {inTauri ? (
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card/40 p-4">
+            <div>
+              <div className="text-sm font-medium">Launch at login</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Start Cadence automatically when you log in (to the menubar). Desktop app only.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={launchAtLogin}
+              aria-label="Launch at login"
+              onClick={() => void toggleLaunchAtLogin()}
+              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                launchAtLogin ? "bg-primary" : "bg-muted"
+              }`}
+            >
+              <span
+                className={`inline-block size-5 rounded-full bg-white transition-transform ${
+                  launchAtLogin ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        ) : null}
 
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Preferred terminal (for one-click handoff)

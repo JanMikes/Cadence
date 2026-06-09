@@ -210,10 +210,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init());
 
-    // Global shortcut (desktop only): CmdOrCtrl+Shift+Space → show the window + emit quick-capture.
+    // Desktop-only plugins: autostart (Launch at login) + the global quick-capture shortcut.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(
+        builder = builder
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ))
+            .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_shortcut(QUICK_CAPTURE_SHORTCUT)
                 .expect("quick-capture shortcut should parse")
@@ -241,6 +246,19 @@ pub fn run() {
             // failure never blocks the app from starting.
             if let Err(e) = setup_tray(app.handle()) {
                 log::warn!("tray setup failed: {e}");
+            }
+
+            // Test seam (never set in normal use): drive autostart from app:smoke, which can't click
+            // the web "Launch at login" toggle (macOS has no WKWebView WebDriver).
+            #[cfg(desktop)]
+            if let Ok(mode) = std::env::var("CADENCE_AUTOSTART_TEST") {
+                use tauri_plugin_autostart::ManagerExt;
+                let autolaunch = app.autolaunch();
+                let _ = match mode.as_str() {
+                    "enable" => autolaunch.enable(),
+                    "disable" => autolaunch.disable(),
+                    _ => Ok(()),
+                };
             }
 
             // The main window is created hidden (visible:false in tauri.conf.json) so the user never

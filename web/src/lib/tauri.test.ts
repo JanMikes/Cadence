@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { isTauri, subscribeQuickCapture } from "./tauri";
+import { getAutostart, isTauri, setAutostart, subscribeQuickCapture } from "./tauri";
 
 afterEach(() => {
   delete (globalThis as { window?: unknown }).window;
@@ -40,4 +40,31 @@ test("subscribeQuickCapture opens quick-capture when a mocked native event fires
   // simulate the native global hotkey firing the event
   for (const handler of handlers) handler({});
   expect(opened).toBe(1);
+});
+
+test("autostart bridge is inert in a plain browser (no __TAURI__)", async () => {
+  expect(await getAutostart()).toBeNull();
+  expect(await setAutostart(true)).toBe(false);
+});
+
+test("autostart bridge calls the plugin commands inside the Tauri shell", async () => {
+  const calls: string[] = [];
+  (globalThis as { window?: unknown }).window = {
+    __TAURI__: {
+      core: {
+        invoke: (cmd: string) => {
+          calls.push(cmd);
+          return Promise.resolve(cmd === "plugin:autostart|is_enabled" ? true : undefined);
+        },
+      },
+    },
+  };
+  expect(await getAutostart()).toBe(true);
+  expect(await setAutostart(true)).toBe(true);
+  expect(await setAutostart(false)).toBe(true);
+  expect(calls).toEqual([
+    "plugin:autostart|is_enabled",
+    "plugin:autostart|enable",
+    "plugin:autostart|disable",
+  ]);
 });

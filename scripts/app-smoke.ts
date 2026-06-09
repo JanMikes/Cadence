@@ -21,6 +21,9 @@ const root = join(import.meta.dir, "..");
 const appPath = join(root, "src-tauri", "target", "release", "bundle", "macos", "Cadence.app");
 const appBin = join(appPath, "Contents", "MacOS", "app");
 const runtimeFile = join(homedir(), ".cadence", "runtime.json");
+// The LaunchAgent plist is named after package_info().name (the product name), not the bundle id.
+const autostartPlist = join(homedir(), "Library", "LaunchAgents", "Cadence.plist");
+const autostartPlistExistedBefore = existsSync(autostartPlist);
 
 if (!existsSync(appBin)) {
   console.error(`[app-smoke] no built app at ${appPath} — run \`bun x tauri build\` first`);
@@ -49,6 +52,33 @@ function pidAlive(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Launch the app once with the autostart test-seam env (enable/disable Launch-at-login), wait for the
+ *  LaunchAgent plist to reach the target state, then quit the app. */
+async function runAutostart(mode: "enable" | "disable"): Promise<void> {
+  const want = mode === "enable";
+  const proc = Bun.spawn([appBin], {
+    env: { ...process.env, CADENCE_AUTOSTART_TEST: mode },
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline && existsSync(autostartPlist) !== want) {
+    if (proc.exitCode !== null) break;
+    await Bun.sleep(150);
+  }
+  try {
+    if (proc.pid) process.kill(proc.pid, "SIGTERM");
+  } catch {
+    /* already gone */
+  }
+  await Promise.race([proc.exited, Bun.sleep(5_000)]);
+  try {
+    if (proc.pid && pidAlive(proc.pid)) process.kill(proc.pid, "SIGKILL");
+  } catch {
+    /* already gone */
   }
 }
 
@@ -126,6 +156,16 @@ try {
   if (after !== baseline) throw new Error(`orphaned cadence-server after quit: count=${after} (baseline ${baseline})`);
   if (pidAlive(sidecarPid)) throw new Error(`sidecar pid ${sidecarPid} still alive after quit`);
   console.log("[app-smoke] clean shutdown — no orphaned cadence-server");
+
+  // --- autostart: enabling writes the LaunchAgent plist; disabling removes it. Driven by the
+  // CADENCE_AUTOSTART_TEST seam since the smoke can't click the web "Launch at login" toggle. ---
+  console.log("[app-smoke] verifying autostart (LaunchAgent plist)…");
+  await runAutostart("enable");
+  if (!existsSync(autostartPlist)) throw new Error(`autostart enable did not create ${autostartPlist}`);
+  await runAutostart("disable");
+  if (existsSync(autostartPlist)) throw new Error(`autostart disable did not remove ${autostartPlist}`);
+  console.log("[app-smoke] autostart ok — plist created on enable, removed on disable");
+
   ok = true;
 } finally {
   // Never leave the app(s) or sidecar running.
@@ -150,6 +190,10 @@ try {
     writeFileSync(runtimeFile, `${JSON.stringify(before, null, 2)}\n`);
   } else if (now && !pidAlive(now.pid)) {
     rmSync(runtimeFile, { force: true });
+  }
+  // autostart cleanup: never leave behind a LaunchAgent we created (it would auto-launch the build dir).
+  if (!autostartPlistExistedBefore && existsSync(autostartPlist)) {
+    rmSync(autostartPlist, { force: true });
   }
 }
 

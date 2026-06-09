@@ -16,6 +16,9 @@ type TauriGlobal = {
     isPermissionGranted?: () => Promise<boolean>;
     requestPermission?: () => Promise<string>;
   };
+  core?: {
+    invoke?: (cmd: string, args?: unknown) => Promise<unknown>;
+  };
 };
 
 function tauriGlobal(): TauriGlobal | undefined {
@@ -48,6 +51,29 @@ export function tauriNotify(title: string, body?: string): boolean {
   if (!send) return false;
   send(body ? { title, body } : { title });
   return true;
+}
+
+/** Whether "Launch at login" (autostart) is currently enabled — `null` outside the Tauri shell. */
+export async function getAutostart(): Promise<boolean | null> {
+  const invoke = tauriGlobal()?.core?.invoke;
+  if (!invoke) return null;
+  try {
+    return (await invoke("plugin:autostart|is_enabled")) as boolean;
+  } catch {
+    return null;
+  }
+}
+
+/** Enable/disable "Launch at login" (autostart). Returns `true` if handled (inside the Tauri shell). */
+export async function setAutostart(enabled: boolean): Promise<boolean> {
+  const invoke = tauriGlobal()?.core?.invoke;
+  if (!invoke) return false;
+  try {
+    await invoke(enabled ? "plugin:autostart|enable" : "plugin:autostart|disable");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

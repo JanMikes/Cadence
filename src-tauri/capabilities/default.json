@@ -8,6 +8,7 @@
     "core:default",
     "core:event:default",
     "notification:default",
+    "autostart:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [{ "name": "binaries/cadence-server", "sidecar": true, "args": true }]

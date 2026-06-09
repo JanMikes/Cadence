@@ -32,6 +32,7 @@ tauri-plugin-notification = "2"
 # dependency uses the canonical "desktop" target spec instead.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
 
 # POSIX signal handling so the app terminates cleanly (killing the sidecar) on SIGTERM/SIGINT — the
 # in-app RunEvent path doesn't cover an external `kill`/Ctrl-C. Unix-only (the target platforms here).
