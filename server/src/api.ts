@@ -29,6 +29,7 @@ import { runFleetImplementer } from "./agents/fleet";
 import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
 import { runReflector } from "./agents/reflector";
+import { findLiveStage } from "./agents/stage-guard";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
@@ -434,6 +435,12 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (method !== "POST") return methodNotAllowed();
     const taskId = refineMatch[1] as string;
     if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    // Refuse a duplicate before runDiscovery touches the task's status (§6.1.b) —
+    // the recording runner's assertStageIdle still backstops the racy window after.
+    const live = findLiveStage(ctx.db, taskId, "discovery");
+    if (live) {
+      return conflict("a discovery run is already active for this task", { sessionId: live.id });
+    }
     const before = getTask(ctx.db, taskId);
     const outcome = await ctx.activity.track(taskId, "discovery", () =>
       runDiscovery(ctx.db, taskId, ctx.runAgent),

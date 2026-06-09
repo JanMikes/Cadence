@@ -1,5 +1,6 @@
 import type { ActivityTracker } from "./activity";
 import { runDiscovery } from "./agents/discovery";
+import { findLiveStage } from "./agents/stage-guard";
 import { runQuestioner } from "./agents/questioner";
 import type { AgentRunner } from "./agents/triage";
 import type { Db } from "./db/client";
@@ -28,6 +29,10 @@ export async function healStuckTasks(deps: HealDeps): Promise<number> {
   let healed = 0;
   for (const task of stuck) {
     if (activity.isActive(task.id)) continue;
+    // A discovery from a previous gateway life may still be genuinely alive (one-shots
+    // can outlive a restart) — never duplicate it. Stale zombie rows are finalized by
+    // the check itself, so they don't block healing. (§6.1.b)
+    if (findLiveStage(db, task.id, "discovery")) continue;
     try {
       const disc = await activity.track(task.id, "discovery", () => runDiscovery(db, task.id, runAgent));
       hub.broadcast({ type: "event", name: "task:updated", payload: task.id });

@@ -6,6 +6,7 @@ import { getTask } from "../tasks";
 import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
 import { type AgentRunOptions, modelForRole, runAgent } from "./runner";
+import { assertStageIdle } from "./stage-guard";
 import type { AgentRunner } from "./triage";
 
 export interface RecordingRunnerDeps {
@@ -34,6 +35,13 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
     const id = crypto.randomUUID();
     const role = opts.role ?? "agent";
     const projectId = getTask(db, opts.taskId)?.projectId ?? null;
+
+    // In-flight dedupe (§6.1.b, the runaway-discovery fix): every task-linked stage run
+    // passes through here, so this one check covers capture, heal, /refine, PLAY and the
+    // execution chain. Throws when an honestly-alive run of the same (task, role) exists;
+    // finalizes stale zombie rows as a side effect. Synchronous from check to insert below,
+    // so in-process callers cannot interleave past it.
+    assertStageIdle(db, opts.taskId, role);
 
     try {
       db.insert(sessions)
