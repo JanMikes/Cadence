@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 0 — complete. Next: Stage 1 (relocatable gateway, pure TS).
-- **Last completed step:** 0.2 (re-open 4.7 + wire ledgers).
-- **Next step:** 1.1 (`CADENCE_WEB_DIR` override).
+- **Current stage:** Stage 1 — in progress (relocatable gateway, pure TS).
+- **Last completed step:** 1.1 (`CADENCE_WEB_DIR` override).
+- **Next step:** 1.2 (`CADENCE_MIGRATIONS_DIR` override).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (Stage 0 done — toolchain + ledgers wired).
+- **Last updated:** 2026-06-09 (1.1 done — 234 tests).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -118,7 +118,7 @@ only if an install genuinely fails — recorded as a Blocker.)
 **Stage 0 acceptance:** toolchain present; ledgers reconciled; gitignore covers build artifacts.
 
 ## Stage 1 — Relocatable gateway (pure TS — fully auto-verifiable; do FIRST to de-risk)
-- [ ] **1.1 `CADENCE_WEB_DIR` override.** `[auto]` `server/src/gateway.ts`: `webDir = opts.webDir ?? process.env.CADENCE_WEB_DIR ?? DEFAULT_WEB_DIR`.
+- [x] **1.1 `CADENCE_WEB_DIR` override.** `[auto]` `server/src/gateway.ts`: `webDir = opts.webDir ?? process.env.CADENCE_WEB_DIR ?? DEFAULT_WEB_DIR`.
   - Verify: `bun test` — a gateway with `CADENCE_WEB_DIR=<fixture>` serves the fixture `index.html`; existing tests green; `bun run build` green.
 - [ ] **1.2 `CADENCE_MIGRATIONS_DIR` override.** `[auto]` `server/src/db/client.ts`: `migrationsFolder` reads `process.env.CADENCE_MIGRATIONS_DIR ?? <relative default>`.
   - Verify: `bun test` — `openAndMigrate` on a temp DB with `CADENCE_MIGRATIONS_DIR=server/drizzle` creates all tables; existing migration tests green; `bun run build` green.
@@ -259,3 +259,11 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   Verified: `git status` shows only the 3 intended files; `bun test` 233 pass; `bun run build` green.
   Stage 0 complete. *Next:* 1.1 — `CADENCE_WEB_DIR` override in `server/src/gateway.ts` (pure TS,
   fully auto-verifiable; Stage 1 is done first to de-risk before any Rust).
+
+- **2026-06-09 · 1.1 (`CADENCE_WEB_DIR` override).** `server/src/gateway.ts`: `webDir = opts.webDir ??
+  process.env.CADENCE_WEB_DIR ?? DEFAULT_WEB_DIR` (explicit opt still wins, so existing tests are
+  unaffected). This lets the compiled sidecar serve assets shipped as Tauri bundle resources instead
+  of the source-relative `../../web/dist`. Added a self-contained `gateway.test.ts` case that starts a
+  gateway with **no** `webDir` opt but `CADENCE_WEB_DIR` pointed at a temp fixture and asserts `/`
+  serves the fixture's `index.html`. Verified: gateway suite 40 pass; full `bun test` 234 pass (+1);
+  `bun run build` green. *Next:* 1.2 — `CADENCE_MIGRATIONS_DIR` override in `server/src/db/client.ts`.

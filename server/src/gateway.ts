@@ -21,7 +21,7 @@ const DEFAULT_WEB_DIR = join(import.meta.dir, "..", "..", "web", "dist");
 export interface GatewayOptions {
   /** Port to bind (default CADENCE_PORT or 4477). Use 0 for an ephemeral port. */
   port?: number;
-  /** Built web assets to serve (default ../../web/dist). */
+  /** Built web assets to serve (default `opts.webDir ?? CADENCE_WEB_DIR ?? ../../web/dist`). */
   webDir?: string;
   /** Inject a db (tests). When omitted, bootstraps ~/.cadence and opens the app db. */
   db?: Db;
@@ -49,7 +49,9 @@ export interface Gateway {
 /** Start the local gateway: REST (/api/*), a WS hub (/ws), and the built web app. */
 export function startGateway(opts: GatewayOptions = {}): Gateway {
   const port = opts.port ?? Number(process.env.CADENCE_PORT ?? 4477);
-  const webDir = opts.webDir ?? DEFAULT_WEB_DIR;
+  // CADENCE_WEB_DIR lets the compiled sidecar serve assets shipped as Tauri resources
+  // (no source-relative `web/dist`). Explicit opts.webDir still wins (tests).
+  const webDir = opts.webDir ?? process.env.CADENCE_WEB_DIR ?? DEFAULT_WEB_DIR;
   const hub = new WsHub();
 
   let db: Db;

@@ -794,6 +794,30 @@ test("serves the built web app with SPA fallback", async () => {
   expect(deep).toContain("cadence-spa");
 });
 
+test("CADENCE_WEB_DIR relocates the served web assets (compiled-sidecar path)", async () => {
+  // With no opts.webDir, the gateway must fall back to process.env.CADENCE_WEB_DIR —
+  // this is how the Tauri sidecar points at web assets shipped as bundle resources.
+  const altWeb = mkdtempSync(join(tmpdir(), "cadence-altweb-"));
+  writeFileSync(join(altWeb, "index.html"), "<!doctype html><title>relocated-spa</title>");
+  const altHome = mkdtempSync(join(tmpdir(), "cadence-altweb-home-"));
+  const altDb = openDb(join(altHome, "cadence.db"));
+  migrateDb(altDb);
+  const prev = process.env.CADENCE_WEB_DIR;
+  process.env.CADENCE_WEB_DIR = altWeb;
+  let g: Gateway | undefined;
+  try {
+    g = startGateway({ port: 0, db: altDb, startWatcher: false }); // deliberately no webDir
+    const root = await fetch(`${g.url}/`).then((r) => r.text());
+    expect(root).toContain("relocated-spa");
+  } finally {
+    await g?.stop();
+    if (prev === undefined) delete process.env.CADENCE_WEB_DIR;
+    else process.env.CADENCE_WEB_DIR = prev;
+    rmSync(altWeb, { recursive: true, force: true });
+    rmSync(altHome, { recursive: true, force: true });
+  }
+});
+
 test("blocks path traversal", async () => {
   const res = await fetch(`${gw.url}/../../../../etc/hosts`);
   const text = await res.text();
