@@ -1,6 +1,7 @@
 import type { Project, Task } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type DragEvent, useMemo, useState } from "react";
+import { ChevronDown, ChevronsUp, ChevronUp, Equal, ListFilter } from "lucide-react";
+import { type DragEvent, useEffect, useMemo, useState } from "react";
 import { useActivity, stageLabel } from "../../lib/activity";
 import { getProjects, getTasks, updateTask } from "../../lib/api";
 import { BOARD_COLUMNS, type StatusColumn } from "../../lib/status";
@@ -9,19 +10,22 @@ import { cn } from "../../lib/utils";
 /** Sentinel for tasks without a project in the filter (they're first-class too). */
 const NO_PROJECT = "none";
 
-// Per-column accent (border-top + header dot): a rainbow sweep across the
-// lifecycle so each stage is recognizable at a glance, pinned to the existing
-// semantic badge colors (needs_feedback amber · plan_review violet · review green).
+// Per-column accent (border-top + header dot). Color = meaning, not decoration:
+//   gray    = raw, untouched            (inbox)
+//   indigo  = filed by triage           (triaged)
+//   cool    = Cadence is working        (refining cyan · implementing blue · verifying teal)
+//   warm    = waiting on YOU            (needs_feedback amber · plan_review violet · review rose)
+//   green   = go / shipped              (ready green — matches PLAY · done emerald)
 const COLUMN_ACCENTS: Record<string, { border: string; dot: string }> = {
   inbox: { border: "border-t-zinc-400/80", dot: "bg-zinc-400" },
-  triaged: { border: "border-t-sky-400/80", dot: "bg-sky-400" },
+  triaged: { border: "border-t-indigo-400/80", dot: "bg-indigo-400" },
   refining: { border: "border-t-cyan-400/80", dot: "bg-cyan-400" },
   needs_feedback: { border: "border-t-amber-400/80", dot: "bg-amber-400" },
-  ready: { border: "border-t-lime-400/80", dot: "bg-lime-400" },
+  ready: { border: "border-t-green-400/80", dot: "bg-green-400" },
   plan_review: { border: "border-t-violet-400/80", dot: "bg-violet-400" },
   implementing: { border: "border-t-blue-400/80", dot: "bg-blue-400" },
-  verifying: { border: "border-t-orange-400/80", dot: "bg-orange-400" },
-  review: { border: "border-t-green-400/80", dot: "bg-green-400" },
+  verifying: { border: "border-t-teal-400/80", dot: "bg-teal-400" },
+  review: { border: "border-t-rose-400/80", dot: "bg-rose-400" },
   done: { border: "border-t-emerald-400/80", dot: "bg-emerald-400" },
 };
 
@@ -64,19 +68,22 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
 
   return (
     <div className="flex h-full flex-col p-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Board</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Drag a card to change its status. Click a card to open it.
-      </p>
-
-      <ProjectFilter
-        projects={projects.data ?? []}
-        selected={selected}
-        onToggle={toggle}
-        onClear={() => setSelected(new Set())}
-        shown={visible.length}
-        total={tasks.data?.length ?? 0}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Board</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Drag a card to change its status. Click a card to open it.
+          </p>
+        </div>
+        <ProjectFilter
+          projects={projects.data ?? []}
+          selected={selected}
+          onToggle={toggle}
+          onClear={() => setSelected(new Set())}
+          shown={visible.length}
+          total={tasks.data?.length ?? 0}
+        />
+      </div>
 
       {tasks.isError ? (
         <p className="mt-4 text-sm text-red-400">Couldn’t load tasks (is the gateway running?)</p>
@@ -99,17 +106,19 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
 }
 
 /**
- * The board's project filter (§10.1 — plain language, self-explanatory): a row of
- * labeled checkboxes, one per project plus "No project". Nothing checked (the
- * default) means every task is shown; "Clear" returns to that state.
+ * The board's project filter (§10.1 — plain language, self-explanatory): a labeled
+ * dropdown (projects can be many) holding one checkbox per project plus "No
+ * project". Nothing checked (the default) means every task is shown; Clear
+ * returns to that state. `defaultOpen` exists for static rendering in tests.
  */
-function ProjectFilter({
+export function ProjectFilter({
   projects,
   selected,
   onToggle,
   onClear,
   shown,
   total,
+  defaultOpen = false,
 }: {
   projects: Project[];
   selected: ReadonlySet<string>;
@@ -117,48 +126,103 @@ function ProjectFilter({
   onClear: () => void;
   shown: number;
   total: number;
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(defaultOpen);
   const filtering = selected.size > 0;
+
+  // Esc closes the dropdown (matching the app's modal behavior).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const summary = !filtering
+    ? "All projects"
+    : selected.size === 1
+      ? (projects.find((p) => selected.has(p.id))?.name ?? "No project")
+      : `${selected.size} selected`;
+
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2">
-      <span className="text-xs font-medium text-muted-foreground">Projects:</span>
-      {projects.map((p) => (
-        <FilterCheckbox
-          key={p.id}
-          label={p.name}
-          color={p.color}
-          checked={selected.has(p.id)}
-          onToggle={() => onToggle(p.id)}
-        />
-      ))}
-      <FilterCheckbox
-        label="No project"
-        color={null}
-        checked={selected.has(NO_PROJECT)}
-        onToggle={() => onToggle(NO_PROJECT)}
-      />
+    <div className="relative flex items-center gap-2">
       {filtering ? (
+        <span className="text-xs text-muted-foreground">
+          {shown} of {total} tasks
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={cn(
+          "flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors",
+          filtering
+            ? "border-primary/60 bg-primary/10 text-foreground"
+            : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
+        )}
+      >
+        <ListFilter className="size-4" aria-hidden />
+        <span>
+          Projects: <span className="font-medium text-foreground">{summary}</span>
+        </span>
+        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {filtering ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+        >
+          Clear
+        </button>
+      ) : null}
+
+      {open ? (
         <>
-          <span className="text-xs text-muted-foreground">
-            {shown} of {total} tasks
-          </span>
-          <button
-            type="button"
-            onClick={onClear}
-            className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-          >
-            Clear
-          </button>
+          {/* biome-ignore lint/a11y/useKeyWithClickEvents: Esc closes (handler above); backdrop is a convenience */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-xl">
+            <FilterRow
+              label="No project"
+              color={null}
+              checked={selected.has(NO_PROJECT)}
+              onToggle={() => onToggle(NO_PROJECT)}
+            />
+            {projects.length ? <div className="mx-2 my-1 border-t border-border" /> : null}
+            {projects.map((p) => (
+              <FilterRow
+                key={p.id}
+                label={p.name}
+                color={p.color}
+                checked={selected.has(p.id)}
+                onToggle={() => onToggle(p.id)}
+              />
+            ))}
+            <div className="mx-2 my-1 border-t border-border" />
+            <button
+              type="button"
+              disabled={!filtering}
+              onClick={() => {
+                onClear();
+                setOpen(false);
+              }}
+              className="w-full rounded px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              Clear — show all projects
+            </button>
+          </div>
         </>
-      ) : (
-        <span className="text-xs text-muted-foreground">All projects</span>
-      )}
+      ) : null}
     </div>
   );
 }
 
-/** One labeled filter pill — a real checkbox plus the project's color dot + name. */
-function FilterCheckbox({
+/** One dropdown row — a real checkbox plus the project's color dot + name. */
+function FilterRow({
   label,
   color,
   checked,
@@ -172,19 +236,17 @@ function FilterCheckbox({
   return (
     <label
       className={cn(
-        "flex cursor-pointer select-none items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
-        checked
-          ? "border-primary/60 bg-primary/10 text-foreground"
-          : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground",
+        "flex cursor-pointer select-none items-center gap-2 rounded px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+        checked ? "text-foreground" : "text-muted-foreground",
       )}
     >
-      <input type="checkbox" checked={checked} onChange={onToggle} className="size-3 accent-primary" />
+      <input type="checkbox" checked={checked} onChange={onToggle} className="size-3.5 accent-primary" />
       <span
-        className="size-2 rounded-full border border-border bg-muted-foreground/30"
+        className="size-2 shrink-0 rounded-full border border-border bg-muted-foreground/30"
         style={color ? { backgroundColor: color, borderColor: color } : undefined}
         aria-hidden
       />
-      {label}
+      <span className="truncate">{label}</span>
     </label>
   );
 }
@@ -250,12 +312,61 @@ const URGENCY_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 // A loud, labeled chip for cards that are waiting on the user — so "needs you" is
-// obvious even when scanning a column (it also reinforces the Plan review column).
+// obvious even when scanning a column (colors match the column accents above).
 const ATTENTION_BADGE: Record<string, { label: string; className: string }> = {
   needs_feedback: { label: "Needs input", className: "bg-amber-500/20 text-amber-300" },
   plan_review: { label: "Approve plan", className: "bg-violet-500/20 text-violet-300" },
-  review: { label: "Review & merge", className: "bg-green-500/20 text-green-300" },
+  review: { label: "Review & merge", className: "bg-rose-500/20 text-rose-300" },
 };
+
+// Jira-style priority glyphs: arrows + color instead of a cryptic "P1" string.
+const PRIORITY_GLYPHS: Record<string, { node: React.ReactNode; label: string }> = {
+  p0: {
+    node: <ChevronsUp className="size-3.5 text-red-400" strokeWidth={3} aria-hidden />,
+    label: "Highest (P0)",
+  },
+  p1: {
+    node: <ChevronUp className="size-3.5 text-orange-400" strokeWidth={3} aria-hidden />,
+    label: "High (P1)",
+  },
+  p2: {
+    node: <Equal className="size-3.5 text-amber-300" strokeWidth={3} aria-hidden />,
+    label: "Medium (P2)",
+  },
+  p3: {
+    node: <ChevronDown className="size-3.5 text-sky-400" strokeWidth={3} aria-hidden />,
+    label: "Low (P3)",
+  },
+};
+
+/** Free-text priorities a model/user might write, mapped onto the P0..P3 glyphs. */
+const PRIORITY_ALIASES: Record<string, string> = {
+  highest: "p0",
+  urgent: "p0",
+  critical: "p0",
+  high: "p1",
+  medium: "p2",
+  med: "p2",
+  normal: "p2",
+  low: "p3",
+  lowest: "p3",
+};
+
+/** Jira-style priority marker (arrow + color + tooltip); falls back to the raw text. */
+export function PriorityBadge({ priority }: { priority: string }) {
+  const key = priority.trim().toLowerCase();
+  const glyph = PRIORITY_GLYPHS[key] ?? PRIORITY_GLYPHS[PRIORITY_ALIASES[key] ?? ""];
+  if (!glyph) return <span>{priority}</span>;
+  return (
+    <span
+      title={`Priority: ${glyph.label}`}
+      aria-label={`Priority: ${glyph.label}`}
+      className="inline-flex items-center"
+    >
+      {glyph.node}
+    </span>
+  );
+}
 
 /** A small inline spinner shown while an autonomy stage is working a task. */
 export function WorkingSpinner({ stage, className }: { stage: string; className?: string }) {
@@ -315,7 +426,7 @@ function BoardCard({
         {badge ? (
           <span className={cn("rounded px-1.5 py-0.5 font-medium", badge.className)}>{badge.label}</span>
         ) : null}
-        {task.priority ? <span>{task.priority}</span> : null}
+        {task.priority ? <PriorityBadge priority={task.priority} /> : null}
         {task.deadline ? <span>⏷ {new Date(task.deadline).toLocaleDateString()}</span> : null}
         {project ? (
           // Quiet provenance, not a shout: a dot in the project's color + its name.
