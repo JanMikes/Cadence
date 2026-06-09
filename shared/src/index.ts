@@ -428,8 +428,10 @@ export interface SpawnSessionInput {
 
 /** A tracked session plus runtime info, for the detail view. */
 export interface SessionDetail extends Session {
-  /** True if Cadence still holds a live process handle (can chat / stop / kill). */
+  /** True if the underlying claude process is alive (warm handle OR a running pid). */
   isLive: boolean;
+  /** True if Cadence holds a warm stdin handle — "Continue chat" only works then. */
+  canChat: boolean;
 }
 
 /** Patch to re-organize a session — assign it to a task/project/fleet (null clears). */
@@ -492,6 +494,8 @@ export const TERMINAL_APPS = ["Terminal", "iTerm"] as const;
 export interface OpenTerminalResult {
   ok: boolean;
   command: string;
+  /** True when the running background process was stopped first (take-over handoff). */
+  tookOver?: boolean;
 }
 
 /** Ambient usage summary derived from ~/.claude/stats-cache.json. */
@@ -560,6 +564,8 @@ export interface TranscriptEntry {
   kind: "text" | "thinking" | "tool_use" | "tool_result" | "other";
   text: string | null;
   toolName: string | null;
+  /** Compact one-line JSON of a tool_use input — `Bash({"command":"ls"})` in the UI. */
+  toolInput: string | null;
   isSidechain: boolean; // subagent activity (nested in the UI)
   timestamp: string | null;
 }

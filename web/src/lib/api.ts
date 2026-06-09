@@ -412,14 +412,33 @@ export function resolveSuggestion(
   }).then(json<Suggestion>);
 }
 
-export function getTranscript(sessionId: string): Promise<TranscriptEntry[]> {
-  return fetch(`/api/sessions/${sessionId}/transcript`).then(json<TranscriptEntry[]>);
+export function getTranscript(sessionId: string, limit = 1000): Promise<TranscriptEntry[]> {
+  return fetch(`/api/sessions/${sessionId}/transcript?limit=${limit}`).then(json<TranscriptEntry[]>);
 }
 
-export function openTerminal(sessionId: string): Promise<OpenTerminalResult> {
-  return fetch(`/api/sessions/${sessionId}/open-terminal`, { method: "POST" }).then(
-    json<OpenTerminalResult>,
-  );
+const TERMINAL_ERRORS: Record<string, string> = {
+  session_running: "This session is still running — take it over instead of resuming.",
+  cwd_missing: "The working directory no longer exists (the worktree was likely cleaned up).",
+  stop_failed: "The running process didn't stop — try Kill, then open the terminal again.",
+};
+
+/** Open the session in the preferred terminal. `takeover` stops a running process first. */
+export async function openTerminal(
+  sessionId: string,
+  opts: { takeover?: boolean } = {},
+): Promise<OpenTerminalResult> {
+  const qs = opts.takeover ? "?mode=takeover" : "";
+  const res = await fetch(`/api/sessions/${sessionId}/open-terminal${qs}`, { method: "POST" });
+  const body = (await res.json().catch(() => ({}))) as OpenTerminalResult & {
+    error?: string;
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new Error(
+      body.message ?? TERMINAL_ERRORS[body.error ?? ""] ?? `${res.status} ${res.statusText}`,
+    );
+  }
+  return body;
 }
 
 export function getSettings(): Promise<GlobalSettings> {

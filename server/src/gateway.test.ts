@@ -796,8 +796,10 @@ test("settings: a claudeBinPath PATCH reaches the spawn env (CADENCE_CLAUDE_BIN)
 
 test("open-terminal builds the resume command and invokes the launcher", async () => {
   const task = await createViaApi("Handoff task");
-  // give the task a session row to hand off
-  const session = gw.spawn.spawn({ cwd: "/tmp/handoff-cwd", taskId: task.id, role: "chat", command: ["true"] });
+  // give the task a session row to hand off — the cwd must exist (the route refuses
+  // to hand off into a deleted working dir)
+  const handoffCwd = mkdtempSync(join(tmpdir(), "handoff-cwd-"));
+  const session = gw.spawn.spawn({ cwd: handoffCwd, taskId: task.id, role: "chat", command: ["true"] });
 
   await fetch(`${gw.url}/api/settings`, {
     method: "PATCH",
@@ -806,16 +808,57 @@ test("open-terminal builds the resume command and invokes the launcher", async (
   });
 
   terminalLaunches.length = 0;
+  // `true` exits immediately — wait for the close hook so the session isn't "live"
+  // (a live session demands mode=takeover; that path is tested separately).
+  for (let i = 0; i < 100 && gw.spawn.liveIds().includes(session.id); i++) await Bun.sleep(10);
   const res = await fetch(`${gw.url}/api/sessions/${session.id}/open-terminal`, { method: "POST" });
   expect(res.status).toBe(200);
   const body = (await res.json()) as { ok: boolean; command: string };
-  expect(body.command).toBe(`cd '/tmp/handoff-cwd' && claude --resume ${session.id}`);
+  expect(body.command).toBe(`cd '${handoffCwd}' && claude --resume ${session.id}`);
 
   expect(terminalLaunches).toHaveLength(1);
   expect(terminalLaunches[0]?.command).toContain("claude --resume");
   expect(terminalLaunches[0]?.app).toBe("Terminal");
 
   gw.spawn.kill(session.id);
+  rmSync(handoffCwd, { recursive: true, force: true });
+});
+
+test("open-terminal refuses a live session without takeover, then takes over cleanly", async () => {
+  const task = await createViaApi("Takeover task");
+  const cwd = mkdtempSync(join(tmpdir(), "takeover-cwd-"));
+  // a long-running fake claude process — stays alive until stdin EOF (like a warm claude)
+  const session = gw.spawn.spawn({ cwd, taskId: task.id, role: "chat", command: ["bash", "-c", "read -r line"] });
+
+  terminalLaunches.length = 0;
+  const refused = await fetch(`${gw.url}/api/sessions/${session.id}/open-terminal`, { method: "POST" });
+  expect(refused.status).toBe(409);
+  expect(((await refused.json()) as { error: string }).error).toBe("session_running");
+  expect(terminalLaunches).toHaveLength(0); // nothing opened — no frozen fork
+
+  const res = await fetch(`${gw.url}/api/sessions/${session.id}/open-terminal?mode=takeover`, {
+    method: "POST",
+  });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { ok: boolean; tookOver?: boolean };
+  expect(body.tookOver).toBe(true);
+  expect(terminalLaunches).toHaveLength(1); // resumed only after the process stopped
+  const after = (await fetch(`${gw.url}/api/sessions/${session.id}`).then((r) => r.json())) as {
+    isLive: boolean;
+    status: string;
+  };
+  expect(after.isLive).toBe(false);
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+test("transcript route returns [] (not 404) when nothing is on disk yet", async () => {
+  const task = await createViaApi("Transcript pending");
+  const cwd = mkdtempSync(join(tmpdir(), "transcript-cwd-"));
+  const session = gw.spawn.spawn({ cwd, taskId: task.id, role: "chat", command: ["true"] });
+  const res = await fetch(`${gw.url}/api/sessions/${session.id}/transcript`);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual([]);
+  rmSync(cwd, { recursive: true, force: true });
 });
 
 test("task context channel: POST appends, GET reads", async () => {

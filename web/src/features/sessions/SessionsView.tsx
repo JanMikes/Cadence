@@ -1,7 +1,7 @@
-import type { LiveSession } from "@cadence/shared";
+import type { LiveSession, Session } from "@cadence/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { getLiveSessions, getSessions } from "../../lib/api";
+import { getLiveSessions, getSessions, getTasks } from "../../lib/api";
 import { roleLabel } from "../../lib/status";
 import { cn } from "../../lib/utils";
 
@@ -10,15 +10,30 @@ function statusDot(status: string, alive = true): string {
   if (status === "busy") return "bg-green-500 animate-pulse";
   if (status === "idle") return "bg-muted-foreground";
   if (status === "shell") return "bg-blue-400";
-  if (status === "running" || status === "spawning") return "bg-green-500";
+  if (status === "running" || status === "spawning") return "bg-green-500 animate-pulse";
   if (status === "done") return "bg-muted-foreground";
   if (status === "failed" || status === "killed") return "bg-red-500";
   return "bg-yellow-500";
 }
 
+function elapsed(startedAt: number | null): string {
+  if (!startedAt) return "";
+  const m = Math.max(0, Math.round((Date.now() - startedAt) / 60_000));
+  if (m < 1) return "<1m";
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
 export function SessionsView({ onOpenSessionDetail }: { onOpenSessionDetail: (id: string) => void }) {
   const live = useQuery({ queryKey: ["live-sessions"], queryFn: getLiveSessions, refetchInterval: 3000 });
-  const tracked = useQuery({ queryKey: ["sessions", "all"], queryFn: getSessions });
+  // Refresh the tracked list while open so running ↔ done transitions show up promptly.
+  const tracked = useQuery({
+    queryKey: ["sessions", "all"],
+    queryFn: () => getSessions(),
+    refetchInterval: 5000,
+  });
+  const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => getTasks() });
+  const taskTitles = new Map((tasks.data ?? []).map((t) => [t.id, t.title]));
   const trackedIds = new Set(tracked.data?.map((s) => s.id));
   const [filter, setFilter] = useState<"all" | "chat" | "agent">("all");
   const shown = (tracked.data ?? []).filter((s) =>
@@ -30,7 +45,7 @@ export function SessionsView({ onOpenSessionDetail }: { onOpenSessionDetail: (id
       <h1 className="text-2xl font-semibold tracking-tight">Sessions</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Live Claude Code processes (from the liveness oracle) and Cadence-tracked sessions. Click a session
-        to see details, history, controls, and organization.
+        to watch its output live, see history, controls, and organization.
       </p>
 
       <section className="mt-6">
@@ -80,26 +95,54 @@ export function SessionsView({ onOpenSessionDetail }: { onOpenSessionDetail: (id
           {shown.length === 0 ? <li className="text-xs text-muted-foreground">No sessions yet.</li> : null}
           {shown.map((s) => (
             <li key={s.id}>
-              <button
-                type="button"
-                onClick={() => onOpenSessionDetail(s.id)}
-                className="flex w-full items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
-              >
-                <span className={cn("size-2 shrink-0 rounded-full", statusDot(s.status))} />
-                <span className="font-medium">{roleLabel(s.role)}</span>
-                {s.kind === "oneshot" ? (
-                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    stage
-                  </span>
-                ) : null}
-                <span className="truncate text-muted-foreground">{s.cwd}</span>
-                <span className="ml-auto shrink-0 text-muted-foreground">${s.costUsd.toFixed(4)}</span>
-              </button>
+              <SessionRow
+                session={s}
+                taskTitle={s.taskId ? taskTitles.get(s.taskId) : undefined}
+                onOpen={() => onOpenSessionDetail(s.id)}
+              />
             </li>
           ))}
         </ul>
       </section>
     </div>
+  );
+}
+
+function SessionRow({
+  session: s,
+  taskTitle,
+  onOpen,
+}: {
+  session: Session;
+  taskTitle?: string;
+  onOpen: () => void;
+}) {
+  const running = s.status === "running" || s.status === "spawning";
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
+    >
+      <span className={cn("size-2 shrink-0 rounded-full", statusDot(s.status))} />
+      <span className="shrink-0 font-medium">{roleLabel(s.role)}</span>
+      {s.kind === "oneshot" ? (
+        <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+          stage
+        </span>
+      ) : null}
+      {taskTitle ? <span className="truncate text-foreground/80">{taskTitle}</span> : null}
+      <span className={cn("truncate text-muted-foreground", taskTitle && "hidden sm:inline")}>{s.cwd}</span>
+      <span className="ml-auto shrink-0 text-muted-foreground">
+        {running ? (
+          <span className="flex items-center gap-1 text-emerald-400">
+            running · {elapsed(s.startedAt)}
+          </span>
+        ) : (
+          `$${s.costUsd.toFixed(4)}`
+        )}
+      </span>
+    </button>
   );
 }
 

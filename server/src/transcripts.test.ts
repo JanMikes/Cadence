@@ -4,8 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   claudeDir,
+  findTranscriptPath,
   readLiveSessions,
   readTranscript,
+  resolveTranscriptPath,
   transcriptPathFor,
 } from "./transcripts";
 
@@ -81,4 +83,64 @@ test("readTranscript parses user/assistant lines + flags sidechain subagent acti
   // the subagent line is flagged for nesting
   const sidechain = entries.find((e) => e.isSidechain);
   expect(sidechain?.text).toBe("subagent reading files");
+});
+
+test("transcriptPathFor encodes dots/underscores as dashes (claude's real rule)", () => {
+  // verified on disk: /www/.cadence-worktrees/x → -www--cadence-worktrees-x
+  const p = transcriptPathFor("/Users/me/www/.cadence-worktrees/acme-b24c", "s1");
+  expect(p).toBe(
+    join(claudeDir(), "projects", "-Users-me-www--cadence-worktrees-acme-b24c", "s1.jsonl"),
+  );
+  expect(transcriptPathFor("/Users/me/www/ceskakruta.cz", "s2")).toBe(
+    join(claudeDir(), "projects", "-Users-me-www-ceskakruta-cz", "s2.jsonl"),
+  );
+});
+
+test("findTranscriptPath falls back to scanning all project dirs by session id", () => {
+  // claude wrote the transcript under an encoding we did NOT predict
+  const dir = join(claude, "projects", "-some-unexpected-encoding");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "sess-glob.jsonl"), "{}\n");
+
+  expect(findTranscriptPath("sess-glob", "/does/not/match")).toBe(join(dir, "sess-glob.jsonl"));
+  expect(findTranscriptPath("missing-session", "/does/not/match")).toBeNull();
+});
+
+test("resolveTranscriptPath self-heals a stale stored path via save callback", () => {
+  const dir = join(claude, "projects", "-real-place");
+  mkdirSync(dir, { recursive: true });
+  const real = join(dir, "sess-heal.jsonl");
+  writeFileSync(real, "{}\n");
+
+  const saved: string[] = [];
+  const resolved = resolveTranscriptPath(
+    { id: "sess-heal", cwd: "/real/place", transcriptPath: "/stale/wrong.jsonl" },
+    (p) => saved.push(p),
+  );
+  expect(resolved).toBe(real);
+  expect(saved).toEqual([real]); // the fix is persisted
+
+  // a correct stored path is returned as-is, no save
+  saved.length = 0;
+  expect(
+    resolveTranscriptPath({ id: "x", cwd: "/y", transcriptPath: real }, (p) => saved.push(p)),
+  ).toBe(real);
+  expect(saved).toEqual([]);
+});
+
+test("readTranscript exposes compact tool_use inputs for terminal-style rendering", () => {
+  const file = join(claude, "tools.jsonl");
+  const line = {
+    type: "assistant",
+    uuid: "a1",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", name: "Bash", input: { command: "bun test" } }],
+    },
+  };
+  writeFileSync(file, `${JSON.stringify(line)}\n`);
+
+  const [entry] = readTranscript(file);
+  expect(entry?.toolName).toBe("Bash");
+  expect(entry?.toolInput).toBe('{"command":"bun test"}');
 });

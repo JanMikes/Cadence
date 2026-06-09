@@ -1,4 +1,4 @@
-import type { AgentResult } from "@cadence/shared";
+import type { AgentResult, ClaudeEvent } from "@cadence/shared";
 import { spawn } from "node:child_process";
 
 /** Default model per agent role (spec §7; overridable per project/task). */
@@ -42,6 +42,10 @@ export interface AgentRunOptions {
   sessionId?: string;
   /** The task this run belongs to — recording metadata for the session row (not a claude arg). */
   taskId?: string;
+  /** Called once with the child pid right after spawn — lets callers track/stop the process. */
+  onSpawn?: (pid: number | null) => void;
+  /** Called for every stream-json event as it arrives — powers live output in the UI. */
+  onEvent?: (event: ClaudeEvent) => void;
 }
 
 /** Try to parse the agent's result text as JSON (tolerates ```json fences). */
@@ -57,26 +61,10 @@ export function parseAgentJson(text: string): unknown | null {
   }
 }
 
-function parseOutput(stdout: string): AgentResult {
-  let raw: Record<string, unknown> | string | null = null;
-  const trimmed = stdout.trim();
-  try {
-    raw = JSON.parse(trimmed) as Record<string, unknown>;
-  } catch {
-    // tolerate extra lines — take the last valid JSON line
-    for (const line of trimmed.split("\n").reverse()) {
-      try {
-        raw = JSON.parse(line.trim()) as Record<string, unknown>;
-        break;
-      } catch {
-        // keep looking
-      }
-    }
-  }
-
-  const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const text =
-    typeof obj.result === "string" ? obj.result : typeof raw === "string" ? raw : "";
+/** Build the final AgentResult from the run's `result` event (or last JSON object seen). */
+function toAgentResult(raw: Record<string, unknown> | null): AgentResult {
+  const obj = raw ?? {};
+  const text = typeof obj.result === "string" ? obj.result : "";
   return {
     text,
     json: parseAgentJson(text),
@@ -88,13 +76,26 @@ function parseOutput(stdout: string): AgentResult {
 }
 
 /**
- * Run a one-shot agent: `claude -p <prompt> --output-format json [...]` in cwd.
+ * Run a one-shot agent: `claude -p <prompt> --output-format stream-json [...]` in cwd.
  * Stateless + crash-proof (vs. the warm session in 1.4); resume is cache-read.
  * Defaults to the read-only "plan" permission mode unless overridden.
+ *
+ * stream-json (vs. plain json) costs nothing and buys live output: every event is
+ * parsed as it arrives and forwarded to `onEvent`, so the UI can stream a run in
+ * real time. The final `result` event carries the same fields the old json blob did.
  */
 export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
   const base = opts.command ?? [process.env.CADENCE_CLAUDE_BIN ?? "claude"];
-  const args = ["-p", opts.prompt, "--output-format", "json", "--permission-mode", opts.permissionMode ?? "plan"];
+  const args = [
+    "-p",
+    opts.prompt,
+    "--output-format",
+    "stream-json",
+    "--verbose", // REQUIRED with stream-json in print mode
+    "--include-partial-messages", // live token deltas for the streaming UI
+    "--permission-mode",
+    opts.permissionMode ?? "plan",
+  ];
   const model = opts.model ?? modelForRole(opts.role);
   if (model) args.push("--model", model);
   if (opts.appendSystemPrompt) args.push("--append-system-prompt", opts.appendSystemPrompt);
@@ -103,14 +104,35 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
   else if (opts.sessionId) args.push("--session-id", opts.sessionId);
   if (opts.agentsJson) args.push("--agents", opts.agentsJson);
 
-  const stdout = await new Promise<string>((resolve, reject) => {
+  return await new Promise<AgentResult>((resolve, reject) => {
     // Capture stderr too (don't discard it) so a failing agent run is diagnosable instead of silent.
     const child = spawn(base[0] as string, [...base.slice(1), ...args], {
       cwd: opts.cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let out = "";
+    opts.onSpawn?.(child.pid ?? null);
+
+    // Parse stdout incrementally (don't buffer a long run's full delta stream in memory):
+    // keep only the most recent JSON object — the `result` event is always last.
+    let last: Record<string, unknown> | null = null;
+    let sawAny = false;
+    let buf = "";
     let err = "";
+    const handleLine = (line: string): void => {
+      if (!line) return;
+      try {
+        const ev = JSON.parse(line) as Record<string, unknown>;
+        sawAny = true;
+        if (ev && typeof ev === "object") {
+          if (typeof ev.type === "string") opts.onEvent?.(ev as ClaudeEvent);
+          // Remember the result event (or the last object, for mocks emitting one blob).
+          if (ev.type === "result" || last == null || last.type !== "result") last = ev;
+        }
+      } catch {
+        // Tolerate non-JSON noise (the schema is unversioned — §7).
+      }
+    };
+
     const timer = opts.timeoutMs
       ? setTimeout(() => {
           child.kill("SIGKILL");
@@ -118,7 +140,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
         }, opts.timeoutMs)
       : null;
     child.stdout?.on("data", (c: Buffer) => {
-      out += c.toString();
+      buf += c.toString();
+      for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        handleLine(line);
+      }
     });
     child.stderr?.on("data", (c: Buffer) => {
       err += c.toString();
@@ -129,14 +156,13 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      handleLine(buf.trim()); // a final line without a trailing newline
       // Surface a failed/empty run instead of swallowing it (the caller turns this into a visible note).
-      if ((code && code !== 0) || out.trim() === "") {
+      if ((code && code !== 0) || !sawAny) {
         const detail = err.trim() || `exit ${code ?? "?"}`;
         console.warn(`[cadence] agent (${opts.role ?? "?"}) produced no output: ${detail.slice(0, 500)}`);
       }
-      resolve(out);
+      resolve(toAgentResult(last));
     });
   });
-
-  return parseOutput(stdout);
 }

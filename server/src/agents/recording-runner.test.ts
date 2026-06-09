@@ -97,3 +97,31 @@ test("a run with no taskId is not recorded — it passes straight through", asyn
   expect(called).toBe(true);
   expect(listTaskSessions(db, t.id)).toHaveLength(0);
 });
+
+test("records the child pid and forwards live events to the hub as session:event", async () => {
+  const t = createTask(db, { title: "live stream" });
+  const broadcasts: Array<{ name: string; payload?: unknown }> = [];
+  const hub = {
+    broadcast: (msg: { name: string; payload?: unknown }) => broadcasts.push(msg),
+  } as unknown as WsHub;
+
+  const run = makeRecordingRunner({
+    db,
+    hub,
+    base: async (opts) => {
+      // a real runner reports the pid, then streams events while working
+      opts.onSpawn?.(4242);
+      opts.onEvent?.({ type: "system", subtype: "init" });
+      opts.onEvent?.({ type: "assistant", message: { role: "assistant", content: [] } });
+      return okResult({ ok: true }, 0.01);
+    },
+  });
+
+  await run({ cwd: "/tmp/proj", role: "implementer", prompt: "p", taskId: t.id });
+
+  const s = listTaskSessions(db, t.id)[0];
+  expect(s?.pid).toBe(4242); // liveness/Stop/Kill now work for pipeline runs
+  const events = broadcasts.filter((b) => b.name === "session:event");
+  expect(events).toHaveLength(2);
+  expect((events[0]?.payload as { sessionId: string }).sessionId).toBe(s?.id ?? "");
+});

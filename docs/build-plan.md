@@ -1098,3 +1098,25 @@ review and revert a memory entry.
   gated `git` under `acceptEdits`. Fixed both — see **[execution-flow-hardening.md](execution-flow-hardening.md)**
   (orphan reconcile + session watchdog + stalled surfacing; Implementer runs with full access inside
   its sandboxed worktree; Delivery commits deterministically). Invariant: a run is never silently dead.
+
+- **2026-06-09 · Live session streaming + honest liveness (terminal-in-the-app).** From real use:
+  opening a running implementer session showed *"No transcript on disk yet"* + *"This process has
+  ended"* while Status said *running* — and "Open in terminal" on a live run resumed a frozen fork
+  while the background process kept writing. Root causes: (1) `transcriptPathFor` encoded only `/`→`-`
+  but claude encodes **every non-alphanumeric** char (worktrees live under `.cadence-worktrees` → the
+  dot broke every worktree transcript path); (2) one-shot pipeline runs used `--output-format json`
+  (zero output until exit), recorded **no pid**, and `isLive` only meant "warm handle in memory".
+  Fixed end-to-end: encoding corrected + `findTranscriptPath` glob fallback + self-healing of stale DB
+  rows (transcript GET, watchdog, run finish); one-shot agents now run `stream-json
+  --include-partial-messages` with every event forwarded over WS (`session:event`) and the child pid
+  recorded; `SessionDetail` gained a **terminal-style live Output view** (dark mono frame, ⏺ tool
+  lines, collapsed prompts/results/thinking, token-level typing cursor, stick-to-bottom + "Jump to
+  latest", 1s file poll + live deltas, content-dedupe between the two sources); liveness is now
+  `isLive` (process alive: warm handle OR running pid) + `canChat` (warm stdin) with one honest state
+  line (running / not-responding / ended — never both); Stop/Kill signal by pid for pipeline runs too;
+  "Open in terminal" on a live run is now **Take over in terminal** (409 `session_running` otherwise):
+  stop → wait → SIGKILL escalate → `claude --resume` — no more two-writers fork; missing cwd (cleaned
+  worktree) → clear 409 instead of a broken `cd`; `reconcileOrphans` is pid-aware (a claude child that
+  survived a gateway restart keeps its honest *running* + streams from the transcript). Sessions list:
+  task names, pulsing live rows, elapsed time. Tests: 274 pass (encoding/fallback/self-heal, stream
+  runner, recording pid+events, takeover route, live-transcript reducer/dedupe, detail states).

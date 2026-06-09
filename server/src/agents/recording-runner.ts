@@ -1,9 +1,9 @@
-import type { AgentResult } from "@cadence/shared";
+import type { AgentResult, ClaudeEvent } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
 import { getTask } from "../tasks";
-import { transcriptPathFor } from "../transcripts";
+import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
 import { type AgentRunOptions, modelForRole, runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
@@ -60,20 +60,44 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
       return base({ ...opts, sessionId: id });
     }
 
-    const finish = (patch: Partial<typeof sessions.$inferInsert>): void => {
+    const update = (patch: Partial<typeof sessions.$inferInsert>): void => {
       try {
-        db.update(sessions)
-          .set({ ...patch, endedAt: Date.now() })
-          .where(eq(sessions.id, id))
-          .run();
+        db.update(sessions).set(patch).where(eq(sessions.id, id)).run();
       } catch (err) {
-        console.warn(`[cadence] session ${id} finalize skipped:`, (err as Error).message);
+        console.warn(`[cadence] session ${id} update skipped:`, (err as Error).message);
       }
+    };
+
+    const finish = (patch: Partial<typeof sessions.$inferInsert>): void => {
+      // Self-heal the transcript pointer: if claude wrote the file somewhere else than
+      // our guess (encoding drift), relink it so History/search/watchdog all find it.
+      const onDisk = findTranscriptPath(id, opts.cwd);
+      update({
+        ...patch,
+        endedAt: Date.now(),
+        ...(onDisk ? { transcriptPath: onDisk } : {}),
+      });
       hub.broadcast({ type: "event", name: "session:updated", payload: id });
     };
 
     try {
-      const result = await base({ ...opts, sessionId: id });
+      const result = await base({
+        ...opts,
+        sessionId: id,
+        // Track the child pid so liveness ("is this run actually alive?"), Stop/Kill and
+        // the watchdog work for pipeline runs — not just warm chats.
+        onSpawn: (pid) => {
+          opts.onSpawn?.(pid);
+          update({ pid });
+          hub.broadcast({ type: "event", name: "session:updated", payload: id });
+        },
+        // Forward every stream-json event to the web clients — the same contract warm
+        // sessions use — so an open Session view streams this run live, token by token.
+        onEvent: (event: ClaudeEvent) => {
+          opts.onEvent?.(event);
+          hub.broadcast({ type: "event", name: "session:event", payload: { sessionId: id, event } });
+        },
+      });
       // A run that errored or produced no parseable output is a failure worth seeing —
       // the transcript still exists, and that's exactly when you want to read it.
       const ok = !result.isError && (result.text.trim() !== "" || result.json != null);

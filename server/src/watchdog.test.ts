@@ -111,3 +111,14 @@ test("checkSessions: a live fresh session is left alone; a long-idle one is surf
   // a second pass must not re-nudge the same session
   expect(checkSessions(db, hub, notified).stuck).toBe(0);
 });
+
+test("reconcileOrphans leaves a session whose process survived the restart running", () => {
+  const taskId = implementingTask("survivor");
+  const sid = insertSession({ taskId, status: "running", role: "implementer", pid: process.pid });
+
+  const ended = reconcileOrphans(db, new WsHub());
+
+  expect(ended).toBe(0);
+  expect(getSession(db, sid)?.status).toBe("running"); // still honestly running
+  expect(getTask(db, taskId)?.status).toBe("implementing"); // not rescued — its run is alive
+});

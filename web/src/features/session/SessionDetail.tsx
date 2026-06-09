@@ -14,7 +14,7 @@ import {
 } from "../../lib/api";
 import { cn } from "../../lib/utils";
 import { HandoffButtons } from "./HandoffButtons";
-import { SessionTranscript } from "./SessionTranscript";
+import { LiveTranscript } from "./LiveTranscript";
 
 const PERMISSION_LABELS: Record<string, string> = {
   auto: "Auto",
@@ -27,12 +27,18 @@ const PERMISSION_LABELS: Record<string, string> = {
 };
 
 function statusDot(status: string, isLive: boolean): string {
-  if (status === "running" || status === "spawning") return "bg-green-500 animate-pulse";
+  // Running but the process isn't responding → amber, not a lying green pulse.
+  if (status === "running" || status === "spawning")
+    return isLive ? "bg-green-500 animate-pulse" : "bg-amber-500";
   if (status === "awaiting_feedback") return "bg-yellow-500";
   if (status === "failed") return "bg-red-500";
   if (status === "killed") return "bg-red-400";
   if (status === "idle") return isLive ? "bg-green-500" : "bg-muted-foreground";
   return "bg-muted-foreground"; // done
+}
+
+function isRunning(status: string): boolean {
+  return status === "running" || status === "spawning";
 }
 
 function formatDuration(start: number | null, end: number | null): string {
@@ -98,7 +104,7 @@ export function SessionDetail({
     // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop dismiss; Close button is the keyboard path
     <div className="fixed inset-0 z-[55] flex justify-end bg-black/50" onClick={onClose}>
       <aside
-        className="flex h-full w-[680px] max-w-full flex-col overflow-auto border-l border-border bg-background"
+        className="flex h-full w-[760px] max-w-full flex-col overflow-auto border-l border-border bg-background"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-start justify-between gap-3 border-b border-border px-5 py-3">
@@ -125,14 +131,16 @@ export function SessionDetail({
           <div className="flex flex-1 flex-col gap-6 p-5">
             {/* Controls */}
             <div className="flex flex-wrap items-center gap-2">
+              {s.canChat ? (
+                <LabeledIconButton
+                  icon={<MessageSquare />}
+                  label="Continue chat"
+                  size="sm"
+                  onClick={() => onContinue(sessionId)}
+                />
+              ) : null}
               {s.isLive ? (
                 <>
-                  <LabeledIconButton
-                    icon={<MessageSquare />}
-                    label="Continue chat"
-                    size="sm"
-                    onClick={() => onContinue(sessionId)}
-                  />
                   <LabeledIconButton
                     icon={<Square />}
                     label="Stop"
@@ -151,7 +159,7 @@ export function SessionDetail({
                   />
                 </>
               ) : null}
-              <HandoffButtons sessionId={sessionId} cwd={s.cwd} />
+              <HandoffButtons sessionId={sessionId} cwd={s.cwd} live={s.isLive} />
               <LabeledIconButton
                 icon={<Trash2 />}
                 label="Delete"
@@ -160,12 +168,24 @@ export function SessionDetail({
                 onClick={() => setConfirmDelete(true)}
               />
             </div>
-            {!s.isLive ? (
-              <p className="-mt-3 text-xs text-muted-foreground">
-                This process has ended — use <span className="font-medium">Open in terminal</span> to resume it
-                with <code className="font-mono">claude --resume</code>.
+            {/* One honest state line — never "ended" while the process is alive. */}
+            {s.isLive && isRunning(s.status) ? (
+              <p className="-mt-3 text-xs text-emerald-400">
+                Running — output streams below in real time.
+                {!s.canChat
+                  ? " To steer it yourself, use Take over in terminal (stops the background run first)."
+                  : ""}
               </p>
-            ) : null}
+            ) : !s.isLive && isRunning(s.status) ? (
+              <p className="-mt-3 text-xs text-amber-400">
+                The process isn’t responding — Cadence will mark this run as ended shortly.
+              </p>
+            ) : (
+              <p className="-mt-3 text-xs text-muted-foreground">
+                This session has ended — <span className="font-medium">Open in terminal</span> resumes it
+                with <code className="font-mono">claude --resume</code> so you can keep working.
+              </p>
+            )}
 
             {/* Details */}
             <dl className="grid grid-cols-[7rem_1fr] items-center gap-y-2.5 text-sm">
@@ -275,10 +295,18 @@ export function SessionDetail({
               </dl>
             </section>
 
-            {/* History */}
+            {/* Output — the live terminal view (history + realtime streaming) */}
             <section className="border-t border-border pt-5">
-              <h3 className="mb-3 text-sm font-medium">History</h3>
-              <SessionTranscript sessionId={sessionId} />
+              <div className="mb-3 flex items-center gap-2">
+                <h3 className="text-sm font-medium">Output</h3>
+                {s.isLive && isRunning(s.status) ? (
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" />
+                    live
+                  </span>
+                ) : null}
+              </div>
+              <LiveTranscript sessionId={sessionId} running={s.isLive && isRunning(s.status)} />
             </section>
           </div>
         )}

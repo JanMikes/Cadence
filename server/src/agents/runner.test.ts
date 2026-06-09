@@ -35,3 +35,34 @@ test("runAgent surfaces structured JSON the agent returns", async () => {
   const res = await runAgent({ cwd: tmpdir(), role: "triage", prompt: "triage this", command: MOCK_CMD });
   expect(res.json).toEqual({ project: "acme", priority: "high" });
 });
+
+test("runAgent streams events live (onEvent) and reports the child pid (onSpawn)", async () => {
+  process.env.CADENCE_MOCK_AGENT_STREAM = "1";
+  try {
+    const types: string[] = [];
+    let pid: number | null = null;
+    const res = await runAgent({
+      cwd: tmpdir(),
+      role: "implementer",
+      prompt: "build it",
+      command: MOCK_CMD,
+      onSpawn: (p) => {
+        pid = p;
+      },
+      onEvent: (ev) => types.push(ev.type),
+    });
+
+    expect(pid).toBeGreaterThan(0); // child pid delivered right after spawn
+    // the full stream arrived in order, ending with the result event
+    expect(types[0]).toBe("system");
+    expect(types).toContain("stream_event");
+    expect(types).toContain("assistant");
+    expect(types[types.length - 1]).toBe("result");
+    // …and the final AgentResult still parses from the result event
+    expect(res.text).toBe("echo: build it");
+    expect(res.costUsd).toBeCloseTo(0.002, 4);
+    expect(res.isError).toBe(false);
+  } finally {
+    delete process.env.CADENCE_MOCK_AGENT_STREAM;
+  }
+});

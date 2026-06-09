@@ -25,6 +25,59 @@ export function getSession(db: Db, id: string): Session | null {
   return row ?? null;
 }
 
+/** Whether `pid` is a live process. Treats EPERM (exists, not ours) as alive. */
+export function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException)?.code === "EPERM";
+  }
+}
+
+const RUNNING_STATUSES: ReadonlySet<string> = new Set(["spawning", "running"]);
+
+/**
+ * Honest liveness for any session row (spec §10: visible system status):
+ * - canChat — Cadence holds a warm stdin handle (Continue chat works).
+ * - isLive  — the process is actually alive: a warm handle OR a running pid
+ *   (oneshot pipeline runs, and runs that survived a gateway restart).
+ */
+export function sessionRunState(spawn: SpawnManager, s: Session): { canChat: boolean; isLive: boolean } {
+  const canChat = spawn.liveIds().includes(s.id);
+  const isLive =
+    canChat || (RUNNING_STATUSES.has(s.status) && s.pid != null && isProcessAlive(s.pid));
+  return { canChat, isLive };
+}
+
+/**
+ * Stop (graceful) or kill (hard) ANY live session: prefer the warm handle
+ * (EOF / SIGINT via the SpawnManager), else signal the recorded pid directly —
+ * this makes Stop/Kill work for one-shot pipeline runs too. Returns false when
+ * there is nothing alive to signal.
+ */
+export function signalSession(spawn: SpawnManager, s: Session, action: "stop" | "kill"): boolean {
+  if (spawn.liveIds().includes(s.id)) {
+    if (action === "kill") spawn.kill(s.id);
+    else spawn.close(s.id);
+    return true;
+  }
+  if (s.pid != null && isProcessAlive(s.pid)) {
+    try {
+      process.kill(s.pid, action === "kill" ? "SIGKILL" : "SIGINT");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Persist a corrected transcript path (self-heal — see resolveTranscriptPath). */
+export function recordTranscriptPath(db: Db, id: string, path: string): void {
+  db.update(sessions).set({ transcriptPath: path }).where(eq(sessions.id, id)).run();
+}
+
 export function listSessions(db: Db): Session[] {
   return db.select().from(sessions).orderBy(desc(sessions.startedAt)).all();
 }

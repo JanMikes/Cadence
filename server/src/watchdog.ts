@@ -1,10 +1,13 @@
 import { statSync } from "node:fs";
+import { eq } from "drizzle-orm";
 import type { Db } from "./db/client";
+import { sessions } from "./db/schema";
 import { notifyOnTransition } from "./notify";
 import { taskDiff } from "./review";
-import { endSession, listSessions } from "./sessions";
+import { endSession, isProcessAlive, listSessions } from "./sessions";
 import { appendContext, readPlan } from "./store/store";
 import { getTask, listTasks, updateTask } from "./tasks";
+import { resolveTranscriptPath } from "./transcripts";
 import type { WsHub } from "./ws";
 
 /**
@@ -29,22 +32,24 @@ const RUNNING: ReadonlySet<string> = new Set(["spawning", "running"]);
 export const STUCK_IDLE_MS = Number(process.env.CADENCE_SESSION_STUCK_MS) || 10 * 60_000;
 const DEFAULT_INTERVAL_MS = 60_000;
 
-/** Whether `pid` is a live process. Treats EPERM (exists, not ours) as alive. */
-export function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException)?.code === "EPERM";
-  }
-}
+// Re-exported so existing imports keep working; the implementation lives with the
+// other session-liveness helpers.
+export { isProcessAlive } from "./sessions";
 
 /** Most recent sign of life for a session: its transcript's mtime, else when it started. */
-function lastActivityMs(session: { transcriptPath: string | null; startedAt: number | null }): number {
+function lastActivityMs(
+  db: Db,
+  session: { id: string; cwd: string; transcriptPath: string | null; startedAt: number | null },
+): number {
   let t = session.startedAt ?? 0;
-  if (session.transcriptPath) {
+  // Resolve (and self-heal) the real on-disk transcript — a stale path must not
+  // make a busily-writing run look idle.
+  const path = resolveTranscriptPath(session, (fixed) => {
+    db.update(sessions).set({ transcriptPath: fixed }).where(eq(sessions.id, session.id)).run();
+  });
+  if (path) {
     try {
-      const m = statSync(session.transcriptPath).mtimeMs;
+      const m = statSync(path).mtimeMs;
       if (m > t) t = m;
     } catch {
       // transcript not written yet — fall back to startedAt
@@ -100,22 +105,30 @@ export function recoverStrandedTask(db: Db, hub: WsHub, taskId: string, reason: 
 
 /**
  * Startup reconciliation — runs regardless of autonomy (a correctness concern). Ends every
- * still-running session left by a previous process and rescues stranded tasks. Returns the
- * number of sessions reconciled.
+ * still-running session whose process is actually gone and rescues stranded tasks. A claude
+ * child CAN outlive a gateway restart (it's a separate process) — those keep their honest
+ * "running" status: output keeps streaming from the transcript, and Stop/Kill work by pid.
+ * Returns the number of sessions reconciled.
  */
 export function reconcileOrphans(db: Db, hub: WsHub): number {
   let ended = 0;
+  const aliveTasks = new Set<string>();
   for (const s of listSessions(db)) {
     if (!RUNNING.has(s.status)) continue;
+    if (s.pid != null && isProcessAlive(s.pid)) {
+      if (s.taskId) aliveTasks.add(s.taskId);
+      continue; // survived the restart — still genuinely running
+    }
     endSession(db, s.id, "failed");
     hub.broadcast({ type: "event", name: "session:updated", payload: s.id });
     ended += 1;
     if (s.taskId) recoverStrandedTask(db, hub, s.taskId, `the ${s.role} run was interrupted by an app restart`);
   }
-  // Belt-and-suspenders: after a restart no execution run is alive, so any task still in an
-  // active-work state is stranded even if its session row was already cleaned up.
+  // Belt-and-suspenders: any task still in an active-work state without a surviving run is
+  // stranded even if its session row was already cleaned up.
   for (const status of ACTIVE_WORK) {
     for (const t of listTasks(db, { status })) {
+      if (aliveTasks.has(t.id)) continue;
       recoverStrandedTask(db, hub, t.id, "its run did not survive an app restart");
     }
   }
@@ -161,10 +174,11 @@ export function checkSessions(
       continue;
     }
 
-    if (now - lastActivityMs(s) > STUCK_IDLE_MS && !notified.has(s.id)) {
+    const lastActivity = lastActivityMs(db, s);
+    if (now - lastActivity > STUCK_IDLE_MS && !notified.has(s.id)) {
       notified.add(s.id);
       stuck += 1;
-      const mins = Math.round((now - lastActivityMs(s)) / 60_000);
+      const mins = Math.round((now - lastActivity) / 60_000);
       hub.broadcast({
         type: "event",
         name: "notify",

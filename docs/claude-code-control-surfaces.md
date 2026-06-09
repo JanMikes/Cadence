@@ -28,8 +28,12 @@ API — you read files. Control is a separate, equally simple subprocess layer.
 ### 2.1 Transcripts ✅
 `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`
 
-- `<encoded-cwd>` = the absolute cwd with `/` → `-` (e.g. `/Users/janmikes/www/productiver`
-  → `-Users-janmikes-www-productiver`). Maps a working dir to its sessions trivially.
+- `<encoded-cwd>` = the absolute **real** (symlink-resolved) cwd with every
+  **non-alphanumeric character** → `-` — not just `/`! Dots and underscores become dashes too
+  (✅ verified on disk: `/www/.cadence-worktrees/x` → `-www--cadence-worktrees-x`,
+  `/www/ceskakruta.cz` → `-www-ceskakruta-cz`). Because the rule may drift between claude
+  versions, resolve defensively: try the encoded guess, then scan `projects/*/<session-id>.jsonl`
+  by session id (`findTranscriptPath` in `server/src/transcripts.ts`).
 - **Append-only**, one JSON object per line. Track a byte offset and read the delta to tail it.
 - It is a **DAG, not a flat log**: every line has `uuid` + `parentUuid`. Forks and subagent
   sidechains (`isSidechain: true`) branch off. Walk parent pointers; don't assume order.

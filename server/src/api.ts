@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
   APP_NAME,
   type AppendContextInput,
@@ -78,15 +79,20 @@ import {
 } from "./store/store";
 import {
   deleteSession,
+  endSession,
   getSession,
+  isProcessAlive,
   listSessions,
   listTaskSessions,
+  recordTranscriptPath,
+  sessionRunState,
+  signalSession,
   type SpawnManager,
   updateSession,
 } from "./sessions";
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
-import { readLiveSessions, readTranscript } from "./transcripts";
+import { readLiveSessions, readTranscript, resolveTranscriptPath } from "./transcripts";
 import { readUsageStats } from "./usage";
 import {
   createTask,
@@ -831,18 +837,18 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return methodNotAllowed();
   }
 
-  // Stop (graceful EOF) / kill (SIGINT) a live warm session. 409 if it isn't live.
+  // Stop (graceful) / kill (hard) any live session — warm handle or recorded pid.
+  // 409 if nothing is alive to signal.
   const sessionSignalMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/(stop|kill)$/);
   if (sessionSignalMatch) {
     if (method !== "POST") return methodNotAllowed();
     const id = sessionSignalMatch[1] as string;
     const action = sessionSignalMatch[2] as "stop" | "kill";
-    if (!getSession(ctx.db, id)) return notFound(pathname);
-    if (!ctx.spawn.liveIds().includes(id)) {
+    const session = getSession(ctx.db, id);
+    if (!session) return notFound(pathname);
+    if (!signalSession(ctx.spawn, session, action)) {
       return Response.json({ error: "session_not_live", id }, { status: 409 });
     }
-    if (action === "kill") ctx.spawn.kill(id);
-    else ctx.spawn.close(id);
     return Response.json({ ok: true, action });
   }
 
@@ -854,7 +860,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (!session) return notFound(pathname);
     const withLive = (s: typeof session): SessionDetail => ({
       ...s,
-      isLive: ctx.spawn.liveIds().includes(id),
+      ...sessionRunState(ctx.spawn, s),
     });
     if (method === "GET") return Response.json(withLive(session));
     if (method === "PATCH") {
@@ -880,7 +886,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       return Response.json(withLive(updated));
     }
     if (method === "DELETE") {
-      ctx.spawn.kill(id); // stop the process if it's still live before dropping the row
+      signalSession(ctx.spawn, session, "kill"); // stop the process (warm or pid) before dropping the row
       const deleted = deleteSession(ctx.db, id);
       ctx.hub.broadcast({ type: "event", name: "session:deleted", payload: id });
       return Response.json({ deleted });
@@ -888,23 +894,65 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return methodNotAllowed();
   }
 
+  // Terminal handoff. A RUNNING session can't be safely resumed in a terminal (two
+  // writers on one transcript = the "frozen fork" confusion), so:
+  //   - default        → 409 session_running (the UI offers Take over instead)
+  //   - ?mode=takeover → stop the background process first, then resume interactively
   const openTermMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/open-terminal$/);
   if (openTermMatch) {
     if (method !== "POST") return methodNotAllowed();
     const session = getSession(ctx.db, openTermMatch[1] as string);
     if (!session) return notFound(pathname);
+    if (!existsSync(session.cwd)) {
+      return Response.json(
+        { error: "cwd_missing", message: `The working directory is gone (${session.cwd}).` },
+        { status: 409 },
+      );
+    }
     const command = buildResumeCommand(session.cwd, session.id);
+    const { isLive } = sessionRunState(ctx.spawn, session);
+    let tookOver = false;
+    if (isLive) {
+      if (url.searchParams.get("mode") !== "takeover") {
+        return Response.json({ error: "session_running", command }, { status: 409 });
+      }
+      signalSession(ctx.spawn, session, "stop");
+      const deadline = Date.now() + 5000;
+      while (session.pid != null && isProcessAlive(session.pid) && Date.now() < deadline) {
+        await Bun.sleep(150);
+      }
+      if (session.pid != null && isProcessAlive(session.pid)) {
+        signalSession(ctx.spawn, session, "kill");
+        await Bun.sleep(500);
+        if (isProcessAlive(session.pid)) {
+          return Response.json(
+            { error: "stop_failed", message: "The running process did not stop — try Kill first." },
+            { status: 500 },
+          );
+        }
+      }
+      // The row may already be finalized by the warm-handle close hook; make sure.
+      const after = getSession(ctx.db, session.id);
+      if (after && (after.status === "running" || after.status === "spawning")) {
+        endSession(ctx.db, session.id, "killed");
+      }
+      ctx.hub.broadcast({ type: "event", name: "session:updated", payload: session.id });
+      tookOver = true;
+    }
     ctx.openTerminal(readSettings().preferredTerminal, command);
-    return Response.json({ ok: true, command });
+    return Response.json({ ok: true, command, tookOver });
   }
 
   const transcriptMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/transcript$/);
   if (transcriptMatch) {
     if (method !== "GET") return methodNotAllowed();
     const session = getSession(ctx.db, transcriptMatch[1] as string);
-    if (!session?.transcriptPath) return notFound(pathname);
+    if (!session) return notFound(pathname);
+    // Resolve (and self-heal) where claude actually wrote the file — never 404 a
+    // session that simply hasn't produced output yet; the UI renders the empty state.
+    const path = resolveTranscriptPath(session, (fixed) => recordTranscriptPath(ctx.db, session.id, fixed));
     const limit = Number(url.searchParams.get("limit")) || undefined;
-    return Response.json(readTranscript(session.transcriptPath, { limit }));
+    return Response.json(path ? readTranscript(path, { limit }) : []);
   }
 
   const sessionMsgMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
