@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 2 — in progress (self-contained sidecar).
-- **Last completed step:** 2.1 (sidecar build script).
-- **Next step:** 2.2 (sidecar smoke).
+- **Current stage:** Stage 2 — complete. Next: Stage 3 (Tauri scaffold + supervisor).
+- **Last completed step:** 2.2 (sidecar smoke).
+- **Next step:** 3.1 (scaffold `src-tauri/` + config).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (2.1 done — sidecar compiles to a Mach-O arm64 binary).
+- **Last updated:** 2026-06-09 (Stage 2 done — sidecar smoke green, packaging risk retired).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -134,7 +134,7 @@ only if an install genuinely fails — recorded as a Blocker.)
   compile `server/src/index.ts --compile --minify --sourcemap --outfile src-tauri/binaries/cadence-server-<triple>`,
   then copy `web/dist→src-tauri/resources/web` and `server/drizzle→src-tauri/resources/drizzle`. Root script `sidecar:build`.
   - Verify: after `bun run --filter @cadence/web build` + `bun run sidecar:build`, the triple-named binary + both resource dirs exist (ignored by git).
-- [ ] **2.2 Sidecar smoke.** `[auto]` `scripts/sidecar-smoke.ts`: run the compiled binary with `CADENCE_PORT=0`,
+- [x] **2.2 Sidecar smoke.** `[auto]` `scripts/sidecar-smoke.ts`: run the compiled binary with `CADENCE_PORT=0`,
   `CADENCE_HOME=<tmp>`, `CADENCE_WEB_DIR=<resources/web>`, `CADENCE_MIGRATIONS_DIR=<resources/drizzle>`; read the
   printed URL (or `runtime.json`); assert `GET /api/health` ok, `index.html` served, `<tmp>/cadence.db` created;
   kill the child. Root script `sidecar:smoke`.
@@ -306,3 +306,16 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   `bun test` 236 pass; `bun run build` green. *Next:* 2.2 — `scripts/sidecar-smoke.ts` runs the
   compiled binary on a clean tmp home (port 0) and curls `/api/health`, retiring the
   `bun:sqlite`/static-serving packaging risk.
+
+- **2026-06-09 · 2.2 (sidecar smoke).** Added `scripts/sidecar-smoke.ts` + root script
+  `sidecar:smoke`. It finds the `cadence-server-<triple>` binary (skipping the `index.js.map`
+  sourcemap), launches it with `CADENCE_PORT=0` + a fresh tmp `CADENCE_HOME` and
+  `CADENCE_WEB_DIR`/`CADENCE_MIGRATIONS_DIR` pointed at the staged resources, waits for the gateway to
+  write `runtime.json` (the port-discovery path from 1.3), then asserts `GET /api/health` ok +
+  `index.html` served + `cadence.db` created, kills the child, removes the tmp home. **Verified:**
+  ran `bun run sidecar:smoke` twice → both exit 0 on ephemeral ports (53500, 53503), health ok,
+  index served, DB created. This is the big de-risk: the standalone `--compile` binary boots,
+  opens **bun:sqlite**, applies the bundled **drizzle** migrations, and serves the bundled web —
+  **with no Bun installed in its env**. `bun test` 236 pass; `bun run build` green. Stage 2 complete.
+  *Next:* 3.1 — scaffold `src-tauri/` (Cargo crate + `tauri.conf.json` + `lib.rs` with a
+  `tauri::test` mock-runtime test); first Rust step, so `cargo build`/`cargo test` gates begin.
