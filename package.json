@@ -14,7 +14,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "bun server/src/db/migrate.ts",
     "sidecar:build": "bun scripts/build-sidecar.ts",
-    "sidecar:smoke": "bun scripts/sidecar-smoke.ts"
+    "sidecar:smoke": "bun scripts/sidecar-smoke.ts",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.2",

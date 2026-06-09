@@ -1,0 +1,52 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Cadence",
+  "version": "0.1.0",
+  "identifier": "me.cadence.app",
+  "build": {
+    "frontendDist": "../web/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run --filter @cadence/web build && bun run sidecar:build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Cadence",
+        "width": 1100,
+        "height": 760,
+        "minWidth": 720,
+        "minHeight": 480,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Productivity",
+    "shortDescription": "Your backlog, in flow.",
+    "longDescription": "Cadence — a local, single-user task-management + autonomous-execution platform that wraps Claude Code.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/cadence-server"],
+    "resources": ["resources/**/*"],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 2 — complete. Next: Stage 3 (Tauri scaffold + supervisor).
-- **Last completed step:** 2.2 (sidecar smoke).
-- **Next step:** 3.1 (scaffold `src-tauri/` + config).
+- **Current stage:** Stage 3 — in progress (Tauri scaffold + supervisor).
+- **Last completed step:** 3.1 (scaffold `src-tauri/` + config).
+- **Next step:** 3.2 (sidecar supervisor in Rust).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (Stage 2 done — sidecar smoke green, packaging risk retired).
+- **Last updated:** 2026-06-09 (3.1 done — cargo build + mock-runtime cargo test green).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -143,7 +143,7 @@ only if an install genuinely fails — recorded as a Blocker.)
 **Stage 2 acceptance:** `sidecar:build` then `sidecar:smoke` pass from a clean checkout — the gateway runs self-contained, no source-relative paths.
 
 ## Stage 3 — Tauri scaffold + supervisor
-- [ ] **3.1 Scaffold `src-tauri/` + config.** `[auto]` Create the crate (`bun x tauri init` or hand-authored).
+- [x] **3.1 Scaffold `src-tauri/` + config.** `[auto]` Create the crate (`bun x tauri init` or hand-authored).
   `tauri.conf.json`: identifier `me.cadence.app`, product "Cadence", main window created **hidden**;
   `build.beforeDevCommand="bun run dev"`, `build.devUrl="http://localhost:5173"`,
   `build.beforeBuildCommand` = web build + `sidecar:build`; `bundle.externalBin=["binaries/cadence-server"]`,
@@ -319,3 +319,24 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   **with no Bun installed in its env**. `bun test` 236 pass; `bun run build` green. Stage 2 complete.
   *Next:* 3.1 — scaffold `src-tauri/` (Cargo crate + `tauri.conf.json` + `lib.rs` with a
   `tauri::test` mock-runtime test); first Rust step, so `cargo build`/`cargo test` gates begin.
+
+- **2026-06-09 · 3.1 (scaffold `src-tauri/` + config).** Scaffolded via `bun x tauri init --ci --force`
+  (the dir already held generated `binaries/`+`resources/`; `--force` regenerates the scaffold incl.
+  placeholder icons — those artifacts are regenerable, so I re-ran `sidecar:build` after). Customized:
+  `tauri.conf.json` — identifier `me.cadence.app`, productName "Cadence", **main window hidden**
+  (`visible:false`, label "main"), `beforeBuildCommand` = web build + `sidecar:build`,
+  `bundle.externalBin:["binaries/cadence-server"]`, `bundle.resources:["resources/**/*"]`, macOS
+  category Productivity + `minimumSystemVersion`. `Cargo.toml` — added `tauri-plugin-shell` + a
+  **dev-dep** `tauri` with the `test` feature (MockRuntime for `cargo test` only, not release).
+  `capabilities/default.json` — `shell:allow-execute` scoped to the sidecar
+  `{name:"binaries/cadence-server",sidecar:true,args:true}`. `lib.rs` — register the shell plugin +
+  a `#[cfg(test)]` `builds_on_the_mock_runtime` test (`mock_builder().build(mock_context(noop_assets()))`).
+  **Decisions/deviations:** kept the internal crate name `app`/`app_lib` (user-facing name is
+  productName "Cadence") to avoid a binary/productName mismatch needing `mainBinaryName`; used the
+  init **placeholder icons** (no brand icon yet — fine for local use; a custom `.icns`/`tauri icon`
+  can come later). NOTE: `generate_context!` validates `externalBin` at compile time, so the
+  triple-named sidecar binary must exist before `cargo build` — `sidecar:build` is wired into
+  `beforeBuildCommand` and was re-run here. Verified: `cargo build` Finished 35.85s; `cargo test`
+  1 pass (`builds_on_the_mock_runtime`); `bun test` 236 pass; `bun run build` green. `src-tauri/Cargo.lock`
+  is tracked; `target/binaries/resources/gen` git-ignored (confirmed). *Next:* 3.2 — the Rust sidecar
+  supervisor (spawn cadence-server, parse stdout→URL, navigate + show the window, kill on exit).
