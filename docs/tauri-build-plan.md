@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 5 — complete. Next: Stage 6 (release, docs, acceptance).
-- **Last completed step:** 5.5 (autostart).
-- **Next step:** 6.1 (release build + docs).
+- **Current stage:** Stage 6 — in progress (release, docs, acceptance).
+- **Last completed step:** 6.1 (release build + docs).
+- **Next step:** 6.2 (final acceptance + ledger close).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (Stage 5 done — full native shell; app:smoke covers single-instance + autostart).
+- **Last updated:** 2026-06-09 (6.1 done — Cadence.app + .dmg; app:smoke green vs release; tauri-wrap.md).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -202,7 +202,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 **Stage 5 acceptance:** tray, hotkey, notifications, single-instance, autostart implemented; all `[auto]` checks green; §Visual items queued.
 
 ## Stage 6 — Release, docs, acceptance
-- [ ] **6.1 Release build + docs.** `[auto]` `bun x tauri build` → `.app` + `.dmg`. Add `docs/tauri-wrap.md` (prereqs,
+- [x] **6.1 Release build + docs.** `[auto]` `bun x tauri build` → `.app` + `.dmg`. Add `docs/tauri-wrap.md` (prereqs,
   dev workflow, `sidecar:build`/`app:smoke`/`tauri:build`, signing/notarization notes — unsigned is fine for personal local use).
   - Verify `[auto]`: `bun x tauri build` produces a launchable bundle; `bun run app:smoke` green against the release build. §Visual: install the `.dmg` on a clean `~/.cadence` → first run migrates + boots.
 - [ ] **6.2 Final acceptance + ledger close.** `[auto]` Confirm every `[auto]` check across all stages is green
@@ -225,6 +225,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 - [ ] (5.3) A `needs_feedback`/`delivered` event shows a native macOS notification banner.
 - [ ] (5.4) Launching a 2nd time focuses the running window (no duplicate).
 - [ ] (5.5) Enable "Launch at login", reboot → Cadence starts to the tray.
+- [ ] (6.1) Install the `.dmg` on a clean `~/.cadence` → first run migrates the DB + boots to the UI.
 
 ## Risks & mitigations
 | Risk | Mitigation | Step |
@@ -484,3 +485,14 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   when mocked); `bun run app:smoke` exits 0 — *"autostart ok — plist created on enable, removed on
   disable"*, no leftover; `bun run build` + `typecheck` green. Stage 5 (full native shell) complete.
   *Next:* 6.1 — release build + `docs/tauri-wrap.md`.
+
+- **2026-06-09 · 6.1 (release build + docs).** Ran a clean `bun x tauri build` → **`Cadence.app`** +
+  **`Cadence_0.1.0_aarch64.dmg`** (28 MB). Wrote `docs/tauri-wrap.md` — architecture (sidecar
+  supervisor + port discovery + relocatable gateway), prerequisites, the script table
+  (`tauri:dev`/`tauri:build`/`sidecar:build`/`sidecar:smoke`/`app:smoke`), dev + release workflow, the
+  native-shell features, PATH/`claude` resolution, the macOS-honest verification model, and
+  signing/notarization notes (unsigned is fine for personal local use). **Verified:** `bun x tauri
+  build` produces a launchable bundle; `bun run app:smoke` exits 0 against the **release** build (health
+  + single-instance + clean shutdown + autostart, no orphan/leftover). Appended the §Visual (6.1)
+  dmg-install item. *Next:* 6.2 — final acceptance: confirm every `[auto]` check green, flip 4.7 → done
+  in `build-plan.md`, tick `backlog.md`, update `CLAUDE.md`, print 🎉 + the visual checklist.
