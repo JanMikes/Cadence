@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 1 — in progress (relocatable gateway, pure TS).
-- **Last completed step:** 1.2 (`CADENCE_MIGRATIONS_DIR` override).
-- **Next step:** 1.3 (runtime port file).
+- **Current stage:** Stage 1 — complete. Next: Stage 2 (self-contained sidecar).
+- **Last completed step:** 1.3 (runtime port file).
+- **Next step:** 2.1 (sidecar build script).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (1.2 done — 235 tests).
+- **Last updated:** 2026-06-09 (Stage 1 done — 236 tests).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -122,7 +122,7 @@ only if an install genuinely fails — recorded as a Blocker.)
   - Verify: `bun test` — a gateway with `CADENCE_WEB_DIR=<fixture>` serves the fixture `index.html`; existing tests green; `bun run build` green.
 - [x] **1.2 `CADENCE_MIGRATIONS_DIR` override.** `[auto]` `server/src/db/client.ts`: `migrationsFolder` reads `process.env.CADENCE_MIGRATIONS_DIR ?? <relative default>`.
   - Verify: `bun test` — `openAndMigrate` on a temp DB with `CADENCE_MIGRATIONS_DIR=server/drizzle` creates all tables; existing migration tests green; `bun run build` green.
-- [ ] **1.3 Runtime port file.** `[auto]` On startup the gateway writes `{ "port": <n>, "url": "...", "pid": <n> }` to `$CADENCE_HOME/runtime.json`; remove it on graceful stop. Enables the app-smoke + future tooling to find the ephemeral port.
+- [x] **1.3 Runtime port file.** `[auto]` On startup the gateway writes `{ "port": <n>, "url": "...", "pid": <n> }` to `$CADENCE_HOME/runtime.json`; remove it on graceful stop. Enables the app-smoke + future tooling to find the ephemeral port.
   - Verify: `bun test` — starting a gateway writes `runtime.json` with the bound port; `stop()` removes it; `bun run build` green.
 
 **Stage 1 acceptance:** three overrides/features land with tests; `bun test` count rises; build green. No toolchain used.
@@ -276,3 +276,18 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   throws (no drizzle journal); the real `server/drizzle` dir → every core table is created (selects
   return `[]` instead of "no such table"). Verified: db suite 3 pass; full `bun test` 235 pass (+1);
   `bun run build` green. *Next:* 1.3 — write `$CADENCE_HOME/runtime.json` on startup, remove on stop.
+
+- **2026-06-09 · 1.3 (runtime port file).** `server/src/gateway.ts`: after binding, write
+  `{ port, url, pid }` to `join(cadenceHome(), "runtime.json")` (best-effort, `mkdir -p` first, errors
+  swallowed so a write failure never stops serving); the path is captured in a closure so `stop()`
+  removes the *same* file (via `rmSync(force:true)`) even if `CADENCE_HOME` later changes. Lets the
+  Tauri supervisor + `app:smoke` discover the ephemeral `CADENCE_PORT=0` port without scraping stdout.
+  Added a self-contained `gateway.test.ts` case (own temp `CADENCE_HOME`): startup writes
+  `runtime.json` with the bound port/url/pid; `stop()` removes it. Verified: gateway suite 41 pass;
+  full `bun test` 236 pass (+1); `bun run build` green. **No real-home pollution** — both
+  gateway-starting test files set `CADENCE_HOME` to a temp dir, and re-running the suite left the real
+  `~/.cadence/runtime.json` mtime unchanged. *Live confirmation:* a real watch-reloaded dev gateway
+  (pid alive, port 4477) wrote a valid `runtime.json` to the real home on my edit — end-to-end proof.
+  Stage 1 complete (3 relocation overrides land, test count 233→236). *Next:* 2.1 — `scripts/build-sidecar.ts`.
+  NOTE for next iter: a live dev gateway may be running on **4477** (watch mode); tests use temp homes
+  + port 0, so they're isolated from it.

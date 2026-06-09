@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
@@ -8,7 +8,7 @@ import { emitProposals } from "./proposals";
 import { startSweep } from "./sweep";
 import type { AgentRunner } from "./agents/triage";
 import { handleApi } from "./api";
-import { type Db, openAndMigrate } from "./db/client";
+import { cadenceHome, type Db, openAndMigrate } from "./db/client";
 import { claudeEnrich } from "./import";
 import { SpawnManager } from "./sessions";
 import { bootstrap } from "./store/store";
@@ -122,9 +122,22 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   });
 
   const boundPort = server.port ?? port;
+  const url = `http://localhost:${boundPort}`;
+
+  // Write a runtime descriptor so the Tauri supervisor + smokes can discover the (often ephemeral,
+  // CADENCE_PORT=0) bound port without scraping stdout. Captured once so stop() removes the same file
+  // even if CADENCE_HOME later changes. Best-effort: a write failure must never stop the gateway serving.
+  const runtimePath = join(cadenceHome(), "runtime.json");
+  try {
+    mkdirSync(cadenceHome(), { recursive: true });
+    writeFileSync(runtimePath, `${JSON.stringify({ port: boundPort, url, pid: process.pid }, null, 2)}\n`);
+  } catch {
+    // non-fatal — runtime.json is a convenience for tooling, not required to serve
+  }
+
   return {
     port: boundPort,
-    url: `http://localhost:${boundPort}`,
+    url,
     db,
     hub,
     spawn: spawnManager,
@@ -134,6 +147,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       watcher?.close();
       sweep.close();
       for (const id of spawnManager.liveIds()) spawnManager.kill(id);
+      rmSync(runtimePath, { force: true }); // remove the runtime descriptor on graceful stop
       await server.stop(true);
     },
   };

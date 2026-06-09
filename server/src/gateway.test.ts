@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage, Task } from "@cadence/shared";
@@ -815,6 +815,38 @@ test("CADENCE_WEB_DIR relocates the served web assets (compiled-sidecar path)", 
     else process.env.CADENCE_WEB_DIR = prev;
     rmSync(altWeb, { recursive: true, force: true });
     rmSync(altHome, { recursive: true, force: true });
+  }
+});
+
+test("writes $CADENCE_HOME/runtime.json on startup, removes it on graceful stop", async () => {
+  // Self-contained home so the app-smoke / Tauri supervisor can find the ephemeral port.
+  const rtHome = mkdtempSync(join(tmpdir(), "cadence-rt-home-"));
+  const rtDb = openDb(join(rtHome, "cadence.db"));
+  migrateDb(rtDb);
+  const prevHome = process.env.CADENCE_HOME;
+  process.env.CADENCE_HOME = rtHome;
+  const runtimeFile = join(rtHome, "runtime.json");
+  let g: Gateway | undefined;
+  try {
+    g = startGateway({ port: 0, db: rtDb, startWatcher: false });
+    expect(existsSync(runtimeFile)).toBe(true);
+    const info = JSON.parse(readFileSync(runtimeFile, "utf8")) as {
+      port: number;
+      url: string;
+      pid: number;
+    };
+    expect(info.port).toBe(g.port); // the actual bound (ephemeral) port
+    expect(info.url).toBe(g.url);
+    expect(info.pid).toBe(process.pid);
+
+    await g.stop();
+    g = undefined;
+    expect(existsSync(runtimeFile)).toBe(false); // graceful stop removes the descriptor
+  } finally {
+    await g?.stop();
+    if (prevHome === undefined) delete process.env.CADENCE_HOME;
+    else process.env.CADENCE_HOME = prevHome;
+    rmSync(rtHome, { recursive: true, force: true });
   }
 });
 
