@@ -1,10 +1,16 @@
 import type { ActivityTracker } from "./activity";
 import { runDiscovery } from "./agents/discovery";
-import { findLiveStage } from "./agents/stage-guard";
+import {
+  countRecentStageRuns,
+  DEFAULT_STAGE_ATTEMPT_BUDGET,
+  findLiveStage,
+} from "./agents/stage-guard";
 import { runQuestioner } from "./agents/questioner";
 import type { AgentRunner } from "./agents/triage";
 import type { Db } from "./db/client";
-import { listTasks } from "./tasks";
+import { notifyOnTransition } from "./notify";
+import { appendContext } from "./store/store";
+import { listTasks, updateTask } from "./tasks";
 import type { WsHub } from "./ws";
 
 export interface HealDeps {
@@ -33,6 +39,21 @@ export async function healStuckTasks(deps: HealDeps): Promise<number> {
     // can outlive a restart) — never duplicate it. Stale zombie rows are finalized by
     // the check itself, so they don't block healing. (§6.1.b)
     if (findLiveStage(db, task.id, "discovery")) continue;
+    // Circuit breaker (§6.1.c): autonomy gets a bounded number of automatic attempts;
+    // past that the task needs a human, not another agent — flip it to Needs-Feedback
+    // loudly (note + notification) instead of silently spawning money.
+    if (countRecentStageRuns(db, task.id, "discovery") >= DEFAULT_STAGE_ATTEMPT_BUDGET) {
+      const halted = updateTask(db, task.id, { status: "needs_feedback" });
+      appendContext(
+        task.id,
+        `Automatic refinement halted after ${DEFAULT_STAGE_ATTEMPT_BUDGET} attempts in 24h — ` +
+          "Cadence won't spawn more agents for this task until you add input " +
+          "(answer / add context, then run Refine).",
+      );
+      if (halted) notifyOnTransition(hub, "refining", halted);
+      hub.broadcast({ type: "event", name: "task:updated", payload: task.id });
+      continue;
+    }
     try {
       const disc = await activity.track(task.id, "discovery", () => runDiscovery(db, task.id, runAgent));
       hub.broadcast({ type: "event", name: "task:updated", payload: task.id });

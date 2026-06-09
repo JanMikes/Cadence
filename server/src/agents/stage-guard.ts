@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
 import { isProcessAlive } from "../sessions";
@@ -121,4 +121,36 @@ export function findLiveStage(
 export function assertStageIdle(db: Db, taskId: string, role: string, probe: PidProbe = DEFAULT_PROBE): void {
   const live = findLiveStage(db, taskId, role, probe);
   if (live) throw new StageConflictError(taskId, role, live.id);
+}
+
+// --- attempt budget (§6.1.c) ------------------------------------------------
+
+export const STAGE_ATTEMPT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Max *automatic* spawns of one stage per task per window (a Settings knob in 6.3.e). */
+export const DEFAULT_STAGE_ATTEMPT_BUDGET = 3;
+
+/**
+ * How many runs of (taskId, role) started inside the window — every outcome counts
+ * (done, failed, killed): the budget bounds spawn *attempts*, i.e. money, not successes.
+ * Manual, user-initiated runs may exceed the budget (they still respect the dedupe
+ * above); only automatic respawn loops (heal, future sweeps) must check it.
+ */
+export function countRecentStageRuns(
+  db: Db,
+  taskId: string,
+  role: string,
+  windowMs: number = STAGE_ATTEMPT_WINDOW_MS,
+): number {
+  return db
+    .select({ id: sessions.id })
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.taskId, taskId),
+        eq(sessions.role, role),
+        eq(sessions.kind, "oneshot"),
+        gte(sessions.startedAt, Date.now() - windowMs),
+      ),
+    )
+    .all().length;
 }
