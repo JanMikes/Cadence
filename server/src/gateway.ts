@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { ActivityTracker } from "./activity";
-import { runAgent } from "./agents/runner";
+import { makeRecordingRunner } from "./agents/recording-runner";
 import { healStuckTasks } from "./heal";
 import { ApprovalRegistry } from "./approvals";
 import { emitProposals } from "./proposals";
@@ -76,6 +76,10 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   // Tracks in-flight autonomy work (triage/discovery/questioner) → WS events → board/task spinner.
   const activity = new ActivityTracker((name, payload) => hub.broadcast({ type: "event", name, payload }));
 
+  // Record every task-linked agent stage (triage…delivery) as a first-class oneshot Session with its
+  // transcript, so each stage's full output shows up in the Sessions list. Tests inject opts.runAgent.
+  const runAgentImpl = opts.runAgent ?? makeRecordingRunner({ db, hub });
+
   let watcher: WatcherHandle | undefined;
   if (opts.startWatcher !== false) {
     watcher = startWatcher(db, {
@@ -94,7 +98,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   // Self-heal tasks left in "refining" by a previous run (crash/restart). Background, autonomy-only,
   // skipped in tests (startWatcher === false). Discovery/Questioner are now never-strand.
   if (opts.startWatcher !== false && readSettings().global.autonomy) {
-    void healStuckTasks({ db, runAgent: opts.runAgent ?? runAgent, activity, hub }).then((n) => {
+    void healStuckTasks({ db, runAgent: runAgentImpl, activity, hub }).then((n) => {
       if (n) console.log(`[cadence] self-healed ${n} task(s) stuck in refining`);
     });
   }
@@ -118,7 +122,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
           activity,
           openTerminal: opts.openTerminal ?? openInTerminal,
           enrich: opts.enrich ?? claudeEnrich,
-          runAgent: opts.runAgent ?? runAgent,
+          runAgent: runAgentImpl,
           approvals,
         });
       }

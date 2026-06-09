@@ -76,6 +76,7 @@ export async function runImplementer(
   }
   const result = await run({
     cwd: target.cwd,
+    taskId,
     role: "implementer",
     prompt: buildImplementerPrompt({ title: task.title, body: task.body }, readSpec(taskId), plan),
     permissionMode: claudeMode,

@@ -74,6 +74,7 @@ export async function runDelivery(
 
   const result = await run({
     cwd: target.cwd,
+    taskId,
     role: "delivery",
     prompt: buildDeliveryPrompt({ title: task.title, body: task.body }, readSpec(taskId), readVerify(taskId)),
     permissionMode: "plan",

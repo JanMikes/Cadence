@@ -131,6 +131,7 @@ export async function runDiscovery(
   updateTask(db, taskId, { status: "refining" });
   const result = await run({
     cwd: resolveTaskCwd(db, taskId),
+    taskId,
     role: "discovery",
     prompt: buildDiscoveryPrompt({ title: task.title, body: task.body }),
     permissionMode: "plan",

@@ -118,6 +118,7 @@ export async function runVerifier(
 
   const result = await run({
     cwd: target.cwd,
+    taskId,
     role: "verifier",
     prompt: buildVerifierPrompt({ title: task.title, body: task.body }, readSpec(taskId), readPlan(taskId)),
     permissionMode: "acceptEdits",

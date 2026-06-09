@@ -35,6 +35,13 @@ export interface AgentRunOptions {
   /** Override the base command (tests pass ["bun", mockPath]). */
   command?: string[];
   timeoutMs?: number;
+  /**
+   * Assign the claude session id up front (`--session-id`) so the transcript lands at a
+   * deterministic path (transcriptPathFor). Set by the recording runner; ignored when resuming.
+   */
+  sessionId?: string;
+  /** The task this run belongs to — recording metadata for the session row (not a claude arg). */
+  taskId?: string;
 }
 
 /** Try to parse the agent's result text as JSON (tolerates ```json fences). */
@@ -92,6 +99,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
   if (model) args.push("--model", model);
   if (opts.appendSystemPrompt) args.push("--append-system-prompt", opts.appendSystemPrompt);
   if (opts.resumeSessionId) args.push("--resume", opts.resumeSessionId);
+  // --session-id and --resume are mutually exclusive; resume already owns its session id.
+  else if (opts.sessionId) args.push("--session-id", opts.sessionId);
   if (opts.agentsJson) args.push("--agents", opts.agentsJson);
 
   const stdout = await new Promise<string>((resolve, reject) => {

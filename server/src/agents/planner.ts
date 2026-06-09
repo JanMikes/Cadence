@@ -84,6 +84,7 @@ export async function runPlanner(
 
   const result = await run({
     cwd: resolveTaskCwd(db, taskId),
+    taskId,
     role: "planner",
     prompt: buildPlannerPrompt({ title: task.title, body: task.body }, readSpec(taskId)),
     permissionMode: "plan",

@@ -96,6 +96,7 @@ export async function runTriage(
   );
   const result = await run({
     cwd: resolveTaskCwd(db, taskId),
+    taskId,
     role: "triage",
     prompt,
     permissionMode: "plan",

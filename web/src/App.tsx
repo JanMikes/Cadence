@@ -1,4 +1,5 @@
 import type { HealthStatus } from "@cadence/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
 import { Analytics } from "./features/analytics/Analytics";
@@ -22,6 +23,7 @@ import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
 import { useTauriBridge } from "./lib/tauri";
 import { cn } from "./lib/utils";
+import { useServerMessages } from "./lib/ws";
 
 type Conn = "connecting" | "online" | "offline";
 
@@ -35,6 +37,23 @@ export function App() {
   const [conn, setConn] = useState<Conn>("connecting");
   const notifications = useNotifications();
   const unread = notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0);
+  const qc = useQueryClient();
+
+  // Live-refresh the session lists, rolled-up task cost, and any open session detail as agent
+  // stages record themselves and finish (the deep counterpart to the board's activity spinner).
+  useServerMessages((msg) => {
+    if (
+      msg.type === "event" &&
+      (msg.name === "session:spawned" ||
+        msg.name === "session:updated" ||
+        msg.name === "session:deleted" ||
+        msg.name === "session:closed")
+    ) {
+      void qc.invalidateQueries({ queryKey: ["sessions", "all"] });
+      void qc.invalidateQueries({ queryKey: ["task"] });
+      void qc.invalidateQueries({ queryKey: ["session"] });
+    }
+  });
 
   // Native global hotkey / tray "Quick capture" → open the capture modal (inert in a plain browser).
   useTauriBridge(() => setAddTaskOpen(true));

@@ -1,6 +1,8 @@
 import type { LiveSession } from "@cadence/shared";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { getLiveSessions, getSessions } from "../../lib/api";
+import { roleLabel } from "../../lib/status";
 import { cn } from "../../lib/utils";
 
 function statusDot(status: string, alive = true): string {
@@ -18,6 +20,10 @@ export function SessionsView({ onOpenSessionDetail }: { onOpenSessionDetail: (id
   const live = useQuery({ queryKey: ["live-sessions"], queryFn: getLiveSessions, refetchInterval: 3000 });
   const tracked = useQuery({ queryKey: ["sessions", "all"], queryFn: getSessions });
   const trackedIds = new Set(tracked.data?.map((s) => s.id));
+  const [filter, setFilter] = useState<"all" | "chat" | "agent">("all");
+  const shown = (tracked.data ?? []).filter((s) =>
+    filter === "all" ? true : filter === "agent" ? s.kind === "oneshot" : s.kind !== "oneshot",
+  );
 
   return (
     <div className="mx-auto max-w-3xl p-8">
@@ -44,12 +50,35 @@ export function SessionsView({ onOpenSessionDetail }: { onOpenSessionDetail: (id
       </section>
 
       <section className="mt-6">
-        <h2 className="text-sm font-medium">Cadence sessions</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-medium">Cadence sessions</h2>
+          <div className="flex gap-1">
+            {(
+              [
+                ["all", "All"],
+                ["chat", "Chats"],
+                ["agent", "Agent stages"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setFilter(id)}
+                className={cn(
+                  "rounded-md border px-2 py-0.5 text-xs transition-colors",
+                  filter === id
+                    ? "border-primary/50 bg-primary/10 text-foreground"
+                    : "border-border text-muted-foreground hover:border-primary/40",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <ul className="mt-2 flex flex-col gap-1.5">
-          {tracked.data?.length === 0 ? (
-            <li className="text-xs text-muted-foreground">No sessions yet.</li>
-          ) : null}
-          {tracked.data?.map((s) => (
+          {shown.length === 0 ? <li className="text-xs text-muted-foreground">No sessions yet.</li> : null}
+          {shown.map((s) => (
             <li key={s.id}>
               <button
                 type="button"
@@ -57,10 +86,13 @@ export function SessionsView({ onOpenSessionDetail }: { onOpenSessionDetail: (id
                 className="flex w-full items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
               >
                 <span className={cn("size-2 shrink-0 rounded-full", statusDot(s.status))} />
-                <span className="font-mono">{s.id.slice(0, 8)}</span>
-                <span className="truncate text-muted-foreground">
-                  {s.role} · {s.cwd}
-                </span>
+                <span className="font-medium">{roleLabel(s.role)}</span>
+                {s.kind === "oneshot" ? (
+                  <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    stage
+                  </span>
+                ) : null}
+                <span className="truncate text-muted-foreground">{s.cwd}</span>
                 <span className="ml-auto shrink-0 text-muted-foreground">${s.costUsd.toFixed(4)}</span>
               </button>
             </li>

@@ -76,6 +76,7 @@ export async function runQuestioner(
 
   const result = await run({
     cwd: resolveTaskCwd(db, taskId),
+    taskId,
     role: "questioner",
     prompt: buildQuestionerPrompt(readSpec(taskId), { title: task.title }),
     permissionMode: "plan",

@@ -20,7 +20,7 @@ import {
   spawnSession,
   updateTask,
 } from "../../lib/api";
-import { statusLabel } from "../../lib/status";
+import { roleLabel, statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { PlanView } from "./PlanView";
@@ -297,10 +297,17 @@ export function TaskDetail({
                     <button
                       type="button"
                       onClick={() => (onOpenSessionDetail ?? onOpenSession)(s.id)}
-                      className="flex w-full items-center justify-between rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
+                      className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
                     >
-                      <span className="font-mono">{s.id.slice(0, 8)}</span>
-                      <span className="text-muted-foreground">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="font-medium">{roleLabel(s.role)}</span>
+                        {s.kind === "oneshot" ? (
+                          <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            stage
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">
                         {s.status}
                         {s.permissionMode ? ` · ${PERMISSION_LABELS[s.permissionMode] ?? s.permissionMode}` : ""} · $
                         {s.costUsd.toFixed(4)}
