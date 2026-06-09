@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.c (attempt budget + circuit breaker).
+- **Current step:** 6.1.d (honest liveness in watchdog/reconcile + signature + sweep).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -120,12 +120,13 @@ zombies. Implications the fix MUST honor:
   pipeline (`api.ts:1199-1240`), `/refine`, heal, execution chain, fleet.
   - Verify: unit test — two concurrent discovery starts → one spawn; `/refine` during an active
     discovery → 409 with a plain-language error. ✓ 2026-06-10 (`de021e7`, 10 new tests, 315 total).
-- [ ] **6.1.c Attempt budget + circuit breaker.** Cap automatic attempts per `(task, role)`:
+- [x] **6.1.c Attempt budget + circuit breaker.** Cap automatic attempts per `(task, role)`:
   default **3 per 24h** (constant now; becomes a setting in 6.3.e). On breach: task →
   `needs_feedback` + auto context note “Automatic refinement halted after N failed attempts — needs
   your input”, plus in-app + OS notification. Manual user-initiated runs may exceed the budget but
   still respect 6.1.b dedupe. Never silent-spawn.
   - Verify: test — 4th auto attempt inside the window refuses, flips status, records a notification.
+    ✓ 2026-06-10 (`cc6d3d3`, 3 new tests, 318 total).
 - [ ] **6.1.d Honest liveness (defeat PID reuse AND defunct zombies).** At spawn, persist a process
   signature alongside pid (spawn timestamp + verify `ps -p <pid> -o command=` contains the claude
   binary). Liveness = pid alive **and not Z-state** (`ps -p <pid> -o stat=` not starting with `Z`)
@@ -483,3 +484,11 @@ yourself.
   *by the check itself* → zombie rows now retire on contact. heal pre-skips live discoveries;
   `/refine` pre-checks → 409 (before `runDiscovery` mutates status — it flips to `refining` at
   discovery.ts:149). 10 tests incl. the concurrent-race and zombie-retry cases.
+- **2026-06-10 — 6.1.c done** (`cc6d3d3`). Breaker lives in heal (the only automatic respawn loop;
+  capture-chain is once-per-capture by construction). **Decision:** breach reuses the standard
+  `needs_feedback` transition + `notifyOnTransition` instead of a new notification kind — Attention
+  Center picks it up for free, and the context note carries the “halted after N attempts” why.
+  Counting = session rows of (task, role) within 24h, any outcome (budget bounds *attempts/money*,
+  not successes). Replay check: with 6.1.b+c in place, the incident would have stopped at attempt
+  #3 with a visible halt note instead of reaching 15. Next: 6.1.d generalizes honest liveness to
+  watchdog/reconcile (the sweep that retires zombie rows nobody touches).
