@@ -75,7 +75,7 @@ export function AppShell({
     <div className="flex h-full bg-background text-foreground">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card/40">
         <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-          <Sparkles className="size-5 text-primary" />
+          <img src="/cadence-icon.png" alt="" className="size-6 rounded-md" />
           <span className="font-semibold tracking-tight">Cadence</span>
         </div>
 

@@ -175,8 +175,17 @@ fn setup_tray(app: &AppHandle<impl Runtime>) -> tauri::Result<()> {
             "quit" => app.exit(0),
             _ => {}
         });
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
+    // Monochrome glyph marked as a template image so macOS tints it to match the menubar
+    // (light/dark). Falls back to the color app icon if the embedded PNG ever fails to parse.
+    match tauri::image::Image::from_bytes(include_bytes!("../icons/tray@2x.png")) {
+        Ok(icon) => {
+            builder = builder.icon(icon).icon_as_template(true);
+        }
+        Err(_) => {
+            if let Some(icon) = app.default_window_icon().cloned() {
+                builder = builder.icon(icon);
+            }
+        }
     }
     builder.build(app)?;
     Ok(())
