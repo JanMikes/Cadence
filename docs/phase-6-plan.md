@@ -8,7 +8,9 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.h (re-enable autonomy, restart dev gateway, acceptance run).
+- **Current step:** 6.2 (remove the Inbox view). **§6.1 is COMPLETE** — the runaway-spawn class of
+  bug is closed end-to-end (dedupe → budget → honest liveness → kill-at-boot → endpoint guards →
+  timeouts/kill-UX → live acceptance).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -158,11 +160,12 @@ zombies. Implications the fix MUST honor:
   6.3.e) so no one-shot can run forever. Sessions view: bulk **Clear finished agent runs** action.
   - Verify: UI shows the actions on a stuck session; kill finalizes row + process group; timeout
     test fires; typecheck/build green. ✓ 2026-06-10 (`97b3b07`, 334 tests).
-- [ ] **6.1.h Re-enable + acceptance.** Restore `autonomy: true`. **Acceptance (scriptable parts
+- [x] **6.1.h Re-enable + acceptance.** Restore `autonomy: true`. **Acceptance (scriptable parts
   automated, rest manual):** with the dev gateway watching, save a server file 3× with a task parked
   in `refining` → spawns ≤ budget and each new spawn first reconciles the previous; Sessions view
   shows no eternal “running” rows; `ps` after each run shows no leaked processes.
-  - Verify: the acceptance run above + journal the observations.
+  - Verify: the acceptance run above + journal the observations. ✓ 2026-06-10 — full zero-cost
+    incident replay passed (fake-claude stand-in; see Journal). **§6.1 COMPLETE.**
 
 ---
 
@@ -544,3 +547,14 @@ yourself.
   stuck detection stays server-side in the watchdog). Attention feed now surfaces
   refining-with-no-live-run (closes the 6.1.e journal note); `findLiveStage` there doubles as a
   zombie-row sweep on every attention poll.
+- **2026-06-10 — 6.1.h done → §6.1 COMPLETE.** Zero-cost live acceptance: pointed `claudeBinPath`
+  at `/tmp/cadence-fake-claude` (`exec sleep 300`) and replayed the incident against the real dev
+  gateway (`bun --watch`; note: `touch` does NOT trigger bun's watcher — needs a content change).
+  Boot ladder observed: capture-spawned triage orphan **killed** at boot #1 + discovery attempt 1;
+  restarts #2/#3 each killed the predecessor and spawned the next attempt (exactly ONE live agent
+  at all times — the incident produced 15); restart #4 **tripped the breaker**: no 4th spawn, task
+  → `needs_feedback` with the halt note; restart #5 stayed quiet. Settings restored (real claude,
+  `autonomy: true`); gateway left RUNNING for the user (UI back); acceptance debris tidied via the
+  new `clear-finished` endpoint (27 rows — incl. the original incident's residue); probe task
+  cancelled. Caveat for the user: the dev gateway now runs as this session's background child — if
+  it vanishes after the session closes, `bun run dev` (or Cadence.app) restarts it.

@@ -108,10 +108,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 ## Phase 6 — Improvements wave 1 (post-build)
 **Ledger with full specs, locked decisions & journal: [`phase-6-plan.md`](phase-6-plan.md) · loop
 prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
-- [ ] **6.1 🔥 Runaway agent spawns + zombie sessions** — boot-time heal × `bun --watch` restarts
-      spawned 15 discovery agents on one task; add DB-level dedupe, attempt budget/circuit breaker,
-      honest pid liveness (defeat reuse), adopt-or-kill boot reconcile, process-group kills,
-      stuck-run kill UX, stage timeouts
+- [x] **6.1 🔥 Runaway agent spawns + zombie sessions** — **DONE 2026-06-10**: DB-level stage
+      dedupe + 3-per-24h circuit breaker, honest liveness (defunct/pid-reuse-proof, start-time
+      signature), kill-at-boot reconcile + process-group kills, plan-approve idempotency,
+      per-stage activity tracking, stage timeouts (15m/60m), Stop/Kill/Kill&retry + bulk-clear UX,
+      refining-stalled attention items; verified by a zero-cost live incident replay
 - [ ] **6.2 Remove Inbox view** — capture modal + board inbox column cover it; nav simplification
 - [ ] **6.3 Settings expansion** — per-agent editable prompts + per-agent model (registry +
       overrides), Czech `d.m.Y H:i:s` date/time format setting + central formatter, operations
