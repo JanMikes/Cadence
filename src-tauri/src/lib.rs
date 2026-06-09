@@ -19,6 +19,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+#[cfg(desktop)]
+use tauri_plugin_global_shortcut::ShortcutState;
 
 /// The supervised gateway child, in a process-global so both the in-app quit path (`RunEvent::Exit`)
 /// and the POSIX signal handler can terminate it — never orphan a cadence-server.
@@ -188,10 +190,31 @@ fn setup_tray(app: &AppHandle<impl Runtime>) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Global hotkey that brings Cadence forward and opens quick-capture from anywhere.
+const QUICK_CAPTURE_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
+
+    // Global shortcut (desktop only): CmdOrCtrl+Shift+Space → show the window + emit quick-capture.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcut(QUICK_CAPTURE_SHORTCUT)
+                .expect("quick-capture shortcut should parse")
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        show_main(app);
+                        let _ = app.emit("quick-capture", ());
+                    }
+                })
+                .build(),
+        );
+    }
+
+    let app = builder
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -432,5 +455,23 @@ mod tests {
         // *structure* is the deterministic check and the live tray is a §Visual confirmation.
         let ids: Vec<&str> = TRAY_ITEMS.iter().map(|(id, _)| *id).collect();
         assert_eq!(ids, ["open", "quick_capture", "today", "inbox", "quit"]);
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn quick_capture_shortcut_is_registered() {
+        use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        let app = tauri::test::mock_builder()
+            .plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_shortcut(super::QUICK_CAPTURE_SHORTCUT)
+                    .expect("quick-capture shortcut should parse")
+                    .build(),
+            )
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("the mock app should build");
+        assert!(app
+            .global_shortcut()
+            .is_registered(super::QUICK_CAPTURE_SHORTCUT));
     }
 }

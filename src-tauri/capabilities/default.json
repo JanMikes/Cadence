@@ -3,8 +3,10 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": ["main"],
+  "remote": { "urls": ["http://localhost:*"] },
   "permissions": [
     "core:default",
+    "core:event:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [{ "name": "binaries/cadence-server", "sidecar": true, "args": true }]

@@ -82,10 +82,10 @@ only if an install genuinely fails — recorded as a Blocker.)
 
 ## Status snapshot ← the loop keeps this current
 - **Current stage:** Stage 5 — in progress (native shell — full pass).
-- **Last completed step:** 5.1 (tray / menubar).
-- **Next step:** 5.2 (global hotkey → quick-capture).
+- **Last completed step:** 5.2 (global hotkey → quick-capture).
+- **Next step:** 5.3 (native notifications bridge).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (5.1 done — tray menu + cargo test 9 pass).
+- **Last updated:** 2026-06-09 (5.2 done — cargo test 10 pass; bun test 239; hotkey + web bridge).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -184,7 +184,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 ## Stage 5 — Native shell (full pass)
 - [x] **5.1 Tray / menubar.** `[visual]` `TrayIconBuilder` + menu: Open Cadence · Quick capture · Today · Inbox · — · Quit. Left-click → show+focus+unminimize main window. Icon in `icons/`.
   - Verify `[auto]`: `cargo build`; `cargo test` asserts the menu builds + has the expected item ids. §Visual: tray icon shows; items act; Quit ends app + sidecar.
-- [ ] **5.2 Global hotkey → quick-capture.** `[visual]` `tauri-plugin-global-shortcut`; register `CmdOrCtrl+Shift+Space`;
+- [x] **5.2 Global hotkey → quick-capture.** `[visual]` `tauri-plugin-global-shortcut`; register `CmdOrCtrl+Shift+Space`;
   handler shows+focuses the window + `emit`s `quick-capture`. Web (feature-detected): `useTauriBridge()` listens for
   `quick-capture` only when `window.__TAURI__` exists → opens the existing `AddTaskModal` (lift its open-state).
   Set `app.withGlobalTauri=true`; add a `remote.urls:["http://localhost:*"]` capability granting event + notification perms.
@@ -423,3 +423,20 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   `cargo build` clean; `cargo test` 9 pass (incl. `tray_items_are_the_expected_set`); `bun test`
   237 pass; `bun run build` green. §Visual (5.1) refined in the checklist. *Next:* 5.2 — global hotkey
   `CmdOrCtrl+Shift+Space` → quick-capture (Rust shortcut + feature-detected web `useTauriBridge`).
+
+- **2026-06-09 · 5.2 (global hotkey → quick-capture).** Rust: added `tauri-plugin-global-shortcut`,
+  registered `CmdOrCtrl+Shift+Space` (const `QUICK_CAPTURE_SHORTCUT`) via the plugin Builder inside a
+  `#[cfg(desktop)]` block in `run()` (restructured to a mutable builder); the handler, on
+  `ShortcutState::Pressed`, calls `show_main` + `emit("quick-capture")`. Config: `app.withGlobalTauri=true`
+  (injects `window.__TAURI__`); the default capability gains `remote: { urls: ["http://localhost:*"] }`
+  (so it applies to the gateway-origin webview) + `core:event:default` (so the web can listen).
+  **Deferred** the notification permission to 5.3 (adding it now would fail capability validation —
+  the notification plugin isn't registered yet). Web: new `lib/tauri.ts` — `isTauri()`,
+  `subscribeQuickCapture()` (uses the `withGlobalTauri` global, no `@tauri-apps/api` dep), and
+  `useTauriBridge()` (subscribe-once via a ref); `App.tsx` calls `useTauriBridge(() => setAddTaskOpen(true))`
+  (the modal's open-state was already lifted there). **Verified:** `cargo test` 10 pass (incl.
+  `quick_capture_shortcut_is_registered` — `global_shortcut().is_registered(...)` works on the mock
+  runtime, unlike the muda menu); `bun test` 239 pass (+2: bridge inert without `__TAURI__`, opens on a
+  mocked event); `cargo build` validates the capability/conf; `bun run build` + `typecheck` green.
+  §Visual (5.2) item already queued. *Next:* 5.3 — native notifications bridge (`fireDesktop` →
+  `@tauri-apps/plugin-notification` under `__TAURI__`, else Web Notifications).

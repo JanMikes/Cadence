@@ -24,6 +24,7 @@ log = "0.4"
 tauri = { version = "2.11.2", features = ["tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-global-shortcut = "2"
 
 # POSIX signal handling so the app terminates cleanly (killing the sidecar) on SIGTERM/SIGINT — the
 # in-app RunEvent path doesn't cover an external `kill`/Ctrl-C. Unix-only (the target platforms here).

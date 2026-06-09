@@ -10,6 +10,7 @@
     "beforeBuildCommand": "bun run --filter @cadence/web build && bun run sidecar:build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",

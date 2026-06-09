@@ -20,6 +20,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
+import { useTauriBridge } from "./lib/tauri";
 import { cn } from "./lib/utils";
 
 type Conn = "connecting" | "online" | "offline";
@@ -34,6 +35,9 @@ export function App() {
   const [conn, setConn] = useState<Conn>("connecting");
   const notifications = useNotifications();
   const unread = notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0);
+
+  // Native global hotkey / tray "Quick capture" → open the capture modal (inert in a plain browser).
+  useTauriBridge(() => setAddTaskOpen(true));
 
   useEffect(() => {
     let cancelled = false;
