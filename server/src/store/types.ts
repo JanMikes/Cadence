@@ -7,6 +7,9 @@
 export interface TaskFrontmatter {
   id: string;
   title: string;
+  /** True while the title is a derived placeholder (description-only capture);
+   *  cleared when the user or the refinement pipeline sets a real title. */
+  titleGenerated?: boolean;
   status?: string; // §6 state machine; defaults to "inbox"
   priority?: string | null;
   deadline?: string | number | Date | null; // ISO date in markdown

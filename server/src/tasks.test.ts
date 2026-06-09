@@ -7,7 +7,7 @@ import { migrateDb, openDb, type Db } from "./db/client";
 import { searchTasks } from "./db/search";
 import { paths } from "./store/paths";
 import { appendContext, bootstrap, readContext } from "./store/store";
-import { createTask, getTask, getTaskDetail, listTasks, updateTask } from "./tasks";
+import { createTask, deriveTitle, getTask, getTaskDetail, listTasks, updateTask } from "./tasks";
 
 let db: Db;
 let home: string;
@@ -33,6 +33,45 @@ test("createTask writes task.md + an index row, landing in Inbox", () => {
   expect(existsSync(paths.taskFile(task.id))).toBe(true); // file on disk
   expect(getTask(db, task.id)?.title).toBe("Wire the gateway"); // index row
   expect(searchTasks(db, "broadcast").map((h) => h.taskId)).toContain(task.id); // FTS
+});
+
+test("createTask is description-first: derives a provisional title and flags it", () => {
+  const task = createTask(db, { body: "Refactor the websocket hub\nIt leaks subscriptions." });
+
+  expect(task.title).toBe("Refactor the websocket hub"); // first description line
+  expect(getTaskDetail(db, task.id)?.titleGenerated).toBe(true); // awaiting a real name
+
+  // An explicit title is never flagged.
+  const named = createTask(db, { title: "Named", body: "whatever" });
+  expect(getTaskDetail(db, named.id)?.titleGenerated).toBe(false);
+
+  // Capturing nothing at all is a programming error.
+  expect(() => createTask(db, {})).toThrow();
+});
+
+test("setting a title (user or agent) clears the titleGenerated placeholder flag", () => {
+  const task = createTask(db, { body: "describe only" });
+  expect(getTaskDetail(db, task.id)?.titleGenerated).toBe(true);
+
+  updateTask(db, task.id, { title: "A proper name" });
+  const detail = getTaskDetail(db, task.id);
+  expect(detail?.title).toBe("A proper name");
+  expect(detail?.titleGenerated).toBe(false);
+
+  // An unrelated patch keeps the flag.
+  const other = createTask(db, { body: "still unnamed" });
+  updateTask(db, other.id, { priority: "P2" });
+  expect(getTaskDetail(db, other.id)?.titleGenerated).toBe(true);
+});
+
+test("deriveTitle squashes whitespace and caps at a word boundary", () => {
+  expect(deriveTitle("Fix the thing")).toBe("Fix the thing");
+  expect(deriveTitle("\n\n  spaced   out\nrest")).toBe("spaced out"); // first non-empty line
+  const long = "Implement the brand new permission inheritance resolution pipeline end to end";
+  const derived = deriveTitle(long);
+  expect(derived.length).toBeLessThanOrEqual(61); // 60 + ellipsis
+  expect(derived.endsWith("…")).toBe(true);
+  expect(deriveTitle("")).toBe("");
 });
 
 test("listTasks returns captured tasks newest-first and filters by status", () => {

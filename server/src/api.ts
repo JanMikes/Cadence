@@ -143,11 +143,13 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       } catch {
         return badRequest("invalid JSON body");
       }
+      // Description-first capture: the body is the primary field; an empty title
+      // is fine (one gets derived now and properly named by the triage agent).
       const title = typeof input?.title === "string" ? input.title.trim() : "";
-      if (!title) return badRequest("title is required");
-      const body = typeof input?.body === "string" ? input.body : undefined;
+      const body = typeof input?.body === "string" ? input.body.trim() : "";
+      if (!title && !body) return badRequest("a description (or title) is required");
 
-      const task = createTask(ctx.db, { title, body });
+      const task = createTask(ctx.db, { title: title || undefined, body: body || undefined });
       ctx.hub.broadcast({ type: "event", name: "task:created", payload: task.id });
       maybeTriageOnCapture(ctx, task.id); // background; no-op unless autonomy is on
       return Response.json(task, { status: 201 });

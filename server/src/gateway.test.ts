@@ -92,13 +92,25 @@ test("POST /api/tasks captures a task; GET lists + fetches it", async () => {
   expect(one.title).toBe("Capture me");
 });
 
-test("POST /api/tasks rejects an empty title", async () => {
+test("POST /api/tasks rejects a capture with neither description nor title", async () => {
   const res = await fetch(`${gw.url}/api/tasks`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title: "   " }),
+    body: JSON.stringify({ title: "   ", body: "  " }),
   });
   expect(res.status).toBe(400);
+});
+
+test("POST /api/tasks accepts a description-only capture and derives a provisional title", async () => {
+  const created = await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "Fix the flaky login test\nIt fails on CI only." }),
+  });
+  expect(created.status).toBe(201);
+  const task = (await created.json()) as Task;
+  expect(task.title).toBe("Fix the flaky login test"); // first line of the description
+  expect(task.body).toContain("It fails on CI only.");
 });
 
 async function createViaApi(title: string): Promise<Task> {

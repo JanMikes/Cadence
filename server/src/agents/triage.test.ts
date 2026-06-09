@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { migrateDb, openDb, type Db } from "../db/client";
 import { createProject } from "../projects";
 import { bootstrap, readContext } from "../store/store";
-import { createTask, getTask } from "../tasks";
+import { createTask, getTask, getTaskDetail } from "../tasks";
 import type { AgentRunner } from "./triage";
 import { buildTriagePrompt, runTriage } from "./triage";
 
@@ -45,6 +45,15 @@ test("buildTriagePrompt includes the task + known projects", () => {
   expect(p).toContain("Fix login");
   expect(p).toContain("users locked out");
   expect(p).toContain("acme (Acme)");
+  expect(p).not.toContain('"title"'); // a user-written title is never re-asked
+});
+
+test("buildTriagePrompt asks for a title when capture was description-only", () => {
+  const p = buildTriagePrompt({ title: "derived…", body: "long description" }, [], {
+    titleNeeded: true,
+  });
+  expect(p).toContain("captured without a title");
+  expect(p).toContain('"title":"string"');
 });
 
 test("a sufficient triage routes the task → Triaged with project/priority/deadline/labels", async () => {
@@ -84,6 +93,45 @@ test("an insufficient triage → Needs-Feedback with what's needed", async () =>
   expect(outcome).toMatchObject({ ran: true, status: "needs_feedback" });
   expect(getTask(db, task.id)?.status).toBe("needs_feedback");
   expect(readContext(task.id)).toContain("Which project");
+});
+
+test("triage names a description-only task; a user title is never overwritten", async () => {
+  // Description-only capture → placeholder title, which the agent replaces.
+  const unnamed = createTask(db, { body: "the login page 500s when the token expired" });
+  expect(getTaskDetail(db, unnamed.id)?.titleGenerated).toBe(true);
+  await runTriage(
+    db,
+    unnamed.id,
+    mockRunner({ sufficiency: "ok", title: "Fix expired-token 500 on login", priority: "P1" }),
+  );
+  const renamed = getTaskDetail(db, unnamed.id);
+  expect(renamed?.title).toBe("Fix expired-token 500 on login");
+  expect(renamed?.titleGenerated).toBe(false); // properly named now
+
+  // Explicit user title → the agent's title is ignored.
+  const named = createTask(db, { title: "My exact wording", body: "details" });
+  await runTriage(
+    db,
+    named.id,
+    mockRunner({ sufficiency: "ok", title: "Agent rewording", priority: "P2" }),
+  );
+  expect(getTask(db, named.id)?.title).toBe("My exact wording");
+});
+
+test("triage still names the task when it bails as insufficient", async () => {
+  const task = createTask(db, { body: "something about the deploy?" });
+  await runTriage(
+    db,
+    task.id,
+    mockRunner({
+      sufficiency: "insufficient",
+      needFromUser: "Which deploy, and what should change?",
+      title: "Clarify deploy issue",
+    }),
+  );
+  const t = getTaskDetail(db, task.id);
+  expect(t?.status).toBe("needs_feedback");
+  expect(t?.title).toBe("Clarify deploy issue"); // board shows a real name while it waits
 });
 
 test("unparseable triage output leaves the task in Inbox", async () => {

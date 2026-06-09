@@ -9,6 +9,8 @@ import type { AgentRunner } from "./triage";
 export interface DiscoveryJson {
   sufficiency?: "ok" | "insufficient";
   needFromUser?: string | null;
+  /** A proper task title — requested when capture was description-only (still unnamed). */
+  title?: string;
   spec?: string;
   scope?: { in?: string[]; out?: string[] };
   affectedFiles?: string[];
@@ -28,7 +30,10 @@ export interface DiscoveryOutcome {
 /** Explorers injected per discovery run via --agents (read-only, §7.2/§7.3). */
 const DISCOVERY_SUBAGENTS = ["explorer", "dependency-mapper"];
 
-export function buildDiscoveryPrompt(task: { title: string; body: string }): string {
+export function buildDiscoveryPrompt(
+  task: { title: string; body: string },
+  opts: { titleNeeded?: boolean } = {},
+): string {
   return [
     "You are the Discovery agent. The task is assigned to a project whose working directory is your",
     "cwd. Explore the relevant code (READ-ONLY — you may delegate to the `explorer` and",
@@ -37,9 +42,15 @@ export function buildDiscoveryPrompt(task: { title: string; body: string }): str
     "recommendation, risks, and CHECKABLE acceptance criteria. List any genuine unknowns that block a",
     "confident implementation. If still too vague to implement responsibly, set",
     'sufficiency:"insufficient" and state precisely what you need. Output JSON only.',
+    opts.titleNeeded
+      ? 'The task was captured without a title — also write a "title": a concise, specific name for the\n' +
+        "task (max 60 chars, imperative mood, no trailing period). Always include it, even if insufficient."
+      : "",
     "",
     "Respond with ONLY this JSON shape:",
-    '{"sufficiency":"ok|insufficient","needFromUser":"string|null","spec":"markdown",',
+    `{"sufficiency":"ok|insufficient","needFromUser":"string|null",${
+      opts.titleNeeded ? '"title":"string",' : ""
+    }"spec":"markdown",`,
     '"scope":{"in":["string"],"out":["string"]},"affectedFiles":["path"],',
     '"approaches":[{"name":"string","summary":"string","recommended":true}],',
     '"risks":["string"],"acceptanceCriteria":["string"],"unknowns":["string"]}',
@@ -100,8 +111,14 @@ export function specMarkdown(j: DiscoveryJson): string {
 
 /** Apply a parsed discovery result: write spec.md + set the task's status. */
 export function applyDiscovery(db: Db, taskId: string, j: DiscoveryJson): DiscoveryOutcome {
+  // Name a still-unnamed (description-only) task; never overwrite a user-written title.
+  const agentTitle =
+    getTaskDetail(db, taskId)?.titleGenerated && typeof j.title === "string" && j.title.trim()
+      ? j.title.trim()
+      : undefined;
+
   if (j.sufficiency === "insufficient") {
-    updateTask(db, taskId, { status: "needs_feedback" });
+    updateTask(db, taskId, { status: "needs_feedback", ...(agentTitle && { title: agentTitle }) });
     const need = asText(j.needFromUser).trim() || undefined;
     if (need) appendContext(taskId, `Discovery needs more info: ${need}`);
     return { ran: true, status: "needs_feedback", needFromUser: need };
@@ -111,7 +128,7 @@ export function applyDiscovery(db: Db, taskId: string, j: DiscoveryJson): Discov
   const unknowns = asList(j.unknowns).filter(Boolean);
   // Unknowns remain → stay in Refining for the Questioner (2.5) to ask; else Ready.
   const status = unknowns.length ? "refining" : "ready";
-  updateTask(db, taskId, { status });
+  updateTask(db, taskId, { status, ...(agentTitle && { title: agentTitle }) });
   return { ran: true, status, unknowns };
 }
 
@@ -133,7 +150,10 @@ export async function runDiscovery(
     cwd: resolveTaskCwd(db, taskId),
     taskId,
     role: "discovery",
-    prompt: buildDiscoveryPrompt({ title: task.title, body: task.body }),
+    prompt: buildDiscoveryPrompt(
+      { title: task.title, body: task.body },
+      { titleNeeded: task.titleGenerated },
+    ),
     permissionMode: "plan",
     agentsJson: agentsJson(DISCOVERY_SUBAGENTS),
   });

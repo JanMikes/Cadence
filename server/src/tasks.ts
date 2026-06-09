@@ -16,18 +16,38 @@ import type { TaskFrontmatter } from "./store/types";
 const NEWEST_FIRST = sql`${tasks.createdAt} desc, rowid desc`;
 
 export interface CreateTaskArgs {
-  title: string;
+  /** Optional — when omitted, a provisional title is derived from the description
+   *  (first line, trimmed) and the refinement pipeline names the task properly. */
+  title?: string;
   body?: string;
+}
+
+/** Derive a provisional title from a description: its first line, squashed and
+ *  capped at 60 chars (cut at a word boundary). Used for description-only capture. */
+export function deriveTitle(body: string): string {
+  const line = (body.split("\n").find((l) => l.trim()) ?? "").trim().replace(/\s+/g, " ");
+  if (line.length <= 60) return line;
+  const cut = line.slice(0, 60);
+  const word = cut.slice(0, cut.lastIndexOf(" "));
+  return `${word.length >= 20 ? word : cut}…`;
 }
 
 /**
  * Capture a new task: write its task.md (the source of truth) and reindex it
  * synchronously so the row exists immediately (the watcher is only a backstop
- * for out-of-band edits). New tasks land in the Inbox.
+ * for out-of-band edits). New tasks land in the Inbox. Description-first: with
+ * no explicit title, a provisional one is derived and flagged `titleGenerated`
+ * so the triage agent knows to name the task.
  */
 export function createTask(db: Db, args: CreateTaskArgs): Task {
+  const explicit = args.title?.trim();
+  const title = explicit || deriveTitle(args.body ?? "");
+  if (!title) throw new Error("createTask: a title or description is required");
   const id = crypto.randomUUID();
-  writeTask({ id, title: args.title, status: "inbox" }, args.body ?? "");
+  writeTask(
+    { id, title, status: "inbox", ...(explicit ? {} : { titleGenerated: true }) },
+    args.body ?? "",
+  );
   reindexTask(db, id);
   const task = getTask(db, id);
   if (!task) throw new Error(`createTask: task ${id} missing after reindex`);
@@ -83,14 +103,18 @@ export function getTaskDetail(db: Db, id: string): TaskDetail | null {
   const task = getTask(db, id);
   if (!task) return null;
   let labels: string[] = [];
+  let titleGenerated = false;
   try {
-    labels = readTask(id).data.labels ?? [];
+    const { data } = readTask(id);
+    labels = data.labels ?? [];
+    titleGenerated = data.titleGenerated ?? false;
   } catch {
     /* markdown missing — index-only row */
   }
   return {
     ...withUrgency(task, Date.now()),
     labels,
+    titleGenerated,
     resolvedPermissionMode: resolvePermissionMode(db, id),
     costUsd: taskCostUsd(db, id),
   };
@@ -107,7 +131,11 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   const { data, body } = readTask(id);
 
   const next: TaskFrontmatter = { ...data, id };
-  if (patch.title !== undefined) next.title = patch.title;
+  if (patch.title !== undefined) {
+    next.title = patch.title;
+    // A real title now exists (user-edited or agent-named) — drop the placeholder flag.
+    delete next.titleGenerated;
+  }
   if (patch.status !== undefined) next.status = patch.status;
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.estimate !== undefined) next.estimate = patch.estimate;

@@ -149,8 +149,16 @@ export function TaskDetail({
         {flow ? <FlowStrip flow={flow} /> : null}
         <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
           <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">
+          <h2 className="flex flex-wrap items-baseline gap-2 text-lg font-semibold tracking-tight">
             {task?.title ?? (detail.isLoading ? "Loading…" : "Task")}
+            {task?.titleGenerated ? (
+              <span
+                title="Captured without a title — the refinement agent will name it"
+                className="rounded-full border border-border px-2 py-0.5 text-[10px] font-normal text-muted-foreground"
+              >
+                Auto-named on refine
+              </span>
+            ) : null}
           </h2>
           <LabeledIconButton icon={<X />} label="Close" variant="ghost" size="sm" onClick={onClose} />
         </div>

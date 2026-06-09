@@ -7,24 +7,26 @@ import { createTask, getTasks } from "../../lib/api";
 
 export function Inbox({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
-  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
 
   const tasks = useQuery({
     queryKey: ["tasks", "inbox"],
     queryFn: () => getTasks({ status: "inbox" }),
   });
 
+  // Description-first capture: what you type is the task's description; the
+  // refinement agent names it (title) automatically.
   const capture = useMutation({
-    mutationFn: (t: string) => createTask({ title: t }),
+    mutationFn: (t: string) => createTask({ body: t }),
     onSuccess: () => {
-      setTitle("");
+      setText("");
       void qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
-    const t = title.trim();
+    const t = text.trim();
     if (t && !capture.isPending) capture.mutate(t);
   };
 
@@ -38,9 +40,9 @@ export function Inbox({ onOpen }: { onOpen: (id: string) => void }) {
       <form onSubmit={onSubmit} className="mt-5 flex gap-2">
         {/* biome-ignore lint/a11y/noAutofocus: capture-first is the point of the Inbox */}
         <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Capture a task…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Capture a task — describe it, Cadence names it…"
           autoFocus
           aria-label="Capture a task"
           className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -49,7 +51,7 @@ export function Inbox({ onOpen }: { onOpen: (id: string) => void }) {
           icon={<Plus />}
           label="Capture"
           type="submit"
-          disabled={!title.trim() || capture.isPending}
+          disabled={!text.trim() || capture.isPending}
         />
       </form>
 
@@ -82,7 +84,8 @@ function TaskRow({ task, onOpen }: { task: Task; onOpen: (id: string) => void })
         className="w-full rounded-md border border-border bg-card/50 px-4 py-3 text-left transition-colors hover:border-primary/50"
       >
         <div className="text-sm font-medium">{task.title}</div>
-        {task.body ? (
+        {/* Skip the body when it just repeats the derived title (description-only capture). */}
+        {task.body && task.body !== task.title ? (
           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{task.body}</div>
         ) : null}
       </button>

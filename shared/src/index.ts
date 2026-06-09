@@ -131,7 +131,10 @@ export interface Task {
 }
 
 export interface CreateTaskInput {
-  title: string;
+  /** Optional — when omitted, a provisional title is derived from the description
+   *  and the refinement pipeline (triage) names the task properly. */
+  title?: string;
+  /** The description — the primary capture field. At least one of title/body is required. */
   body?: string;
 }
 
@@ -210,6 +213,9 @@ export interface ResolveSuggestionInput {
 /** Task plus the list-valued fields that live in markdown (not the index). */
 export interface TaskDetail extends Task {
   labels: string[];
+  /** True while the title is a derived placeholder (captured description-only) —
+   *  cleared once the user or the refinement pipeline sets a real title. */
+  titleGenerated: boolean;
   /** Effective permission mode after task ?? project ?? global resolution (§9.1). */
   resolvedPermissionMode: string;
   /** Sum of this task's session costs (effort signal, not a budget). */

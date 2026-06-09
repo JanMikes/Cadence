@@ -13,14 +13,16 @@ test("AddTaskModal renders nothing while closed", () => {
   expect(html).toBe(""); // opened via the sidebar button, the ⌘K palette, or the `c` shortcut
 });
 
-test("AddTaskModal shows title + notes fields and a labeled Add task button when open", () => {
+test("AddTaskModal is description-first: required description + optional title", () => {
   const html = render(<AddTaskModal open onOpenChange={() => {}} />);
   expect(html).toContain("Add task");
-  expect(html).toContain("Task title");
-  expect(html).toContain("Notes (optional)");
+  expect(html).toContain("Describe the task"); // the primary capture field
+  expect(html).toContain("Title (optional"); // auto-named by the refinement agent when left empty
   expect(html).toContain("Lands in your Inbox");
-  expect(html).toContain("<input");
-  expect(html).toContain("<textarea");
+  expect(html).toContain("<textarea"); // description
+  expect(html).toContain("<input"); // optional title
+  // The description textarea comes first (it's the default field).
+  expect(html.indexOf("<textarea")).toBeLessThan(html.indexOf('aria-label="Title (optional)"'));
 });
 
 test("AddTaskButton is labeled (icon + text) and shows the C shortcut hint", () => {

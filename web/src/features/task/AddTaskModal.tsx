@@ -47,8 +47,8 @@ export function AddTaskModal({
   onCreated?: (taskId: string) => void;
 }) {
   const qc = useQueryClient();
-  const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [title, setTitle] = useState("");
 
   // Global shortcut: press "c" to open (when not typing in a field); Esc to close.
   useEffect(() => {
@@ -70,13 +70,16 @@ export function AddTaskModal({
   // Start each open with a clean form.
   useEffect(() => {
     if (open) {
-      setTitle("");
       setBody("");
+      setTitle("");
     }
   }, [open]);
 
+  // Description-first capture: the title is optional — when left empty, the
+  // refinement agent names the task automatically.
   const create = useMutation({
-    mutationFn: () => createTask({ title: title.trim(), body: body.trim() || undefined }),
+    mutationFn: () =>
+      createTask({ title: title.trim() || undefined, body: body.trim() || undefined }),
     onSuccess: (task) => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       onOpenChange(false);
@@ -86,12 +89,14 @@ export function AddTaskModal({
 
   if (!open) return null;
 
+  const canSubmit = Boolean(body.trim() || title.trim());
+
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
-    if (title.trim() && !create.isPending) create.mutate();
+    if (canSubmit && !create.isPending) create.mutate();
   };
 
-  // ⌘/Ctrl+Enter submits from the notes field (plain Enter there inserts a newline).
+  // ⌘/Ctrl+Enter submits from the description field (plain Enter inserts a newline).
   const onBodyKey = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
   };
@@ -130,28 +135,30 @@ export function AddTaskModal({
 
           <div className="flex flex-col gap-3 p-4">
             {/* biome-ignore lint/a11y/noAutofocus: the modal exists to be typed in immediately */}
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-              placeholder="Task title…"
-              aria-label="Task title"
-              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            />
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onKeyDown={onBodyKey}
-              placeholder="Notes (optional)…"
-              aria-label="Notes"
-              rows={3}
+              autoFocus
+              placeholder="Describe the task — what, where, why. Paste anything…"
+              aria-label="Description"
+              rows={4}
               className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Title (optional — Cadence names it during refinement)"
+              aria-label="Title (optional)"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
           <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
             <span className="text-xs text-muted-foreground">
               Lands in your Inbox ·{" "}
+              <kbd className="rounded border border-border px-1 font-mono text-[10px]">⌘↵</kbd> to
+              add ·{" "}
               <kbd className="rounded border border-border px-1 font-mono text-[10px]">Esc</kbd> to
               cancel
             </span>
@@ -159,7 +166,7 @@ export function AddTaskModal({
               icon={<Plus />}
               label="Add task"
               type="submit"
-              disabled={!title.trim() || create.isPending}
+              disabled={!canSubmit || create.isPending}
             />
           </div>
         </form>

@@ -101,6 +101,27 @@ test("insufficient discovery → Needs-Feedback", async () => {
   expect(getTask(db, task.id)?.status).toBe("needs_feedback");
 });
 
+test("discovery names a description-only task (manual Refine path) but never a user title", async () => {
+  // Description-only capture: the prompt asks for a title and the result applies it.
+  const unnamed = createTask(db, { body: "search is slow when the index is cold" });
+  const { run, calls } = recordingRunner({
+    sufficiency: "ok",
+    title: "Speed up cold-index search",
+    spec: "Warm the FTS index on boot",
+    unknowns: [],
+  });
+  await runDiscovery(db, unnamed.id, run);
+  expect(calls[0]?.prompt).toContain('"title":"string"');
+  expect(getTask(db, unnamed.id)?.title).toBe("Speed up cold-index search");
+
+  // User-titled capture: no title asked for, none applied.
+  const named = createTask(db, { title: "Keep my wording", body: "details" });
+  const second = recordingRunner({ sufficiency: "ok", title: "Agent rename", spec: "x", unknowns: [] });
+  await runDiscovery(db, named.id, second.run);
+  expect(second.calls[0]?.prompt).not.toContain('"title":"string"');
+  expect(getTask(db, named.id)?.title).toBe("Keep my wording");
+});
+
 // Real Sonnet frequently returns `spec` as a structured object + `sufficiency:"partial"` — which used
 // to crash `specMarkdown` (`j.spec.trim()` on an object), reject runDiscovery, and silently strand the
 // task in Refining. It must now render the spec and advance.

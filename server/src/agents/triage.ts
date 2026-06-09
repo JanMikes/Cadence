@@ -12,6 +12,8 @@ export interface TriageJson {
   sufficiency?: "ok" | "insufficient";
   needFromUser?: string | null;
   restatement?: string;
+  /** A proper task title — requested when capture was description-only. */
+  title?: string;
   projectSlug?: string | null;
   fleetName?: string | null;
   isMultiRepo?: boolean;
@@ -30,6 +32,7 @@ export interface TriageOutcome {
 export function buildTriagePrompt(
   raw: { title: string; body: string },
   projectList: Array<{ slug: string; name: string }>,
+  opts: { titleNeeded?: boolean } = {},
 ): string {
   const projects = projectList.length
     ? projectList.map((p) => `${p.slug} (${p.name})`).join(", ")
@@ -41,11 +44,17 @@ export function buildTriagePrompt(
     "Decide: which known project this belongs to (or null); a priority (P0..P3); a deadline if one is",
     "implied (YYYY-MM-DD or null); 2-4 labels; and a one-line restatement of the goal.",
     'If too vague to even route or restate, set sufficiency:"insufficient" and say what you need.',
+    opts.titleNeeded
+      ? 'The task was captured without a title — also write a "title": a concise, specific name for the\n' +
+        "task (max 60 chars, imperative mood, no trailing period). Always include it, even if insufficient."
+      : "",
     "",
     `Known projects: ${projects}.`,
     "",
     "Respond with ONLY this JSON shape:",
-    '{"sufficiency":"ok|insufficient","needFromUser":"string|null","restatement":"string",',
+    `{"sufficiency":"ok|insufficient","needFromUser":"string|null","restatement":"string",${
+      opts.titleNeeded ? '"title":"string",' : ""
+    }`,
     '"projectSlug":"string|null","priority":"P0|P1|P2|P3","deadline":"YYYY-MM-DD|null","labels":["string"]}',
     "",
     `TASK TITLE: ${raw.title}`,
@@ -57,14 +66,20 @@ export function buildTriagePrompt(
 
 /** Apply a parsed triage result to the task (deterministic; no model). */
 export function applyTriage(db: Db, taskId: string, j: TriageJson): TriageOutcome {
+  // The agent names the task only when the title is still a derived placeholder —
+  // a user-written title is never overwritten (propose, don't impose).
+  const agentTitle =
+    getTaskDetail(db, taskId)?.titleGenerated && j.title?.trim() ? j.title.trim() : undefined;
+
   if (j.sufficiency === "insufficient") {
-    updateTask(db, taskId, { status: "needs_feedback" });
+    updateTask(db, taskId, { status: "needs_feedback", ...(agentTitle && { title: agentTitle }) });
     const need = j.needFromUser?.trim();
     if (need) appendContext(taskId, `Triage needs more info: ${need}`);
     return { ran: true, status: "needs_feedback", needFromUser: need };
   }
 
   const patch: Parameters<typeof updateTask>[2] = { status: "triaged" };
+  if (agentTitle) patch.title = agentTitle;
   if (j.projectSlug) patch.project = j.projectSlug;
   if (j.priority) patch.priority = j.priority;
   if (Array.isArray(j.labels) && j.labels.length) patch.labels = j.labels;
@@ -93,6 +108,7 @@ export async function runTriage(
   const prompt = buildTriagePrompt(
     { title: task.title, body: task.body },
     listProjects(db).map((p) => ({ slug: p.slug, name: p.name })),
+    { titleNeeded: task.titleGenerated },
   );
   const result = await run({
     cwd: resolveTaskCwd(db, taskId),
