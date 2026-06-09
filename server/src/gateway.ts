@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { ActivityTracker } from "./activity";
 import { runAgent } from "./agents/runner";
+import { healStuckTasks } from "./heal";
 import { ApprovalRegistry } from "./approvals";
 import { emitProposals } from "./proposals";
 import { startSweep } from "./sweep";
@@ -89,6 +90,14 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     opts.startWatcher === false
       ? { close() {} }
       : startSweep(db, hub, { onTick: () => emitProposals(db, hub, emittedProposals) });
+
+  // Self-heal tasks left in "refining" by a previous run (crash/restart). Background, autonomy-only,
+  // skipped in tests (startWatcher === false). Discovery/Questioner are now never-strand.
+  if (opts.startWatcher !== false && readSettings().global.autonomy) {
+    void healStuckTasks({ db, runAgent: opts.runAgent ?? runAgent, activity, hub }).then((n) => {
+      if (n) console.log(`[cadence] self-healed ${n} task(s) stuck in refining`);
+    });
+  }
 
   const server = Bun.serve<WsData>({
     port,

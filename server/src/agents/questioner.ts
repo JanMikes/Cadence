@@ -82,7 +82,17 @@ export async function runQuestioner(
   });
 
   const j = (result.json ?? null) as QuestionerJson | null;
-  if (!j || !Array.isArray(j.questions)) return { ran: false };
+  if (!j || !Array.isArray(j.questions)) {
+    // Don't strand the task in Refining — surface it so the user can review the spec, add context, or
+    // run it manually (same never-stuck contract as Discovery).
+    updateTask(db, taskId, { status: "needs_feedback" });
+    appendContext(
+      taskId,
+      "Refinement flagged open questions but the Questioner couldn't formulate them. " +
+        "Review the spec, add context, or run Claude on this task manually.",
+    );
+    return { ran: true, status: "needs_feedback" };
+  }
 
   const questions = normalize(j.questions);
   if (questions.length === 0) {
