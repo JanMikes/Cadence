@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.e (boot reconcile = adopt-or-kill; heal after, within budget; process groups).
+- **Current step:** 6.1.f (close duplicate-spawn endpoints: plan-approve idempotency, ActivityTracker keying).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -135,7 +135,7 @@ zombies. Implications the fix MUST honor:
   (this is what retires zombie rows automatically from now on).
   - Verify: test with a recycled-pid fixture → row finalized; seeded zombie rows get swept.
     ✓ 2026-06-10 (`75e5dca`, 325 tests; signature = start-time matching, see Journal).
-- [ ] **6.1.e Boot reconcile = adopt-or-kill; heal only after, within budget.** On boot, for each
+- [x] **6.1.e Boot reconcile = adopt-or-kill; heal only after, within budget.** On boot, for each
   live one-shot row: read `recording-runner.ts:71-104` (transcript self-heal) and choose — **adopt**
   (re-attach a monitor that finalizes the row + recovers the result from the transcript on exit) if
   reliable, else **kill** (SIGTERM → 5s → SIGKILL) + finalize `killed`. Either way a task never has
@@ -144,6 +144,8 @@ zombies. Implications the fix MUST honor:
   (`detached: true`, kill `-pid`) so claude’s children die with it.
   - Verify: integration test — boot the gateway twice with a task in `refining` → exactly **one**
     spawn total; orphan from boot #1 is adopted-or-killed at boot #2.
+    ✓ 2026-06-10 (`991f0b6`; **kill chosen over adopt** — see Journal; verify realized as: boot #2
+    kills the orphan then heals exactly once, ≤1 spawn per boot, ≤3 per 24h by 6.1.c).
 - [ ] **6.1.f Close the duplicate-spawn endpoints.** `/refine` goes through 6.1.b; plan-approve
   becomes idempotent (409/no-op when a chain is already active — remove the `implementing`
   back-compat double-run at `api.ts:330`); fix `ActivityTracker` keying to `(taskId, role)` with
@@ -506,3 +508,17 @@ yourself.
   pid under honest semantics and is now a regression test for finalization). api.ts terminal-takeover
   wait-loop (api.ts:926-932) intentionally left on plain kill(0): it polls a pid it just signalled
   within a 5s bounded window.
+- **2026-06-10 — 6.1.e done** (`991f0b6`). **Decision: KILL orphaned one-shots at boot, adopt
+  rejected** — the orphan's driving promise died with the old gateway, so result *application*
+  (status flips, spec writes — they live in the dead promise, not the transcript) can never happen;
+  re-implementing per-role transcript→application machinery for a process that dies on SIGPIPE at
+  its next write anyway is complexity without value. Warm chats still survive restarts (output
+  streams from transcript; takeover works). One-shots spawn `detached: true` (group leaders);
+  `killGroup`/`killProcessTree` (SIGTERM → 5s → SIGKILL, unref'd timer) used by reconcile,
+  `signalSession` and the runner timeout — claude's children die with it. Gateway boot order
+  (reconcile → budgeted heal) verified at gateway.ts:103→110. ⚠ Caught in review: the old
+  "survivor" test seeded an implicit one-shot with `pid: process.pid` — under kill-at-boot that
+  would have SIGTERM'd the test runner itself; re-fixtured to `warm` + added a real-child
+  (`sleep 30`) orphan-kill test and the boot-sequence composition test. NOTE for 6.1.g: a
+  `refining` task with no live run is invisible at runtime (attention covers implementing/verifying
+  only) — surface it in the attention feed.
