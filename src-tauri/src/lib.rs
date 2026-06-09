@@ -15,7 +15,7 @@ use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder};
 use tauri::path::BaseDirectory;
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
@@ -157,9 +157,11 @@ fn show_main<R: Runtime>(app: &AppHandle<R>) {
 /// and leaves the rest of the app working.
 fn setup_tray(app: &AppHandle<impl Runtime>) -> tauri::Result<()> {
     let menu = build_tray_menu(app)?;
+    // The menu opens on BOTH left- and right-click (standard macOS menubar behaviour); "Open Cadence"
+    // is the first item, so a click is always discoverable and can reveal the window.
     let mut builder = TrayIconBuilder::with_id("main")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_main(app),
             "today" | "inbox" => {
@@ -172,16 +174,6 @@ fn setup_tray(app: &AppHandle<impl Runtime>) -> tauri::Result<()> {
             }
             "quit" => app.exit(0),
             _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                show_main(tray.app_handle());
-            }
         });
     if let Some(icon) = app.default_window_icon().cloned() {
         builder = builder.icon(icon);
