@@ -76,6 +76,14 @@ export function App() {
       void qc.invalidateQueries({ queryKey: ["attention"] });
       void qc.invalidateQueries({ queryKey: ["tasks"] });
     }
+    // Project changes (edits, worktree-readiness verdicts) → refresh the projects list
+    // so open views (e.g. the project drawer) show the new state live.
+    if (
+      msg.type === "event" &&
+      (msg.name === "project:created" || msg.name === "project:updated")
+    ) {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+    }
   });
 
   // Native global hotkey / tray "Quick capture" → open the capture modal (inert in a plain browser).

@@ -1,5 +1,6 @@
 import type { QAQuestion } from "@cadence/shared";
 import type { Db } from "../db/client";
+import { withReadAccess } from "../project-locks";
 import { appendContext, readQa, readSpec, writeQa } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
 import { runAgent } from "./runner";
@@ -74,13 +75,16 @@ export async function runQuestioner(
   const task = getTaskDetail(db, taskId);
   if (!task) return { ran: false };
 
-  const result = await run({
-    cwd: resolveTaskCwd(db, taskId),
-    taskId,
-    role: "questioner",
-    prompt: buildQuestionerPrompt(readSpec(taskId), { title: task.title }),
-    permissionMode: "plan",
-  });
+  // Read lock: shared with the other read stages, queued behind an in-place execution.
+  const result = await withReadAccess(db, taskId, () =>
+    run({
+      cwd: resolveTaskCwd(db, taskId),
+      taskId,
+      role: "questioner",
+      prompt: buildQuestionerPrompt(readSpec(taskId), { title: task.title }),
+      permissionMode: "plan",
+    }),
+  );
 
   const j = (result.json ?? null) as QuestionerJson | null;
   if (!j || !Array.isArray(j.questions)) {

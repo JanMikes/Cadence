@@ -38,6 +38,11 @@ export const projects = sqliteTable("projects", {
   defaultDeliveryMode: text("default_delivery_mode").notNull().default("branch_summary"),
   // per-project autonomy override (§9.1): true = on, false = off, null = inherit global
   autonomy: integer("autonomy", { mode: "boolean" }),
+  // opt-in worktree isolation (§9): off by default — not every repo runs from a fresh
+  // checkout. When off, executions run in rootPath on a task branch, serialized per project.
+  worktreesEnabled: integer("worktrees_enabled", { mode: "boolean" }).notNull().default(false),
+  // last worktree-readiness check (JSON WorktreeCheck; null = never checked)
+  worktreeCheck: text("worktree_check"),
   systemPrompt: text("system_prompt"),
   notes: text("notes"),
   createdAt: integer("created_at").notNull().default(now),

@@ -11,6 +11,7 @@ export function modelForRole(role?: string): string | undefined {
     case "discovery":
     case "questioner":
     case "verifier":
+    case "worktree_check":
       return "claude-sonnet-4-6";
     case "planner":
     case "implementer":

@@ -1120,3 +1120,29 @@ review and revert a memory entry.
   survived a gateway restart keeps its honest *running* + streams from the transcript). Sessions list:
   task names, pulsing live rows, elapsed time. Tests: 274 pass (encoding/fallback/self-heal, stream
   runner, recording pid+events, takeover route, live-transcript reducer/dedupe, detail states).
+
+- **2026-06-10 · Worktrees are now opt-in per project (in-place execution + per-project locking).**
+  From real use: Cadence ran every execution in a git worktree, but **not every repo survives a
+  fresh second checkout** (`.env` outside git, docker-compose port/bind-mount assumptions, heavy
+  per-checkout installs). New per-project `worktreesEnabled` (default **off**; schema migration
+  0005 + frontmatter + PATCH + create form/drawer toggle). **Off → in-place execution**: the
+  implementer runs in the project dir on the same deterministic `cadence/<slug>-<id8>` branch —
+  `beginInPlaceExecution` refuses a dirty tracked tree, snapshots pre-existing untracked paths
+  (delivery commits tracked changes + *new* files only, so a user's `.env` can never enter
+  history), delivery restores the base branch (`execution.json` crash-state under the task dir),
+  review diffs `base...branch` in the main repo, merge tidies the branch. **Concurrency**: new
+  `project-locks.ts` per-project readers-writer lock — execution chains that mutate the project
+  dir hold the write lock end-to-end (one implementation per project; `execution_queued` timeline
+  event + "queued" activity while waiting), read stages (triage/discovery/questioner/planner) take
+  shared read locks so investigation always sees the base branch; a DB **survivor guard** waits out
+  in-place execution sessions that outlived a gateway restart; merge 409s while the dir is busy.
+  Guardrails kept: `bypassPermissions` stays worktree-only (in-place keeps the resolved mode, new
+  in-place prompt forbids destructive commands/branch switches); fleet runs skip non-opted-in
+  members with a visible reason. **Readiness check** (propose-don't-impose): `POST
+  /api/projects/:slug/worktree-check` runs a read-only Sonnet inspection of the repo (uncommitted
+  required files, docker/ports, install cost, submodules…) and persists a verdict + blockers card
+  in the project drawer ("Ask Claude to check") — the human flips the toggle. Spec §9.0; CLAUDE.md
+  locked decision. Tests: 305 pass (lock unit incl. writer preference + survivor guard; in-place
+  lifecycle incl. `.env` snapshot safety; implementer in-place/dirty-bail; fleet skip; gateway
+  worktree slice (opt-in) + in-place slice proving serialization (`maxActive == 1`), base-branch
+  restore, secret-free history, merge tidy; readiness-check agent + 202 route).

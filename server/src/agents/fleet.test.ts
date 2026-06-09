@@ -58,8 +58,9 @@ const ok = (): Promise<AgentResult> =>
 test("runFleetImplementer runs the Implementer in a worktree per member repo", async () => {
   const apiRepo = makeRepo("api");
   const webRepo = makeRepo("web");
-  const api = createProject(db, { name: "API", rootPath: apiRepo });
-  const web = createProject(db, { name: "Web", rootPath: webRepo });
+  // Fleet runs require worktree isolation — members opt in.
+  const api = createProject(db, { name: "API", rootPath: apiRepo, worktreesEnabled: true });
+  const web = createProject(db, { name: "Web", rootPath: webRepo, worktreesEnabled: true });
   const fleet = createFleet(db, { name: "Stack", projects: [api.slug, web.slug] });
 
   const task = createTask(db, { title: "Cross-repo change" });
@@ -87,6 +88,32 @@ test("runFleetImplementer runs the Implementer in a worktree per member repo", a
   }
   // any repo ran → task advanced to verifying
   expect(getTask(db, task.id)?.status).toBe("verifying");
+});
+
+test("runFleetImplementer skips members with worktrees disabled (visible reason, no run)", async () => {
+  const onRepo = makeRepo("on");
+  const offRepo = makeRepo("off");
+  const on = createProject(db, { name: "On", rootPath: onRepo, worktreesEnabled: true });
+  const off = createProject(db, { name: "Off", rootPath: offRepo }); // default: disabled
+  const fleet = createFleet(db, { name: "Mixed", projects: [on.slug, off.slug] });
+
+  const task = createTask(db, { title: "Mixed fleet change" });
+  updateTask(db, task.id, { fleet: fleet.slug, status: "implementing" });
+  applyPlan(task.id, { steps: [{ title: "do it" }] });
+  approvePlan(task.id);
+
+  const cwds: string[] = [];
+  const capture = (opts: AgentRunOptions): Promise<AgentResult> => {
+    cwds.push(opts.cwd);
+    return ok();
+  };
+  const outcome = await runFleetImplementer(db, task.id, capture);
+
+  expect(outcome.ran).toBe(true);
+  expect(cwds).toHaveLength(1); // only the opted-in member actually ran
+  const offResult = outcome.result?.results.find((r) => r.projectSlug === off.slug);
+  expect(offResult?.ran).toBe(false);
+  expect(offResult?.reason).toMatch(/worktrees disabled/);
 });
 
 test("runFleetImplementer bails when the task isn't on a fleet or the plan isn't approved", async () => {

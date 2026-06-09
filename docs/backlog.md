@@ -68,6 +68,12 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] **Ready (▶)** state + PLAY button
 - [ ] **Planner** agent (plan mode) → plan shown for approval
 - [ ] **git worktree per task** provisioning + branch naming
+- [x] **Worktrees opt-in per project** (`worktreesEnabled`, default off) — **DONE 2026-06-10**:
+      in-place execution on a task branch when off (dirty-tree guard, untracked snapshot so `.env`
+      never gets committed, base branch restored after delivery, branch tidied on merge);
+      per-project **RW lock** (one implementation at a time, read stages queue behind it, survivor
+      guard across gateway restarts); Claude **worktree-readiness check** (propose-don't-impose
+      verdict card in Project settings); fleets + Dangerous mode require worktrees.
 - [ ] **Implementer** agent in the worktree (permission mode per task)
 - [ ] **Verifier** agent → tests/build/lint + acceptance-criteria check → pass/fail
 - [ ] Verifier fans out **diverse reviewer** subagents (correctness/security/tests/conventions) → aggregate (§7.2)

@@ -26,8 +26,9 @@ saved locally (markdown files + a SQLite index + the existing `~/.claude/` files
    context** onto any task at any time, outside the Q&A. Both feed the agents.
 4. **Tell, don't hardcode.** Behavior is shaped by **layered context/prompts** (global → project →
    fleet → task), not baked-in logic. Adding a sentence of context must always be an option.
-5. **Isolation by default.** Autonomous code changes happen on a per-task branch/worktree; my
-   working tree is never surprised.
+5. **Isolation when the repo is ready for it.** Autonomous code changes happen on a per-task
+   branch — in an isolated worktree where the project opted in (§9.0), else serialized in the
+   project dir with the base branch restored after delivery; my working tree is never surprised.
 6. **Files are truth, DB is index.** *Content* lives in files — Claude Code's `~/.claude/`
    transcripts and our own per-task **markdown** are authoritative; **SQLite is a fast index** over
    them for the board, filters, and status. (See §5.)
@@ -272,10 +273,35 @@ better over time — autonomous self-improving, self-monitoring, self-proposing.
 ## 9. Delivery model
 
 `deliveryMode` resolved as `task ?? project ?? global`. Modes:
-- **`branch_summary`** (default) — commit on a per-task branch in an isolated **git worktree**;
-  in-app diff + summary + verify results; I merge.
+- **`branch_summary`** (default) — commit on a per-task branch; in-app diff + summary + verify
+  results; I merge.
 - **`auto_pr`** — additionally push + `gh pr create`.
-- **`apply_in_place`** — edit files directly in `rootPath` (no isolation; scratch repos).
+- **`apply_in_place`** — edit files directly in `rootPath` (no isolation, no branch; scratch repos).
+
+### 9.0 Execution isolation — worktrees are opt-in per project
+
+Not every repo runs from a fresh second checkout (`.env` files outside git, docker-compose with
+fixed host ports / repo-path bind mounts, per-checkout dependency installs, submodules). So
+**worktree isolation is a per-project setting, `worktreesEnabled`, default OFF**:
+
+- **Enabled** — execution (Implementer → Verifier → Delivery) runs in an isolated per-task
+  **git worktree** + branch next to the repo. Parallel-safe across tasks; the Implementer gets
+  full tool access (the disposable sandbox is the boundary).
+- **Disabled (default)** — execution runs **in the project working dir** on the same per-task
+  branch (created off the current HEAD), guarded by a **per-project readers-writer lock**:
+  - **one implementation per project at a time** (writer-exclusive, FIFO with writer preference);
+  - read stages (Triage/Discovery/Questioner/Planner) share the dir but **queue behind an
+    in-place execution**, so investigation always sees the base branch, never a half-written
+    task branch;
+  - it **refuses to start on a dirty tree** (my uncommitted work is never tangled into a task
+    branch), snapshots pre-existing untracked files so a delivery commit never swallows them
+    (`.env` stays mine), and **restores the base branch after delivery**; merge tidies the branch.
+  - the Implementer keeps the safer resolved permission mode (never `bypassPermissions` in-place);
+    fleet runs require worktrees (members that haven't opted in are skipped with a visible reason).
+- **"Check readiness" (propose-don't-impose)** — a read-only Claude run inspects the repo for
+  worktree blockers (uncommitted-but-required files, docker/port assumptions, install cost,
+  submodules…) and persists a verdict + blocker list on the project settings card; **I** flip the
+  toggle.
 
 ### 9.1 Permission / autonomy modes
 How much a session may do without asking. Three user-facing modes (mapping to real
@@ -287,8 +313,9 @@ How much a session may do without asking. Three user-facing modes (mapping to re
   in-app** via the SDK `canUseTool` callback, so I gate each step. Maximum control. (This is
   propose-don't-impose, §10.2, at the tool level.)
 - **Dangerous (skip all)** → `bypassPermissions` / `--dangerously-skip-permissions` — no prompts.
-  For trusted, **isolated** autonomous runs only: enabling asks for confirmation and is strongly
-  paired with **worktree isolation** (§9) so a runaway can't touch my main tree.
+  For trusted, **isolated** autonomous runs only: enabling asks for confirmation and **requires
+  worktree isolation** (§9.0) — it is refused for in-place execution so a runaway can't touch my
+  main tree.
 
 Under the hood Cadence also uses **`plan`** (read-only) for the Planner phase and may use
 **`acceptEdits`** for trusted implement steps. The live session tile always shows its current mode

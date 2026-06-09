@@ -56,6 +56,11 @@ for multi-repo tasks) · **Task** (the core entity — tracked from capture to d
 - **One-click terminal handoff** — copy command + "Open in iTerm2/Terminal" launch button.
 - **Cadence learns** — markdown memory + Reflector + proactive proposals; self-improving, reviewable.
 - **Permission modes** — Auto (default) · Manual (approve in-app) · Dangerous (skip all); per task/project/global.
+- **Worktrees are opt-in per project** (`worktreesEnabled`, default off — not every repo runs from a
+  fresh checkout). Off → execution runs in the project dir on a task branch, **serialized per
+  project** (RW lock: one implementation at a time; read stages queue behind it; base branch
+  restored after delivery). A Claude **readiness check** proposes the verdict (§9.0); Dangerous
+  mode + fleet runs require worktrees.
 - **Global search** — full-text (SQLite FTS5) across tasks + transcripts + memory; ⌘K palette.
 - **Security (critical)** — repo is public-safe: only generic code + docs; **all task/runtime data in
   `~/.cadence/`**, secrets in the OS keychain, fictional names in examples, pre-commit secret scan. See

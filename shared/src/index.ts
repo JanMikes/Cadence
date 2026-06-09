@@ -249,6 +249,23 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 export const DELIVERY_MODES = ["branch_summary", "auto_pr", "apply_in_place"] as const;
 export type DeliveryMode = (typeof DELIVERY_MODES)[number];
 
+/** One blocker found by the worktree-readiness check (e.g. ".env not committed"). */
+export interface WorktreeCheckBlocker {
+  title: string;
+  detail: string;
+  severity: "high" | "medium" | "low";
+}
+
+/** Result of the Claude-run "can this repo run from a fresh git worktree?" check (§9).
+ *  Propose-don't-impose: it informs the worktreesEnabled toggle, never flips it. */
+export interface WorktreeCheck {
+  verdict: "ready" | "blockers";
+  summary: string;
+  blockers: WorktreeCheckBlocker[];
+  recommendation: string | null;
+  checkedAt: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -261,6 +278,12 @@ export interface Project {
   defaultDeliveryMode: string;
   /** Per-project autonomy override: true = on, false = off, null = inherit global (§9.1). */
   autonomy: boolean | null;
+  /** Opt-in (§9): run executions in an isolated git worktree. Off by default — not every
+   *  repo works from a second checkout (.env files, docker ports, install steps). When off,
+   *  executions run in the project working dir on a task branch, one at a time. */
+  worktreesEnabled: boolean;
+  /** Last worktree-readiness check result (null = never checked). Server-managed. */
+  worktreeCheck: WorktreeCheck | null;
   systemPrompt: string | null;
   notes: string | null;
   createdAt: number;
@@ -275,6 +298,7 @@ export interface CreateProjectInput {
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;
   autonomy?: boolean | null;
+  worktreesEnabled?: boolean;
   systemPrompt?: string;
   notes?: string;
 }
@@ -288,6 +312,7 @@ export interface UpdateProjectInput {
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;
   autonomy?: boolean | null;
+  worktreesEnabled?: boolean;
   systemPrompt?: string | null;
   notes?: string | null;
 }

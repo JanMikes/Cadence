@@ -19,6 +19,9 @@ export const paths = {
   taskPlan: (id: string) => join(cadenceHome(), "tasks", id, "plan.md"),
   taskVerify: (id: string) => join(cadenceHome(), "tasks", id, "verify.md"),
   taskDelivery: (id: string) => join(cadenceHome(), "tasks", id, "delivery.md"),
+  // Runtime state for an in-place execution (base branch + untracked snapshot) — JSON,
+  // not markdown: machine state for crash-safe restore, not user-editable content.
+  taskExecution: (id: string) => join(cadenceHome(), "tasks", id, "execution.json"),
 
   projectsDir: () => join(cadenceHome(), "projects"),
   projectFile: (slug: string) => join(cadenceHome(), "projects", `${slug}.md`),

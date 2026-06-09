@@ -3,7 +3,13 @@ import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { getProjectById } from "./projects";
 import { getTask, resolveDeliveryMode } from "./tasks";
-import { branchName, isGitRepo, worktreePathFor } from "./worktree";
+import {
+  branchName,
+  clearExecutionState,
+  isGitRepo,
+  readExecutionState,
+  worktreePathFor,
+} from "./worktree";
 
 /**
  * The Review surface (spec §7.7/§10): show the task's changes (git diff), let me
@@ -22,7 +28,8 @@ function repoRoot(db: Db, taskId: string): string | null {
   return rootPath && isGitRepo(rootPath) ? rootPath : null;
 }
 
-/** The task's unified diff: branch-vs-base for worktree modes, working tree for in-place. */
+/** The task's unified diff: branch-vs-base for branch modes (worktree or in-place
+ *  branch in the main repo), working tree for apply_in_place. */
 export function taskDiff(db: Db, taskId: string): TaskDiff {
   const task = getTask(db, taskId);
   if (!task) return { mode: "", branch: null, diff: "" };
@@ -35,11 +42,23 @@ export function taskDiff(db: Db, taskId: string): TaskDiff {
   }
   const branch = branchName(task);
   const wt = worktreePathFor(rootPath, task);
-  if (!existsSync(wt)) return { mode, branch, diff: "" };
-  const base = git(["rev-parse", "--abbrev-ref", "HEAD"], rootPath).stdout.trim() || "HEAD";
-  // include both committed branch changes and any uncommitted working changes
-  const committed = git(["diff", `${base}...HEAD`], wt).stdout;
-  const working = git(["diff"], wt).stdout;
+  if (existsSync(wt)) {
+    const base = git(["rev-parse", "--abbrev-ref", "HEAD"], rootPath).stdout.trim() || "HEAD";
+    // include both committed branch changes and any uncommitted working changes
+    const committed = git(["diff", `${base}...HEAD`], wt).stdout;
+    const working = git(["diff"], wt).stdout;
+    return { mode, branch, diff: committed + working };
+  }
+  // In-place execution (worktrees disabled): the task branch lives in the main repo.
+  const branchExists = git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], rootPath).ok;
+  if (!branchExists) return { mode, branch, diff: "" };
+  const current = git(["rev-parse", "--abbrev-ref", "HEAD"], rootPath).stdout.trim();
+  const onBranch = current === branch;
+  // Mid-execution the repo IS on the task branch — diff against the recorded base;
+  // after delivery restored the base, diff base...branch directly.
+  const base = onBranch ? (readExecutionState(taskId)?.baseBranch ?? "") : current || "HEAD";
+  const committed = base ? git(["diff", `${base}...${branch}`], rootPath).stdout : "";
+  const working = onBranch ? git(["diff"], rootPath).stdout : "";
   return { mode, branch, diff: committed + working };
 }
 
@@ -57,6 +76,19 @@ export function mergeTask(db: Db, taskId: string): MergeResult {
   const rootPath = repoRoot(db, taskId);
   if (!rootPath) return { ok: false, message: "no git repo to merge into" };
   const branch = branchName(task);
+  // In-place execution that couldn't restore its base: merging now would merge the
+  // branch into itself. Surface it instead of silently "succeeding".
+  const current = git(["rev-parse", "--abbrev-ref", "HEAD"], rootPath).stdout.trim();
+  if (current === branch) {
+    return { ok: false, message: `repo is still on ${branch} — switch back to the base branch first` };
+  }
   const r = git(["merge", "--no-ff", "-m", `Merge ${branch} (Cadence)`, branch], rootPath);
-  return { ok: r.ok, message: r.ok ? `merged ${branch}` : r.stderr.trim() };
+  if (!r.ok) return { ok: false, message: r.stderr.trim() };
+  // In-place branches (no worktree holding them) are deleted after merge so the
+  // user's repo stays tidy; worktree branches stay (the worktree pins them).
+  if (!existsSync(worktreePathFor(rootPath, task))) {
+    git(["branch", "-d", branch], rootPath); // best-effort
+    clearExecutionState(taskId);
+  }
+  return { ok: true, message: `merged ${branch}` };
 }

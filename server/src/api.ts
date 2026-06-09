@@ -39,7 +39,10 @@ import { addDependency, getDeps, getSubtasks, removeDependency } from "./deps";
 import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
 import { commitDigest, getDigest, recapDigest } from "./digest";
-import { listTaskEvents } from "./events";
+import { listTaskEvents, recordEvent } from "./events";
+import { projectLocks } from "./project-locks";
+import { executionLockTarget } from "./worktree";
+import { runWorktreeCheck } from "./agents/worktree-check";
 import { createFleet, getFleet, getFleetById, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
 import {
@@ -268,6 +271,23 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const task = getTask(ctx.db, taskId);
     if (!task) return notFound(pathname);
     if (task.status !== "review") return conflict(`merge requires a task in review (currently ${task.status})`, { status: task.status });
+    // Merging mutates the project working dir — refuse while an in-place execution
+    // holds it (another task implementing in this project right now).
+    if (task.projectId) {
+      const project = getProjectById(ctx.db, task.projectId);
+      const busy =
+        project?.rootPath &&
+        projectLocks.isWriteBusy(project.id, {
+          db: ctx.db,
+          rootPath: project.rootPath,
+          excludeTaskId: taskId,
+        });
+      if (busy) {
+        return conflict("another task is executing in this project's working dir — try again when it finishes", {
+          merged: false,
+        });
+      }
+    }
     const result = mergeTask(ctx.db, taskId);
     if (!result.ok) return conflict(result.message, { merged: false });
     const updated = updateTask(ctx.db, taskId, { status: "done" });
@@ -305,38 +325,14 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     // Approving the plan starts implementation. From Plan review (or implementing,
     // for back-compat) we move into In progress and run the execution chain. Each
     // stage is activity-tracked so the board card spins while Cadence works; the
-    // Implementer runs in the isolated worktree and bails gracefully if it can't.
+    // Implementer runs in the isolated worktree (or the locked project dir) and
+    // bails gracefully if it can't.
     if (task.status === "plan_review" || task.status === "implementing") {
       if (task.status !== "implementing") {
         updateTask(ctx.db, taskId, { status: "implementing" });
         ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       }
-      void ctx.activity
-        .track(taskId, "implementer", () => runImplementer(ctx.db, taskId, ctx.runAgent))
-        .then(async (r) => {
-          if (!r.ran) return;
-          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-          ctx.hub.broadcast({ type: "event", name: "task:implemented", payload: taskId });
-          // Implemented → Verifier (tests/build/lint + diverse reviewers) → pass/fail.
-          const v = await ctx.activity.track(taskId, "verifier", () =>
-            runVerifier(ctx.db, taskId, ctx.runAgent),
-          );
-          if (v.ran) {
-            ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-            ctx.hub.broadcast({ type: "event", name: "task:verified", payload: taskId });
-            // Passed → the task lands in Review for the human to merge (3.7); notify
-            // so it surfaces in the "needs you" feed. Delivery then writes the summary.
-            if (v.passed) {
-              const reviewing = getTask(ctx.db, taskId);
-              if (reviewing) notifyOnTransition(ctx.hub, "verifying", reviewing);
-              const d = await ctx.activity.track(taskId, "delivery", () =>
-                runDelivery(ctx.db, taskId, ctx.runAgent),
-              );
-              if (d.ran) ctx.hub.broadcast({ type: "event", name: "task:delivered", payload: taskId });
-            }
-          }
-        })
-        .catch((err) => console.error(`[cadence] execution failed for ${taskId}:`, err));
+      void runExecutionChain(ctx, taskId);
     }
     return Response.json(plan);
   }
@@ -1040,6 +1036,32 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return methodNotAllowed();
   }
 
+  // Worktree-readiness check (§9, propose-don't-impose): a read-only Claude run inspects
+  // the repo for worktree blockers (.env files, docker ports, install steps…) and the
+  // verdict is persisted on the project. Fire-and-forget — the result arrives over WS.
+  const worktreeCheckMatch = pathname.match(/^\/api\/projects\/([^/]+)\/worktree-check$/);
+  if (worktreeCheckMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const slug = worktreeCheckMatch[1] as string;
+    const project = getProject(ctx.db, slug);
+    if (!project) return notFound(pathname);
+    if (!project.rootPath) return conflict("project has no rootPath — set one first");
+    void runWorktreeCheck(ctx.db, slug, ctx.runAgent)
+      .then((out) => {
+        if (out.ran) {
+          ctx.hub.broadcast({ type: "event", name: "project:updated", payload: slug });
+        } else {
+          ctx.hub.broadcast({
+            type: "event",
+            name: "project:worktree-check-failed",
+            payload: { slug, reason: out.reason ?? "check failed" },
+          });
+        }
+      })
+      .catch((err) => console.error(`[cadence] worktree check failed for ${slug}:`, err));
+    return Response.json({ started: true }, { status: 202 });
+  }
+
   if (pathname === "/api/fleets") {
     if (method === "GET") return Response.json(listFleets(ctx.db));
     if (method === "POST") {
@@ -1097,6 +1119,76 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   }
 
   return notFound(pathname);
+}
+
+/**
+ * The execution chain: Implementer → Verifier → (passed) Delivery. When the run
+ * mutates the project working dir itself (worktrees disabled — the default — or
+ * apply_in_place delivery), it holds the project's write lock for the WHOLE chain:
+ * one implementation per project at a time, read stages queued meanwhile, and the
+ * repo is back on its base branch before the lock is released. Worktree-isolated
+ * executions skip the lock entirely and stay fully parallel.
+ */
+async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void> {
+  let release: (() => void) | null = null;
+  try {
+    const lockTarget = executionLockTarget(ctx.db, taskId);
+    if (lockTarget) {
+      release = await projectLocks.acquireWrite(lockTarget.projectId, {
+        guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId },
+        onQueued: () => {
+          // Visible queueing (§10: never lie about state): the project dir is busy with
+          // another in-place run — note it on the timeline and let the card spin as "queued".
+          recordEvent(ctx.db, {
+            taskId,
+            type: "execution_queued",
+            payload: { projectId: lockTarget.projectId },
+          });
+          ctx.activity.start(taskId, "queued");
+          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+        },
+      });
+      ctx.activity.end(taskId); // clear the "queued" spinner if we showed one
+    }
+
+    const r = await ctx.activity.track(taskId, "implementer", () =>
+      runImplementer(ctx.db, taskId, ctx.runAgent),
+    );
+    if (!r.ran) {
+      // A graceful bail (dirty tree, unapproved plan, dangerous-without-worktree…) must
+      // be visible, not a silent stall: note the reason on the task's context channel.
+      if (r.reason) {
+        appendContext(taskId, `Implementer didn't run: ${r.reason}`);
+        ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
+        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      }
+      return;
+    }
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    ctx.hub.broadcast({ type: "event", name: "task:implemented", payload: taskId });
+    // Implemented → Verifier (tests/build/lint + diverse reviewers) → pass/fail.
+    const v = await ctx.activity.track(taskId, "verifier", () =>
+      runVerifier(ctx.db, taskId, ctx.runAgent),
+    );
+    if (v.ran) {
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      ctx.hub.broadcast({ type: "event", name: "task:verified", payload: taskId });
+      // Passed → the task lands in Review for the human to merge (3.7); notify
+      // so it surfaces in the "needs you" feed. Delivery then writes the summary.
+      if (v.passed) {
+        const reviewing = getTask(ctx.db, taskId);
+        if (reviewing) notifyOnTransition(ctx.hub, "verifying", reviewing);
+        const d = await ctx.activity.track(taskId, "delivery", () =>
+          runDelivery(ctx.db, taskId, ctx.runAgent),
+        );
+        if (d.ran) ctx.hub.broadcast({ type: "event", name: "task:delivered", payload: taskId });
+      }
+    }
+  } catch (err) {
+    console.error(`[cadence] execution failed for ${taskId}:`, err);
+  } finally {
+    release?.();
+  }
 }
 
 /**

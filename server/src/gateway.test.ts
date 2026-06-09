@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage, Task } from "@cadence/shared";
@@ -12,6 +12,8 @@ let db: Db;
 let webDir: string;
 let home: string;
 const terminalLaunches: Array<{ app: string; command: string }> = [];
+/** Per-test hook: lets a test make the mock Implementer touch files / sleep in its cwd. */
+let implementerSideEffect: ((opts: { cwd: string }) => Promise<void> | void) | null = null;
 
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "cadence-gw-home-"));
@@ -40,11 +42,19 @@ beforeAll(() => {
       } else if (opts.role === "planner") {
         json = { steps: [{ title: "Wire the endpoint", files: ["api.ts"] }, { title: "Add a test" }] };
       } else if (opts.role === "implementer") {
+        await implementerSideEffect?.(opts);
         json = { ok: true }; // the implementer only checks for errors, not JSON shape
       } else if (opts.role === "verifier") {
         json = { passed: true, checks: [{ name: "tests", passed: true }], criteria: [], issues: [] };
       } else if (opts.role === "delivery") {
         json = { summary: "Implemented and verified.", branch: null, prUrl: null };
+      } else if (opts.role === "worktree_check") {
+        json = {
+          verdict: "blockers",
+          summary: "Needs a per-checkout .env.",
+          blockers: [{ title: ".env not committed", detail: "", severity: "high" }],
+          recommendation: "Add an .env.example.",
+        };
       } else if (opts.role === "reflector") {
         json = { lessons: [{ scope: "global", note: "Jan bumps priorities up by one" }] };
       } else {
@@ -327,12 +337,16 @@ test("PLAY parks the task in Plan review, and /api/attention surfaces it", async
   expect(item?.summary).toContain("2 step");
 });
 
-test("execution slice: PLAY → plan → approve → Implementer → Verifier → review", async () => {
+test("execution slice (worktrees opted in): PLAY → plan → approve → Implementer → Verifier → review", async () => {
   // a real git repo + an isolated worktree base for this task
   const repo = mkdtempSync(join(tmpdir(), "cadence-gw-repo-"));
   const wtBase = mkdtempSync(join(tmpdir(), "cadence-gw-wt-"));
   process.env.CADENCE_WORKTREES = wtBase;
   const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+  const head = () =>
+    Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd: repo, stdout: "pipe" })
+      .stdout.toString()
+      .trim();
   g(["init", "-q", "-b", "main"]);
   g(["config", "user.email", "t@e.com"]);
   g(["config", "user.name", "T"]);
@@ -344,7 +358,8 @@ test("execution slice: PLAY → plan → approve → Implementer → Verifier �
     const project = (await fetch(`${gw.url}/api/projects`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "GW Repo", rootPath: repo }),
+      // worktree isolation is opt-in per project (default off → in-place execution)
+      body: JSON.stringify({ name: "GW Repo", rootPath: repo, worktreesEnabled: true }),
     }).then((r) => r.json())) as { slug: string };
 
     const task = await createViaApi("Implement via gateway");
@@ -395,6 +410,11 @@ test("execution slice: PLAY → plan → approve → Implementer → Verifier �
     expect(diff.mode).toBe("branch_summary");
     expect(diff.branch).toContain("cadence/");
 
+    // the run stayed isolated: a worktree exists under the base, and the user's
+    // checkout never left main
+    expect(readdirSync(wtBase).length).toBeGreaterThan(0);
+    expect(head()).toBe("main");
+
     // merge → done
     const merge = (await fetch(`${gw.url}/api/tasks/${task.id}/review/merge`, { method: "POST" }).then(
       (r) => r.json(),
@@ -405,6 +425,153 @@ test("execution slice: PLAY → plan → approve → Implementer → Verifier �
     delete process.env.CADENCE_WORKTREES;
     rmSync(repo, { recursive: true, force: true });
     rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
+test("in-place execution slice (worktrees off — the default): branch in the main repo, base restored, serialized", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-inplace-"));
+  const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+  const head = () =>
+    Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd: repo, stdout: "pipe" })
+      .stdout.toString()
+      .trim();
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@e.com"]);
+  g(["config", "user.name", "T"]);
+  writeFileSync(join(repo, "README.md"), "# x\n");
+  g(["add", "."]);
+  g(["commit", "-q", "-m", "init"]);
+  // the user's untracked secret must never get committed by a delivery
+  writeFileSync(join(repo, ".env"), "SECRET=1\n");
+
+  // track execution concurrency: with worktrees off, implementations must serialize
+  let active = 0;
+  let maxActive = 0;
+  implementerSideEffect = async ({ cwd }) => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    writeFileSync(join(cwd, "feature.txt"), "made by the implementer\n");
+    await new Promise((r) => setTimeout(r, 80));
+    active -= 1;
+  };
+
+  try {
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "GW InPlace", rootPath: repo }), // default: worktrees OFF
+    }).then((r) => r.json())) as { slug: string };
+
+    // two tasks in the same project, approved back-to-back → the second queues
+    const ids: string[] = [];
+    for (const title of ["First in-place change", "Second in-place change"]) {
+      const task = await createViaApi(title);
+      ids.push(task.id);
+      await fetch(`${gw.url}/api/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project: project.slug, status: "ready" }),
+      });
+      await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+      let plan = { steps: [] as unknown[] };
+      for (let i = 0; i < 50 && plan.steps.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as typeof plan;
+      }
+      expect(plan.steps.length).toBe(2);
+    }
+    await Promise.all(
+      ids.map((id) => fetch(`${gw.url}/api/tasks/${id}/plan/approve`, { method: "POST" })),
+    );
+
+    // both chains complete → review; they never overlapped in the working dir
+    for (const id of ids) {
+      let status = "";
+      for (let i = 0; i < 150 && status !== "review"; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        status = ((await fetch(`${gw.url}/api/tasks/${id}`).then((r) => r.json())) as Task).status;
+      }
+      expect(status).toBe("review");
+    }
+    expect(maxActive).toBe(1); // one implementation per project at a time
+
+    // the repo is back on main, clean of task files, .env untouched + uncommitted
+    expect(head()).toBe("main");
+    expect(existsSync(join(repo, "feature.txt"))).toBe(false);
+    expect(existsSync(join(repo, ".env"))).toBe(true);
+
+    // each task's diff shows its branch work (committed on the in-place branch)
+    const diff = (await fetch(`${gw.url}/api/tasks/${ids[0]}/diff`).then((r) => r.json())) as {
+      mode: string;
+      branch: string | null;
+      diff: string;
+    };
+    expect(diff.branch).toContain("cadence/");
+    expect(diff.diff).toContain("feature.txt");
+
+    // merge the first → done; its work lands on main and the branch is tidied away
+    const merge = (await fetch(`${gw.url}/api/tasks/${ids[0]}/review/merge`, { method: "POST" }).then(
+      (r) => r.json(),
+    )) as { merged: boolean; task: { status: string } };
+    expect(merge.merged).toBe(true);
+    expect(merge.task.status).toBe("done");
+    expect(existsSync(join(repo, "feature.txt"))).toBe(true);
+    const gitEnv = Bun.spawnSync(["git", "log", "--all", "--name-only", "--pretty=format:"], {
+      cwd: repo,
+      stdout: "pipe",
+    }).stdout.toString();
+    expect(gitEnv).not.toContain(".env"); // the secret never entered history
+  } finally {
+    implementerSideEffect = null;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("POST /api/projects/:slug/worktree-check runs the readiness check and persists the verdict", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-check-"));
+  const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@e.com"]);
+  g(["config", "user.name", "T"]);
+  writeFileSync(join(repo, "README.md"), "# x\n");
+  g(["add", "."]);
+  g(["commit", "-q", "-m", "init"]);
+
+  try {
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "GW Check", rootPath: repo }),
+    }).then((r) => r.json())) as { slug: string };
+
+    const res = await fetch(`${gw.url}/api/projects/${project.slug}/worktree-check`, { method: "POST" });
+    expect(res.status).toBe(202);
+
+    // fire-and-forget: the verdict lands on the project shortly after
+    type CheckShape = { verdict?: string; blockers?: unknown[] } | null;
+    let check: CheckShape = null;
+    for (let i = 0; i < 50 && !check; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      const p = (await fetch(`${gw.url}/api/projects/${project.slug}`).then((r) => r.json())) as {
+        worktreeCheck: CheckShape;
+        worktreesEnabled: boolean;
+      };
+      check = p.worktreeCheck;
+      if (check) expect(p.worktreesEnabled).toBe(false); // propose, don't impose
+    }
+    expect(check?.verdict).toBe("blockers");
+    expect(check?.blockers).toHaveLength(1);
+
+    // no rootPath → a clear 409, not a doomed background run
+    const pathless = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "No Root" }),
+    }).then((r) => r.json())) as { slug: string };
+    const bad = await fetch(`${gw.url}/api/projects/${pathless.slug}/worktree-check`, { method: "POST" });
+    expect(bad.status).toBe(409);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
 

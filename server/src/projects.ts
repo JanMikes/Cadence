@@ -1,4 +1,4 @@
-import type { CreateProjectInput, Project, UpdateProjectInput } from "@cadence/shared";
+import type { CreateProjectInput, Project, UpdateProjectInput, WorktreeCheck } from "@cadence/shared";
 import { asc, eq } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
@@ -41,6 +41,7 @@ export function createProject(db: Db, input: CreateProjectInput): Project {
     defaultPermissionMode: input.defaultPermissionMode ?? "auto",
     defaultDeliveryMode: input.defaultDeliveryMode ?? "branch_summary",
     autonomy: input.autonomy ?? null,
+    worktreesEnabled: input.worktreesEnabled ?? false,
     notes: input.notes ?? null,
   };
   writeProject(fm, input.systemPrompt ?? "");
@@ -95,10 +96,20 @@ export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): 
   if (patch.defaultPermissionMode !== undefined) next.defaultPermissionMode = patch.defaultPermissionMode;
   if (patch.defaultDeliveryMode !== undefined) next.defaultDeliveryMode = patch.defaultDeliveryMode;
   if (patch.autonomy !== undefined) next.autonomy = patch.autonomy;
+  if (patch.worktreesEnabled !== undefined) next.worktreesEnabled = patch.worktreesEnabled;
   if (patch.notes !== undefined) next.notes = patch.notes;
   const nextPrompt = patch.systemPrompt !== undefined ? (patch.systemPrompt ?? "") : body;
 
   writeProject(next, nextPrompt);
+  reindexProject(db, slug);
+  return getProject(db, slug);
+}
+
+/** Persist a worktree-readiness check result (server-managed — not part of the PATCH API). */
+export function setProjectWorktreeCheck(db: Db, slug: string, check: WorktreeCheck): Project | null {
+  if (!existsSync(paths.projectFile(slug))) return null;
+  const { data, body } = readProject(slug);
+  writeProject({ ...data, slug, worktreeCheck: check }, body);
   reindexProject(db, slug);
   return getProject(db, slug);
 }
@@ -115,8 +126,19 @@ function toProject(row: typeof projects.$inferSelect): Project {
     defaultPermissionMode: row.defaultPermissionMode,
     defaultDeliveryMode: row.defaultDeliveryMode,
     autonomy: row.autonomy ?? null,
+    worktreesEnabled: row.worktreesEnabled,
+    worktreeCheck: parseWorktreeCheck(row.worktreeCheck),
     systemPrompt: row.systemPrompt,
     notes: row.notes,
     createdAt: row.createdAt,
   };
+}
+
+function parseWorktreeCheck(raw: string | null): WorktreeCheck | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as WorktreeCheck;
+  } catch {
+    return null; // tolerate a corrupt cell rather than break project listing
+  }
 }

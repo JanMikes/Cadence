@@ -46,6 +46,22 @@ export async function runFleetImplementer(
       results.push(sub(project, "", null, false, "project has no rootPath", 0));
       continue;
     }
+    // Fleet runs are inherently parallel multi-repo — they require worktree isolation.
+    // A member that hasn't opted in is skipped with a visible reason (in-place would
+    // need per-repo serialization and could collide with the user's checkout).
+    if (!project.worktreesEnabled) {
+      results.push(
+        sub(
+          project,
+          project.rootPath,
+          null,
+          false,
+          "worktrees disabled for this project — enable them in Project settings to include it in fleet runs",
+          0,
+        ),
+      );
+      continue;
+    }
     let wt: { path: string; branch: string };
     try {
       wt = provisionWorktreeAt(project.rootPath, task);

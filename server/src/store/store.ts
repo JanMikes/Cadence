@@ -348,6 +348,8 @@ export function reindexProject(db: Db, slug: string): void {
     defaultPermissionMode: data.defaultPermissionMode ?? "auto",
     defaultDeliveryMode: data.defaultDeliveryMode ?? "branch_summary",
     autonomy: data.autonomy ?? null,
+    worktreesEnabled: data.worktreesEnabled ?? false,
+    worktreeCheck: data.worktreeCheck ? JSON.stringify(data.worktreeCheck) : null,
     systemPrompt: body || null,
     notes: data.notes ?? null,
   };

@@ -1,4 +1,5 @@
 import type { Db } from "../db/client";
+import { withReadAccess } from "../project-locks";
 import { appendContext, writeSpec } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
 import { agentsJson } from "./library";
@@ -146,17 +147,21 @@ export async function runDiscovery(
   if (!task) return { ran: false };
 
   updateTask(db, taskId, { status: "refining" });
-  const result = await run({
-    cwd: resolveTaskCwd(db, taskId),
-    taskId,
-    role: "discovery",
-    prompt: buildDiscoveryPrompt(
-      { title: task.title, body: task.body },
-      { titleNeeded: task.titleGenerated },
-    ),
-    permissionMode: "plan",
-    agentsJson: agentsJson(DISCOVERY_SUBAGENTS),
-  });
+  // Read lock: investigation must see the repo's base branch, never a half-written
+  // in-place task branch — queued behind any in-place execution.
+  const result = await withReadAccess(db, taskId, () =>
+    run({
+      cwd: resolveTaskCwd(db, taskId),
+      taskId,
+      role: "discovery",
+      prompt: buildDiscoveryPrompt(
+        { title: task.title, body: task.body },
+        { titleNeeded: task.titleGenerated },
+      ),
+      permissionMode: "plan",
+      agentsJson: agentsJson(DISCOVERY_SUBAGENTS),
+    }),
+  );
 
   const j = (result.json ?? null) as DiscoveryJson | null;
   // The model didn't return usable JSON (or the run errored) — DON'T strand the task in Refining.

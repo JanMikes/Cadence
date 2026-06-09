@@ -61,6 +61,8 @@ const PROJECTS = [
     defaultPermissionMode: "auto",
     defaultDeliveryMode: "branch_summary",
     autonomy: null,
+    worktreesEnabled: false,
+    worktreeCheck: null,
     systemPrompt: null,
     notes: null,
     createdAt: 0,

@@ -3,12 +3,14 @@ import {
   PERMISSION_MODES,
   type Project,
   type UpdateProjectInput,
+  type WorktreeCheck,
 } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderGit2, Plus, Save, X } from "lucide-react";
+import { CheckCircle2, FolderGit2, Plus, Save, Sparkles, TriangleAlert, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { createProject, getProjects, updateProject } from "../../lib/api";
+import { checkWorktreeReadiness, createProject, getProjects, updateProject } from "../../lib/api";
+import { useServerMessages } from "../../lib/ws";
 import { ImportProjects } from "./ImportProjects";
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -29,6 +31,7 @@ interface FormValues {
   defaultPermissionMode: string;
   defaultDeliveryMode: string;
   autonomy: string; // "inherit" | "on" | "off"
+  worktreesEnabled: boolean;
   systemPrompt: string;
 }
 
@@ -39,6 +42,7 @@ const EMPTY: FormValues = {
   defaultPermissionMode: "auto",
   defaultDeliveryMode: "branch_summary",
   autonomy: "inherit",
+  worktreesEnabled: false,
   systemPrompt: "",
 };
 
@@ -60,6 +64,7 @@ export function Projects() {
         defaultPermissionMode: v.defaultPermissionMode,
         defaultDeliveryMode: v.defaultDeliveryMode,
         autonomy: fieldToAutonomy(v.autonomy),
+        worktreesEnabled: v.worktreesEnabled,
         systemPrompt: v.systemPrompt.trim() || undefined,
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
@@ -157,6 +162,7 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
             defaultPermissionMode: project.defaultPermissionMode,
             defaultDeliveryMode: project.defaultDeliveryMode,
             autonomy: autonomyToField(project.autonomy),
+            worktreesEnabled: project.worktreesEnabled,
             systemPrompt: project.systemPrompt ?? "",
           }}
           submitLabel="Save changes"
@@ -170,12 +176,134 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
               defaultPermissionMode: v.defaultPermissionMode,
               defaultDeliveryMode: v.defaultDeliveryMode,
               autonomy: fieldToAutonomy(v.autonomy),
+              worktreesEnabled: v.worktreesEnabled,
               systemPrompt: v.systemPrompt.trim() || null,
             })
           }
         />
         {save.isError ? <p className="mt-2 text-xs text-red-400">Couldn’t save changes.</p> : null}
+
+        <WorktreeReadiness project={project} />
       </aside>
+    </div>
+  );
+}
+
+const SEVERITY_STYLES: Record<string, string> = {
+  high: "bg-red-500/15 text-red-400",
+  medium: "bg-amber-500/15 text-amber-400",
+  low: "bg-muted text-muted-foreground",
+};
+
+/**
+ * "Ask Claude to check" panel (§9, propose-don't-impose): a read-only run inspects the
+ * repo for worktree blockers; the persisted verdict informs the Git worktrees toggle —
+ * the human flips it. Live data comes from the shared ["projects"] query (the WS
+ * project:updated invalidation refreshes it when the check lands).
+ */
+function WorktreeReadiness({ project }: { project: Project }) {
+  const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const live = projects.data?.find((p) => p.slug === project.slug) ?? project;
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const check = useMutation({
+    mutationFn: () => checkWorktreeReadiness(project.slug),
+    onMutate: () => {
+      setChecking(true);
+      setError(null);
+    },
+    onError: () => {
+      setChecking(false);
+      setError("Couldn’t start the check — is the gateway running?");
+    },
+  });
+
+  // The check is fire-and-forget on the server; its outcome arrives over WS.
+  useServerMessages((msg) => {
+    if (msg.type !== "event") return;
+    if (msg.name === "project:updated" && msg.payload === project.slug) setChecking(false);
+    if (msg.name === "project:worktree-check-failed") {
+      const p = msg.payload as { slug?: string; reason?: string };
+      if (p?.slug === project.slug) {
+        setChecking(false);
+        setError(p.reason ?? "Check failed.");
+      }
+    }
+  });
+
+  const result = live.worktreeCheck;
+  return (
+    <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-medium">Worktree readiness</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Not every repo runs from a fresh second checkout (.env files, docker ports, install
+            steps). Let Claude inspect this repo before enabling worktrees.
+          </p>
+        </div>
+        <LabeledIconButton
+          icon={<Sparkles />}
+          label={checking ? "Checking…" : "Ask Claude to check"}
+          variant="ghost"
+          size="sm"
+          onClick={() => check.mutate()}
+          disabled={checking || !live.rootPath}
+        />
+      </div>
+      {!live.rootPath ? (
+        <p className="mt-2 text-xs text-muted-foreground">Set a rootPath first.</p>
+      ) : null}
+      {error ? <p className="mt-2 text-xs text-red-400">{error}</p> : null}
+      {result ? <WorktreeCheckCard check={result} /> : null}
+    </section>
+  );
+}
+
+function WorktreeCheckCard({ check }: { check: WorktreeCheck }) {
+  const ready = check.verdict === "ready";
+  return (
+    <div className="mt-3 rounded-md border border-border bg-background/60 p-3">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        {ready ? (
+          <>
+            <CheckCircle2 className="size-4 text-emerald-400" />
+            <span className="text-emerald-400">Ready for worktrees</span>
+          </>
+        ) : (
+          <>
+            <TriangleAlert className="size-4 text-amber-400" />
+            <span className="text-amber-400">
+              {check.blockers.length} blocker{check.blockers.length === 1 ? "" : "s"} found
+            </span>
+          </>
+        )}
+        <span className="ml-auto text-[11px] font-normal text-muted-foreground">
+          {new Date(check.checkedAt).toLocaleString()}
+        </span>
+      </div>
+      <p className="mt-1.5 text-xs text-foreground/80">{check.summary}</p>
+      {check.blockers.length > 0 ? (
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {check.blockers.map((b) => (
+            <li key={b.title} className="text-xs">
+              <span
+                className={`mr-1.5 rounded px-1.5 py-0.5 text-[10px] ${SEVERITY_STYLES[b.severity] ?? SEVERITY_STYLES.low}`}
+              >
+                {b.severity}
+              </span>
+              <span className="font-medium">{b.title}</span>
+              {b.detail ? <span className="text-muted-foreground"> — {b.detail}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {check.recommendation ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground/70">Recommendation:</span> {check.recommendation}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -264,6 +392,32 @@ function ProjectFields({
           <option value="off">Off</option>
         </select>
       </label>
+      <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-card px-3 py-2.5">
+        <div>
+          <div className="text-sm font-medium text-foreground">Git worktrees</div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Run implementations in an isolated worktree + branch next to the repo (parallel-safe,
+            full tool access). Needs a repo that works from a fresh checkout. When off,
+            implementations run one at a time in the project directory on a task branch.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={v.worktreesEnabled}
+          aria-label="Git worktrees"
+          onClick={() => set("worktreesEnabled", !v.worktreesEnabled)}
+          className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+            v.worktreesEnabled ? "bg-primary" : "bg-muted"
+          }`}
+        >
+          <span
+            className={`inline-block size-5 rounded-full bg-white transition-transform ${
+              v.worktreesEnabled ? "translate-x-5" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
       <textarea
         value={v.systemPrompt}
         onChange={(e) => set("systemPrompt", e.target.value)}

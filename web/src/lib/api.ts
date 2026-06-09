@@ -296,6 +296,13 @@ export function updateProject(slug: string, patch: UpdateProjectInput): Promise<
   }).then(json<Project>);
 }
 
+/** Kick off the Claude worktree-readiness check (202; the verdict arrives via WS → project). */
+export function checkWorktreeReadiness(slug: string): Promise<{ started: boolean }> {
+  return fetch(`/api/projects/${slug}/worktree-check`, { method: "POST" }).then(
+    json<{ started: boolean }>,
+  );
+}
+
 export function getImportCandidates(): Promise<ImportCandidate[]> {
   return fetch("/api/import/candidates").then(json<ImportCandidate[]>);
 }

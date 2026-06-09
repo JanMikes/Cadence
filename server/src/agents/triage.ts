@@ -1,5 +1,6 @@
 import type { AgentResult } from "@cadence/shared";
 import type { Db } from "../db/client";
+import { withReadAccess } from "../project-locks";
 import { listProjects } from "../projects";
 import { appendContext } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
@@ -110,13 +111,17 @@ export async function runTriage(
     listProjects(db).map((p) => ({ slug: p.slug, name: p.name })),
     { titleNeeded: task.titleGenerated },
   );
-  const result = await run({
-    cwd: resolveTaskCwd(db, taskId),
-    taskId,
-    role: "triage",
-    prompt,
-    permissionMode: "plan",
-  });
+  // Read lock: queued behind an in-place execution so triage never reads a
+  // half-written task branch; shared with the other read stages.
+  const result = await withReadAccess(db, taskId, () =>
+    run({
+      cwd: resolveTaskCwd(db, taskId),
+      taskId,
+      role: "triage",
+      prompt,
+      permissionMode: "plan",
+    }),
+  );
 
   const j = (result.json ?? null) as TriageJson | null;
   if (!j || typeof j !== "object") return { ran: false }; // couldn't parse — leave in Inbox

@@ -3,7 +3,7 @@ import type { Db } from "../db/client";
 import { claudePermissionMode } from "../sessions";
 import { readPlan, readSpec } from "../store/store";
 import { getTaskDetail, resolvePermissionMode, updateTask } from "../tasks";
-import { resolveExecutionCwd } from "../worktree";
+import { beginInPlaceExecution, type ExecutionTarget } from "../worktree";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -20,14 +20,26 @@ export function buildImplementerPrompt(
   task: { title: string; body: string },
   spec: string,
   plan: TaskPlan,
+  where: { inPlace: boolean; branch: string | null } = { inPlace: false, branch: null },
 ): string {
   const steps = plan.steps
     .map((s, i) => `${i + 1}. ${s.risky ? "⚠️ " : ""}${s.title}${s.detail ? ` — ${s.detail}` : ""}`)
     .join("\n");
+  const placement = where.inPlace
+    ? [
+        `You are working DIRECTLY in the project's working copy${where.branch ? ` on the dedicated branch ${where.branch}` : ""} —`,
+        "this is the user's real checkout, not a disposable sandbox. Stay strictly inside this repo,",
+        "never run destructive commands (reset --hard, clean -fd, rm -rf), never switch branches,",
+        "and never touch files unrelated to the plan. Make focused commits with clear messages,",
+      ].join("\n")
+    : [
+        "You are in an isolated git worktree/branch for this task — make focused commits with clear",
+        "messages,",
+      ].join("\n");
   return [
     "You are the Implementer. Execute the APPROVED plan below to satisfy every acceptance criterion.",
-    "You are in an isolated git worktree/branch for this task — make focused commits with clear",
-    "messages, follow the project's conventions and the composed context, and keep diffs reviewable.",
+    placement,
+    "follow the project's conventions and the composed context, and keep diffs reviewable.",
     "If you hit a blocker that needs a decision, STOP and report it rather than guessing.",
     "",
     `TASK: ${task.title}`,
@@ -43,15 +55,18 @@ export function buildImplementerPrompt(
 }
 
 /**
- * Run the Implementer for a task (spec §7.5): require an approved plan, provision
- * the isolated worktree (3.3), run a one-shot Opus agent THERE, then advance
- * implementing → verifying. Inside the disposable worktree the agent gets full tool
- * access (bypassPermissions) so it can edit + commit + build + test without stalling
- * on a permission-gated command — a one-shot has no interactive approval channel, and
- * the sandbox plus the plan-approval and review/merge gates are the safety boundary.
- * apply_in_place keeps the safer resolved mode (never bypass the main tree). `run` is
- * injectable so tests use the mock. Bails gracefully (never throws) when the plan
- * isn't approved or a worktree can't be provisioned.
+ * Run the Implementer for a task (spec §7.5): require an approved plan, prepare the
+ * execution target — the isolated worktree (3.3) when the project opted in, else the
+ * project working dir on the task branch (in-place; the API chain holds the project
+ * write lock and beginInPlaceExecution refuses a dirty tree) — run a one-shot Opus
+ * agent THERE, then advance implementing → verifying. Inside the disposable worktree
+ * the agent gets full tool access (bypassPermissions) so it can edit + commit + build
+ * + test without stalling on a permission-gated command — a one-shot has no
+ * interactive approval channel, and the sandbox plus the plan-approval and
+ * review/merge gates are the safety boundary. In-place execution keeps the safer
+ * resolved mode (never bypass the main tree). `run` is injectable so tests use the
+ * mock. Bails gracefully (never throws) when the plan isn't approved or the target
+ * can't be prepared.
  */
 export async function runImplementer(
   db: Db,
@@ -64,9 +79,11 @@ export async function runImplementer(
   const plan = readPlan(taskId);
   if (!plan.approved) return { ran: false, reason: "plan not approved" };
 
-  let target: { cwd: string; branch: string | null; worktreePath: string | null };
+  let target: ExecutionTarget;
   try {
-    target = resolveExecutionCwd(db, taskId);
+    // Provisions the worktree, or (in-place) guards the dirty tree, snapshots
+    // untracked paths, and checks out the task branch. Idempotent on re-entry.
+    target = beginInPlaceExecution(db, taskId);
   } catch (err) {
     return { ran: false, reason: (err as Error).message };
   }
@@ -75,18 +92,24 @@ export async function runImplementer(
   // Dangerous-mode guardrail (§9): bypassPermissions is only allowed inside an
   // isolated worktree, never in-place on the main tree — a runaway can't escape.
   if (claudeMode === "bypassPermissions" && !target.worktreePath) {
-    return { ran: false, reason: "Dangerous mode requires an isolated worktree (not apply_in_place)" };
+    return {
+      ran: false,
+      reason: "Dangerous mode requires an isolated worktree — enable worktrees for this project",
+    };
   }
   // In the isolated, disposable worktree, grant the one-shot Implementer full tool access so it can
   // edit + commit + build + test without stalling on a permission-gated `git` (acceptEdits gates
   // Bash, and a one-shot agent has nobody to ask). The sandbox + the plan-approval and review/merge
-  // gates are the safety boundary. apply_in_place (no worktree) keeps the safer resolved mode.
+  // gates are the safety boundary. In-place execution (no worktree) keeps the safer resolved mode.
   if (target.worktreePath) claudeMode = "bypassPermissions";
   const result = await run({
     cwd: target.cwd,
     taskId,
     role: "implementer",
-    prompt: buildImplementerPrompt({ title: task.title, body: task.body }, readSpec(taskId), plan),
+    prompt: buildImplementerPrompt({ title: task.title, body: task.body }, readSpec(taskId), plan, {
+      inPlace: target.inPlace,
+      branch: target.branch,
+    }),
     permissionMode: claudeMode,
   });
 

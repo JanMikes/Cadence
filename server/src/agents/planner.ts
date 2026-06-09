@@ -1,5 +1,6 @@
 import type { PlanStep, TaskPlan } from "@cadence/shared";
 import type { Db } from "../db/client";
+import { withReadAccess } from "../project-locks";
 import { readPlan, readSpec, writePlan } from "../store/store";
 import { getTaskDetail, resolveTaskCwd } from "../tasks";
 import { runAgent } from "./runner";
@@ -82,13 +83,17 @@ export async function runPlanner(
   const task = getTaskDetail(db, taskId);
   if (!task) return { ran: false };
 
-  const result = await run({
-    cwd: resolveTaskCwd(db, taskId),
-    taskId,
-    role: "planner",
-    prompt: buildPlannerPrompt({ title: task.title, body: task.body }, readSpec(taskId)),
-    permissionMode: "plan",
-  });
+  // Read lock: the plan must be drafted against the repo's base branch, not a
+  // half-written in-place task branch — queued behind any in-place execution.
+  const result = await withReadAccess(db, taskId, () =>
+    run({
+      cwd: resolveTaskCwd(db, taskId),
+      taskId,
+      role: "planner",
+      prompt: buildPlannerPrompt({ title: task.title, body: task.body }, readSpec(taskId)),
+      permissionMode: "plan",
+    }),
+  );
 
   const j = (result.json ?? null) as PlannerJson | null;
   if (!j || typeof j !== "object") return { ran: false };
