@@ -100,3 +100,34 @@ test("insufficient discovery → Needs-Feedback", async () => {
   expect(outcome.status).toBe("needs_feedback");
   expect(getTask(db, task.id)?.status).toBe("needs_feedback");
 });
+
+// Real Sonnet frequently returns `spec` as a structured object + `sufficiency:"partial"` — which used
+// to crash `specMarkdown` (`j.spec.trim()` on an object), reject runDiscovery, and silently strand the
+// task in Refining. It must now render the spec and advance.
+test("real-model drift: object `spec` is rendered (was a crash → stuck in Refining)", async () => {
+  const task = createTask(db, { title: "Fill optional fields in the modal" });
+  const { run } = recordingRunner({
+    sufficiency: "partial",
+    spec: { summary: "Extend the Add-task modal", current_state: { modal: "title+body only" } },
+    unknowns: [],
+  });
+  const outcome = await runDiscovery(db, task.id, run);
+  expect(outcome).toMatchObject({ ran: true, status: "ready" });
+  expect(getTask(db, task.id)?.status).toBe("ready");
+  expect(readSpec(task.id)).toContain("Extend the Add-task modal"); // object spec rendered, not crashed
+});
+
+test("unparseable discovery response → Needs-Feedback with a note (never stranded in Refining)", async () => {
+  const task = createTask(db, { title: "vague thing" });
+  const run: AgentRunner = async () => ({
+    text: "Sorry, here is prose, not JSON.",
+    json: undefined,
+    costUsd: 0,
+    sessionId: "m",
+    isError: false,
+    raw: {},
+  });
+  const outcome = await runDiscovery(db, task.id, run);
+  expect(outcome).toMatchObject({ ran: true, status: "needs_feedback" });
+  expect(getTask(db, task.id)?.status).toBe("needs_feedback");
+});

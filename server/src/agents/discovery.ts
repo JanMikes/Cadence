@@ -51,22 +51,40 @@ export function buildDiscoveryPrompt(task: { title: string; body: string }): str
     .join("\n");
 }
 
-function bullets(items: string[] | undefined): string {
-  return (items ?? []).map((i) => `- ${i}`).join("\n") || "- (none)";
+/** Coerce a model-returned value to text. Real models sometimes return `spec` as a structured
+ *  object/array instead of the requested markdown string — render it readably instead of crashing. */
+function asText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  try {
+    return `\`\`\`json\n${JSON.stringify(v, null, 2)}\n\`\`\``;
+  } catch {
+    return String(v);
+  }
 }
 
-/** Render the discovery result into spec.md. */
+/** Coerce a model-returned value to a string list (tolerates a single value or non-string items). */
+function asList(v: unknown): string[] {
+  const arr = Array.isArray(v) ? v : v == null ? [] : [v];
+  return arr.map((x) => (typeof x === "string" ? x : JSON.stringify(x)));
+}
+
+function bullets(items: unknown): string {
+  return asList(items).map((i) => `- ${i}`).join("\n") || "- (none)";
+}
+
+/** Render the discovery result into spec.md. Total: never throws on schema drift. */
 export function specMarkdown(j: DiscoveryJson): string {
-  const approaches = (j.approaches ?? [])
-    .map((a) => `- **${a.name ?? "option"}**${a.recommended ? " (recommended)" : ""}: ${a.summary ?? ""}`)
+  const approaches = (Array.isArray(j.approaches) ? j.approaches : [])
+    .map((a) => `- **${a?.name ?? "option"}**${a?.recommended ? " (recommended)" : ""}: ${asText(a?.summary)}`)
     .join("\n");
-  const criteria = (j.acceptanceCriteria ?? []).map((c) => `- [ ] ${c}`).join("\n") || "- [ ] (none)";
+  const criteria = asList(j.acceptanceCriteria).map((c) => `- [ ] ${c}`).join("\n") || "- [ ] (none)";
   return [
     "# Spec",
-    j.spec?.trim() ?? "",
+    asText(j.spec).trim(),
     "## Scope",
-    `**In:** ${(j.scope?.in ?? []).join(", ") || "—"}`,
-    `**Out:** ${(j.scope?.out ?? []).join(", ") || "—"}`,
+    `**In:** ${asList(j.scope?.in).join(", ") || "—"}`,
+    `**Out:** ${asList(j.scope?.out).join(", ") || "—"}`,
     "## Affected files",
     bullets(j.affectedFiles),
     "## Approaches",
@@ -84,13 +102,13 @@ export function specMarkdown(j: DiscoveryJson): string {
 export function applyDiscovery(db: Db, taskId: string, j: DiscoveryJson): DiscoveryOutcome {
   if (j.sufficiency === "insufficient") {
     updateTask(db, taskId, { status: "needs_feedback" });
-    const need = j.needFromUser?.trim();
+    const need = asText(j.needFromUser).trim() || undefined;
     if (need) appendContext(taskId, `Discovery needs more info: ${need}`);
     return { ran: true, status: "needs_feedback", needFromUser: need };
   }
 
   writeSpec(taskId, specMarkdown(j));
-  const unknowns = (j.unknowns ?? []).filter(Boolean);
+  const unknowns = asList(j.unknowns).filter(Boolean);
   // Unknowns remain → stay in Refining for the Questioner (2.5) to ask; else Ready.
   const status = unknowns.length ? "refining" : "ready";
   updateTask(db, taskId, { status });
@@ -120,6 +138,22 @@ export async function runDiscovery(
   });
 
   const j = (result.json ?? null) as DiscoveryJson | null;
-  if (!j || typeof j !== "object") return { ran: false };
-  return applyDiscovery(db, taskId, j);
+  // The model didn't return usable JSON (or the run errored) — DON'T strand the task in Refining.
+  // Surface it as Needs-Feedback with a visible note so it's recoverable, not silently stuck.
+  if (!j || typeof j !== "object") {
+    updateTask(db, taskId, { status: "needs_feedback" });
+    appendContext(
+      taskId,
+      "Discovery couldn't turn the agent's response into a spec (no parseable JSON). " +
+        "Add more detail to the task, or run Claude on it manually.",
+    );
+    return { ran: true, status: "needs_feedback" };
+  }
+  try {
+    return applyDiscovery(db, taskId, j);
+  } catch (err) {
+    updateTask(db, taskId, { status: "needs_feedback" });
+    appendContext(taskId, `Discovery failed to apply its result: ${(err as Error).message}. Add detail or run Claude manually.`);
+    return { ran: true, status: "needs_feedback" };
+  }
 }
