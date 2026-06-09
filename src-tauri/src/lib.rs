@@ -47,13 +47,15 @@ fn parse_gateway_url(line: &str) -> Option<String> {
 }
 
 /// Environment for the sidecar gateway. CADENCE_PORT=0 → ephemeral; Rust reads the bound port back
-/// from stdout. PATH resolution + CADENCE_CLAUDE_BIN are layered in by Stage 4.
-fn sidecar_env(home: &str, web_dir: &str, migrations_dir: &str) -> HashMap<String, String> {
+/// from stdout. `path` is the recovered login-shell PATH so the gateway can find `claude`/`git` when
+/// launched from Finder. `.envs()` merges these over the inherited env, so HOME/USER are preserved.
+fn sidecar_env(home: &str, web_dir: &str, migrations_dir: &str, path: &str) -> HashMap<String, String> {
     HashMap::from([
         ("CADENCE_PORT".to_string(), "0".to_string()),
         ("CADENCE_HOME".to_string(), home.to_string()),
         ("CADENCE_WEB_DIR".to_string(), web_dir.to_string()),
         ("CADENCE_MIGRATIONS_DIR".to_string(), migrations_dir.to_string()),
+        ("PATH".to_string(), path.to_string()),
     ])
 }
 
@@ -65,6 +67,53 @@ fn start_url(is_dev: bool, dev_url: &str, gateway_url: &str) -> String {
     } else {
         gateway_url.to_string()
     }
+}
+
+/// A marker we print right before `$PATH` so login/interactive rc files that emit banners on stdout
+/// can't corrupt the captured value.
+const PATH_MARKER: &str = "__CADENCE_PATH__";
+
+/// Sane PATH used when the login shell can't be queried (GUI app with no `$SHELL`, capture failed…).
+fn fallback_path(home: &str) -> String {
+    format!("/usr/bin:/bin:/usr/local/bin:{home}/.local/bin")
+}
+
+/// Pull the real PATH out of captured shell stdout (everything after the last marker). `None` if the
+/// marker is absent (the printf didn't run) or the value is blank.
+fn extract_marked_path(raw: &str) -> Option<String> {
+    let (_, after) = raw.rsplit_once(PATH_MARKER)?;
+    let trimmed = after.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// Resolve a PATH from an optional login `shell`, capturing it via `run_shell`. Falls back to
+/// `fallback_path(home)` when there's no shell or the capture is unusable. Split out so the decision
+/// is unit-testable without actually spawning a shell.
+fn resolve_path_with(
+    shell: Option<&str>,
+    home: &str,
+    run_shell: impl Fn(&str) -> Option<String>,
+) -> String {
+    let captured = shell.and_then(run_shell);
+    captured
+        .as_deref()
+        .and_then(extract_marked_path)
+        .unwrap_or_else(|| fallback_path(home))
+}
+
+/// macOS GUI apps launched from Finder don't inherit the shell `PATH`, so the sidecar wouldn't find
+/// `claude` (usually `~/.local/bin`) or maybe `git`. Recover it from the user's login shell.
+fn resolve_login_path() -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let shell = std::env::var("SHELL").ok();
+    resolve_path_with(shell.as_deref(), &home, |s| {
+        std::process::Command::new(s)
+            .args(["-lic", "printf '__CADENCE_PATH__%s' \"$PATH\""])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -112,10 +161,12 @@ pub fn run() {
                 let web_dir = app.path().resolve("resources/web", BaseDirectory::Resource)?;
                 let migrations_dir = app.path().resolve("resources/drizzle", BaseDirectory::Resource)?;
 
+                let path = resolve_login_path();
                 let env = sidecar_env(
                     &home.to_string_lossy(),
                     &web_dir.to_string_lossy(),
                     &migrations_dir.to_string_lossy(),
+                    &path,
                 );
 
                 let (mut rx, child) = app.shell().sidecar("cadence-server")?.envs(env).spawn()?;
@@ -188,7 +239,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_gateway_url, sidecar_env, start_url};
+    use super::{
+        extract_marked_path, fallback_path, parse_gateway_url, resolve_login_path, resolve_path_with,
+        sidecar_env, start_url,
+    };
 
     #[test]
     fn parses_gateway_url_from_stdout() {
@@ -207,7 +261,12 @@ mod tests {
 
     #[test]
     fn sidecar_env_has_relocation_overrides() {
-        let env = sidecar_env("/Users/x/.cadence", "/app/resources/web", "/app/resources/drizzle");
+        let env = sidecar_env(
+            "/Users/x/.cadence",
+            "/app/resources/web",
+            "/app/resources/drizzle",
+            "/usr/bin:/Users/x/.local/bin",
+        );
         assert_eq!(env.get("CADENCE_PORT").map(String::as_str), Some("0"));
         assert_eq!(env.get("CADENCE_HOME").map(String::as_str), Some("/Users/x/.cadence"));
         assert_eq!(env.get("CADENCE_WEB_DIR").map(String::as_str), Some("/app/resources/web"));
@@ -215,6 +274,56 @@ mod tests {
             env.get("CADENCE_MIGRATIONS_DIR").map(String::as_str),
             Some("/app/resources/drizzle")
         );
+        assert_eq!(env.get("PATH").map(String::as_str), Some("/usr/bin:/Users/x/.local/bin"));
+    }
+
+    #[test]
+    fn fallback_path_includes_system_and_local_bin() {
+        let p = fallback_path("/Users/x");
+        assert!(p.contains("/usr/bin"));
+        assert!(p.contains("/Users/x/.local/bin"));
+    }
+
+    #[test]
+    fn extracts_marked_path_past_rc_banners() {
+        assert_eq!(
+            extract_marked_path("__CADENCE_PATH__/usr/bin:/bin").as_deref(),
+            Some("/usr/bin:/bin")
+        );
+        // an rc file may print a banner on stdout before our marker
+        assert_eq!(
+            extract_marked_path("welcome to zsh\n__CADENCE_PATH__/opt/homebrew/bin:/usr/bin").as_deref(),
+            Some("/opt/homebrew/bin:/usr/bin")
+        );
+        assert_eq!(extract_marked_path("no marker present"), None);
+        assert_eq!(extract_marked_path("__CADENCE_PATH__   "), None);
+    }
+
+    #[test]
+    fn resolve_path_uses_shell_then_falls_back() {
+        // a clean shell capture is used as-is
+        assert_eq!(
+            resolve_path_with(Some("/bin/zsh"), "/home/x", |_| Some(
+                "__CADENCE_PATH__/usr/bin:/bin".into()
+            )),
+            "/usr/bin:/bin"
+        );
+        // no $SHELL → fallback
+        assert_eq!(resolve_path_with(None, "/home/x", |_| None), fallback_path("/home/x"));
+        // shell ran but produced nothing usable → fallback
+        assert_eq!(
+            resolve_path_with(Some("/bin/zsh"), "/home/x", |_| Some("garbage, no marker".into())),
+            fallback_path("/home/x")
+        );
+    }
+
+    #[test]
+    fn resolve_login_path_is_nonempty_with_usr_bin() {
+        // Queries the real login shell when $SHELL is set; otherwise the fallback — both contain
+        // /usr/bin, so this holds regardless of the host shell config.
+        let p = resolve_login_path();
+        assert!(!p.is_empty());
+        assert!(p.contains("/usr/bin"), "expected /usr/bin in resolved PATH, got: {p}");
     }
 
     #[test]

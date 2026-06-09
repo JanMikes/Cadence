@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 3 — complete. Next: Stage 4 (PATH & `claude` resolution).
-- **Last completed step:** 3.3 (app smoke).
-- **Next step:** 4.1 (resolve login-shell PATH in Rust).
+- **Current stage:** Stage 4 — in progress (PATH & `claude` resolution).
+- **Last completed step:** 4.1 (resolve login-shell PATH in Rust).
+- **Next step:** 4.2 ("Claude binary path" setting).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (Stage 3 done — app:smoke green: spawn + serve + clean shutdown).
+- **Last updated:** 2026-06-09 (4.1 done — cargo test 8 pass; PATH resolver wired into the sidecar env).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -171,7 +171,7 @@ only if an install genuinely fails — recorded as a Blocker.)
 
 ## Stage 4 — PATH & `claude` resolution
 macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar wouldn't find `claude` (usually `~/.local/bin`) or maybe `git`.
-- [ ] **4.1 Resolve login-shell PATH (Rust).** `[auto]` Before spawning, run `$SHELL -lic 'printf %s "$PATH"'`,
+- [x] **4.1 Resolve login-shell PATH (Rust).** `[auto]` Before spawning, run `$SHELL -lic 'printf %s "$PATH"'`,
   sanitize, set as the sidecar's `PATH`; fall back to `/usr/bin:/bin:/usr/local/bin:$HOME/.local/bin`.
   - Verify `[auto]`: `cargo test` asserts the resolver returns a non-empty PATH containing `/usr/bin` (+ that the
     fallback is used when `$SHELL` is unset). §Visual: from the **Finder-launched** `.app`, spawn a session on a task → `claude` is found and streams.
@@ -380,3 +380,17 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   cleanly. The §Visual "window renders the Cadence UI" item is already queued in the checklist.
   *Next:* 4.1 — resolve the login-shell PATH in Rust (GUI apps don't inherit the shell PATH, so the
   sidecar wouldn't find `claude`).
+
+- **2026-06-09 · 4.1 (resolve login-shell PATH in Rust).** Added a PATH resolver to `lib.rs` and wired
+  it into the sidecar env (so a Finder-launched app's gateway can find `claude`/`git`). `resolve_login_path()`
+  runs `$SHELL -lic 'printf "__CADENCE_PATH__%s" "$PATH"'` and extracts everything after the marker —
+  the marker defends against login/interactive rc files that print banners to stdout. Falls back to
+  `/usr/bin:/bin:/usr/local/bin:$HOME/.local/bin` when `$SHELL` is unset or the capture is unusable.
+  Split into pure, testable pieces: `fallback_path`, `extract_marked_path`, and `resolve_path_with`
+  (takes the shell + an injected capture closure). `sidecar_env` now takes a `path` and sets `PATH`;
+  verified the shell plugin's `.envs()` **merges** over the inherited env (it only `env_clear()`s on
+  the JS-invoked path), so HOME/USER survive while PATH is overridden. **Verified:** `cargo test`
+  8 pass (incl. fallback-on-unset-`$SHELL`, banner-stripping, and a real `resolve_login_path()` that
+  contains `/usr/bin` — true via either the real shell or the fallback); `bun test` 236 pass;
+  `bun run build` green. The §Visual "Finder-launched app finds `claude` + streams" item is already
+  queued in the checklist. *Next:* 4.2 — a "Claude binary path" setting exported as `CADENCE_CLAUDE_BIN`.
