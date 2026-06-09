@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.g (stuck-run UX with teeth + default stage timeouts).
+- **Current step:** 6.1.h (re-enable autonomy, restart dev gateway, acceptance run).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -152,12 +152,12 @@ zombies. Implications the fix MUST honor:
   proper refcounting.
   - Verify: tests — double POST approve → single chain; tracker survives concurrent stages.
     ✓ 2026-06-10 (`b1dc606`, 331 tests; back-compat kept for STRANDED tasks only, see Journal).
-- [ ] **6.1.g Stuck-run UX with teeth + default timeouts.** The “A run looks stuck” path and the
+- [x] **6.1.g Stuck-run UX with teeth + default timeouts.** The “A run looks stuck” path and the
   Sessions tile gain labeled actions: **View output** · **Kill run** · **Kill & retry** (budgeted).
   Default `timeoutMs` per role class (read stages 15 min; implementer/fleet 60 min; configurable in
   6.3.e) so no one-shot can run forever. Sessions view: bulk **Clear finished agent runs** action.
   - Verify: UI shows the actions on a stuck session; kill finalizes row + process group; timeout
-    test fires; typecheck/build green.
+    test fires; typecheck/build green. ✓ 2026-06-10 (`97b3b07`, 334 tests).
 - [ ] **6.1.h Re-enable + acceptance.** Restore `autonomy: true`. **Acceptance (scriptable parts
   automated, rest manual):** with the dev gateway watching, save a server file 3× with a task parked
   in `refining` → spawns ≤ budget and each new spawn first reconciles the previous; Sessions view
@@ -533,3 +533,14 @@ yourself.
   409 now): they wait for `plan_review` first. Double-approve test runs against a real repo-backed
   worktree project so the implementer genuinely executes (a project-less task bails too fast to
   observe).
+- **2026-06-10 — 6.1.g done** (`97b3b07`). Timeout defaults live in `runAgent` itself (not the
+  recording runner) so unrecorded runs — fleet fan-out, import enrich — get the ceiling too;
+  **verifier joined the 60-min class** (it runs real builds/tests). `timeoutMs: 0` = explicit
+  escape hatch. Session row actions: Stop/Kill for any running row; **Kill & retry only for
+  discovery** (other roles have natural retry paths: re-PLAY, re-approve, watchdog rescue) —
+  composed client-side as kill → `/refine` (409 tolerated = something already took over). Rows
+  became divs (nested buttons are invalid HTML); two-step armed confirm instead of `window.confirm`
+  (no precedent in codebase); “⚠ long run” chip past 10 min (client-side heuristic — honest
+  stuck detection stays server-side in the watchdog). Attention feed now surfaces
+  refining-with-no-live-run (closes the 6.1.e journal note); `findLiveStage` there doubles as a
+  zombie-row sweep on every attention poll.
