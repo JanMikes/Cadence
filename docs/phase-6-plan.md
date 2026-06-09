@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.d (honest liveness in watchdog/reconcile + signature + sweep).
+- **Current step:** 6.1.e (boot reconcile = adopt-or-kill; heal after, within budget; process groups).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -127,13 +127,14 @@ zombies. Implications the fix MUST honor:
   still respect 6.1.b dedupe. Never silent-spawn.
   - Verify: test — 4th auto attempt inside the window refuses, flips status, records a notification.
     ✓ 2026-06-10 (`cc6d3d3`, 3 new tests, 318 total).
-- [ ] **6.1.d Honest liveness (defeat PID reuse AND defunct zombies).** At spawn, persist a process
+- [x] **6.1.d Honest liveness (defeat PID reuse AND defunct zombies).** At spawn, persist a process
   signature alongside pid (spawn timestamp + verify `ps -p <pid> -o command=` contains the claude
   binary). Liveness = pid alive **and not Z-state** (`ps -p <pid> -o stat=` not starting with `Z`)
   **and** signature matches — `process.kill(pid, 0)` alone is proven insufficient (defunct passes
   it). Watchdog + reconcile use it; periodic sweep finalizes any `running` row that fails the check
   (this is what retires zombie rows automatically from now on).
   - Verify: test with a recycled-pid fixture → row finalized; seeded zombie rows get swept.
+    ✓ 2026-06-10 (`75e5dca`, 325 tests; signature = start-time matching, see Journal).
 - [ ] **6.1.e Boot reconcile = adopt-or-kill; heal only after, within budget.** On boot, for each
   live one-shot row: read `recording-runner.ts:71-104` (transcript self-heal) and choose — **adopt**
   (re-attach a monitor that finalizes the row + recovers the result from the transcript on exit) if
@@ -492,3 +493,16 @@ yourself.
   not successes). Replay check: with 6.1.b+c in place, the incident would have stopped at attempt
   #3 with a visible halt note instead of reaching 15. Next: 6.1.d generalizes honest liveness to
   watchdog/reconcile (the sweep that retires zombie rows nobody touches).
+- **2026-06-10 — 6.1.d done** (`75e5dca`). New `liveness.ts` = the one honest verdict; consumers:
+  stage-guard (dedupe), watchdog `checkSessions` (now the §6.1.d sweep — finalizes defunct,
+  recycled-pid and aged pid-less rows), `reconcileOrphans` (boot), `sessionRunState` (UI green dot)
+  and `signalSession` (refuses to SIGKILL a recycled pid). **Deviation from plan text:** signature =
+  *start-time matching* (|now − ps etime − row.startedAt| ≤ 120s) instead of command-name matching —
+  strictly stronger (catches reuse by another claude process) and safe for custom bins/test mocks;
+  command is captured for diagnostics only. **Decision:** the pre-spawn grace (30s) applies in
+  runtime paths but NOT at boot reconcile (`s.pid != null &&` kept there): a pid-less row at boot
+  can never be adopted, so it finalizes regardless of age. Existing idle-nudge test re-fixtured to
+  an honestly-matching probe (its old fixture — young real pid + old row — is precisely a recycled
+  pid under honest semantics and is now a regression test for finalization). api.ts terminal-takeover
+  wait-loop (api.ts:926-932) intentionally left on plain kill(0): it polls a pid it just signalled
+  within a 5s bounded window.
