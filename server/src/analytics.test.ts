@@ -55,7 +55,10 @@ test("computeAnalytics aggregates per-project tasks/done/cost + status breakdown
 });
 
 test("throughput buckets completions per day across the window", () => {
-  const now = Date.parse("2026-06-06T12:00:00Z");
+  // updateTask stamps the status_change event with the real wall clock, so the
+  // window's "now" must come from the same clock or the completion falls outside
+  // it (a hardcoded date silently drifts out of range as real time moves on).
+  const now = Date.now();
   const t = createTask(db, { title: "Ship" });
   updateTask(db, t.id, { status: "ready" });
   updateTask(db, t.id, { status: "done" }); // status_change → done recorded now
