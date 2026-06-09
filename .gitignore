@@ -6,6 +6,13 @@ dist/
 build/
 out/
 
+# Tauri build artifacts (generated; never committed). NOTE: src-tauri/Cargo.lock IS tracked
+# (it's an application binary) and is intentionally NOT ignored here.
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/resources/
+src-tauri/gen/
+
 # Local app data / SQLite (Cadence stores data under ~/.cadence, but ignore any local copies)
 *.db
 *.sqlite

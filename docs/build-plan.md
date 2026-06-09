@@ -10,12 +10,13 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **🎉 BUILD COMPLETE (2026-06-07).** All phases done + accepted: Phase 0 (foundation), 1 (task core +
-  manual spawn), 2 (autonomy), 3 (execution), 4 (multi-repo/analytics/polish; 4.7 Tauri out of scope),
+  manual spawn), 2 (autonomy), 3 (execution), 4 (multi-repo/analytics/polish; 4.7 Tauri re-opened 2026-06-09),
   5 (self-improving). **226 tests pass, `bun run build` green across shared/server/web.**
 - **Current phase:** — (build finished)
 - **Last completed step:** 5.5 ("What Cadence learned" feed) — Phase 5 done + accepted
-- **Next step:** none — ready for a real-Claude smoke + hands-on use. Open optional follow-ups: 4.7
-  Tauri wrap (deferred); full PLAY-pipeline fan-out per fleet repo (4.1 did the implement fan-out).
+- **Next step:** **4.7 Tauri desktop wrap** — re-opened 2026-06-09 as an active staged, self-healing
+  loop (ledger: [`tauri-build-plan.md`](tauri-build-plan.md)). Other open follow-up: full PLAY-pipeline
+  fan-out per fleet repo (4.1 did the implement fan-out).
 - **Safety posture:** execution auto-modifies repos only on user-initiated **PLAY**, inside a per-task
   **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous; Dangerous requires
   isolation). Autonomy stays **OFF by default**. All agent runs were **mock-tested** through the build —
@@ -290,8 +291,9 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 - [x] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [x] 4.5 Calendar / deadline view.
 - [x] 4.6 Scheduled / background sweep mode.
-- [x] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey. — **OUT OF SCOPE** (Jan's call,
-  2026-06-07): web-first stands; the Tauri wrap remains a later/additive option, not part of this build.
+- [~] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey. — **IN PROGRESS** (re-opened 2026-06-09,
+  Jan's call): now building the native desktop shell as its own staged, self-healing loop — see
+  [`tauri-build-plan.md`](tauri-build-plan.md) (loop prompt [`tauri-build-prompt.md`](tauri-build-prompt.md)).
 
 **Acceptance check (manual):** a fleet task spawns sessions across multiple repos with per-repo
 sub-results; analytics show per-project throughput + cost; transcript search returns matches across

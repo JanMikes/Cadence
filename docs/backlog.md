@@ -87,6 +87,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] Notifications (task needs feedback / delivered)
 - [ ] **Extend search to transcripts** (FTS5 over `projects/**/*.jsonl` text) + saved filters
 - [ ] Calendar / deadline view
+- [~] **Tauri desktop wrap** (4.7, optional): native shell — tray/menubar + OS-global hotkey +
+      notifications + single-instance + autostart; supervises the Bun gateway as a self-contained
+      sidecar. Staged, self-healing loop: [`tauri-build-plan.md`](tauri-build-plan.md).
 
 ### Phase 5 — Self-improving layer (memory & proactivity)
 - [ ] **Memory layer** (§8.1): global `~/.cadence/memory/` + per-project memory + `MEMORY.md` + `communication.md`

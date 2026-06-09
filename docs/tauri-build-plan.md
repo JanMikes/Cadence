@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 0 — in progress.
-- **Last completed step:** 0.1 (toolchain ensure).
-- **Next step:** 0.2 (re-open 4.7 + wire ledgers).
+- **Current stage:** Stage 0 — complete. Next: Stage 1 (relocatable gateway, pure TS).
+- **Last completed step:** 0.2 (re-open 4.7 + wire ledgers).
+- **Next step:** 1.1 (`CADENCE_WEB_DIR` override).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (0.1 done — rustc/cargo 1.96.0, tauri-cli 2.11.2).
+- **Last updated:** 2026-06-09 (Stage 0 done — toolchain + ledgers wired).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -109,7 +109,7 @@ only if an install genuinely fails — recorded as a Blocker.)
   - Xcode CLT: `xcode-select -p`. If absent (rare — `git` works here, so it's present), record a Blocker with
     `xcode-select --install` (the only step that may need a human GUI click) and stop.
   - Verify: `rustc --version`, `cargo --version`, `bun x tauri --version` all report; `bun test` + `bun run build` green.
-- [ ] **0.2 Re-open 4.7 + wire ledgers.** `[auto]` In `docs/build-plan.md` flip 4.7 OUT-OF-SCOPE → in-progress
+- [x] **0.2 Re-open 4.7 + wire ledgers.** `[auto]` In `docs/build-plan.md` flip 4.7 OUT-OF-SCOPE → in-progress
   (pointer to this file); set the related `docs/backlog.md` lines to `[~]`. Add to `.gitignore`:
   `src-tauri/target/`, `src-tauri/binaries/`, `src-tauri/resources/`, `src-tauri/gen/`. **Commit**
   `src-tauri/Cargo.lock` (it's an application binary — lockfile is tracked).
@@ -249,3 +249,13 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   *Next:* 0.2 — re-open 4.7 in `build-plan.md` + `backlog.md`, add `src-tauri/{target,binaries,resources,gen}/`
   to `.gitignore`. To use cargo/rustc in later steps, `source "$HOME/.cargo/env"` first (shell state
   doesn't persist between tool calls).
+
+- **2026-06-09 · 0.2 (re-open 4.7 + wire ledgers).** Flipped `build-plan.md` 4.7 from
+  `[x] OUT OF SCOPE` → `[~] IN PROGRESS` with a pointer to this ledger + the loop prompt, and updated
+  its Status snapshot (the "build complete" parenthetical + Next-step) to reflect the re-opened loop.
+  Added a trackable `[~]` Tauri line under `backlog.md` Phase 4 (6.2 will tick it). Added
+  `src-tauri/{target,binaries,resources,gen}/` to `.gitignore` with a note that `src-tauri/Cargo.lock`
+  stays tracked (verified: `git check-ignore` ignores `target/`, does NOT ignore `Cargo.lock`).
+  Verified: `git status` shows only the 3 intended files; `bun test` 233 pass; `bun run build` green.
+  Stage 0 complete. *Next:* 1.1 — `CADENCE_WEB_DIR` override in `server/src/gateway.ts` (pure TS,
+  fully auto-verifiable; Stage 1 is done first to de-risk before any Rust).
