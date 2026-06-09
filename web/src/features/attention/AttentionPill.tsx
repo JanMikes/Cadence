@@ -1,5 +1,6 @@
 import { AlertTriangle, Check, ShieldQuestion } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { ATTENTION_SHORTCUT } from "../../lib/shortcuts";
 import { useAttention } from "./useAttention";
 
 /**
@@ -17,7 +18,8 @@ export function AttentionPill({ onOpen }: { onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      aria-label={count ? `${count} item${count === 1 ? "" : "s"} need you` : "Nothing needs you"}
+      title={`Needs you (${ATTENTION_SHORTCUT.label})`}
+      aria-label={`${count ? `${count} item${count === 1 ? "" : "s"} need you` : "Nothing needs you"} (${ATTENTION_SHORTCUT.label})`}
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
         count === 0 && "border-border text-muted-foreground hover:bg-accent",
@@ -33,6 +35,9 @@ export function AttentionPill({ onOpen }: { onOpen: () => void }) {
         <AlertTriangle className="size-3.5" />
       )}
       {count > 0 ? `${count} need${count === 1 ? "s" : ""} you` : "All clear"}
+      <kbd className="ml-0.5 rounded border border-current/40 px-1 font-sans text-[10px] font-medium leading-tight opacity-60">
+        {ATTENTION_SHORTCUT.label}
+      </kbd>
     </button>
   );
 }

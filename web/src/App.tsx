@@ -22,6 +22,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
+import { ATTENTION_SHORTCUT } from "./lib/shortcuts";
 import { useTauriBridge } from "./lib/tauri";
 import { cn } from "./lib/utils";
 import { useServerMessages } from "./lib/ws";
@@ -79,6 +80,18 @@ export function App() {
 
   // Native global hotkey / tray "Quick capture" → open the capture modal (inert in a plain browser).
   useTauriBridge(() => setAddTaskOpen(true));
+
+  // In-app shortcut: ⌘⇧A toggles the "needs you" Attention Center (shown on the pill).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (ATTENTION_SHORTCUT.matches(e)) {
+        e.preventDefault();
+        setAttentionOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

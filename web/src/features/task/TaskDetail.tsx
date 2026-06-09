@@ -174,6 +174,17 @@ export function TaskDetail({
               <p className="mt-2 text-xs text-red-400">Couldn’t start — is the task still Ready?</p>
             ) : null}
 
+            {/* State's primary action first (importance + context): a task in Review surfaces
+                Merge / Request-changes above the now-reference Plan; an approving/executing task
+                surfaces its Plan. The reference metadata grid follows below. */}
+            {task.status === "review" ? (
+              <ReviewPanel taskId={taskId} onChanged={resolved} />
+            ) : null}
+
+            {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
+              <PlanView taskId={taskId} onResolved={resolved} />
+            ) : null}
+
             <dl className="mt-5 grid grid-cols-[6rem_1fr] items-center gap-y-3 text-sm">
               <dt className="text-muted-foreground">Status</dt>
               <dd>
@@ -281,14 +292,6 @@ export function TaskDetail({
 
             {task.body ? (
               <p className="mt-5 whitespace-pre-wrap text-sm text-foreground/90">{task.body}</p>
-            ) : null}
-
-            {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
-              <PlanView taskId={taskId} onResolved={resolved} />
-            ) : null}
-
-            {task.status === "review" ? (
-              <ReviewPanel taskId={taskId} onChanged={resolved} />
             ) : null}
 
             <SuggestionList entityType="task" entityId={taskId} />
