@@ -82,10 +82,10 @@ only if an install genuinely fails — recorded as a Blocker.)
 
 ## Status snapshot ← the loop keeps this current
 - **Current stage:** Stage 3 — in progress (Tauri scaffold + supervisor).
-- **Last completed step:** 3.1 (scaffold `src-tauri/` + config).
-- **Next step:** 3.2 (sidecar supervisor in Rust).
+- **Last completed step:** 3.2 (sidecar supervisor in Rust).
+- **Next step:** 3.3 (app smoke).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (3.1 done — cargo build + mock-runtime cargo test green).
+- **Last updated:** 2026-06-09 (3.2 done — cargo test 4 pass; `tauri build` → Cadence.app + .dmg).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -152,7 +152,7 @@ only if an install genuinely fails — recorded as a Blocker.)
   Root scripts `tauri:dev`/`tauri:build`; generate icons (`bun x tauri icon`). Add a `src-tauri/src/lib.rs`
   `#[cfg(test)]` using the `tauri::test` mock runtime as the home for `cargo test`.
   - Verify `[auto]`: `cargo build` (in `src-tauri`) compiles; `cargo test` runs (≥1 mock-runtime test); `bun test` + `bun run build` unaffected.
-- [ ] **3.2 Sidecar supervisor (Rust).** `[auto]` `lib.rs` `setup()`: **dev** (`tauri::is_dev()` / `cfg!(debug_assertions)`)
+- [x] **3.2 Sidecar supervisor (Rust).** `[auto]` `lib.rs` `setup()`: **dev** (`tauri::is_dev()` / `cfg!(debug_assertions)`)
   → point window at `devUrl`, don't spawn. **prod** → `app.shell().sidecar("cadence-server")` with env `CADENCE_PORT=0`,
   `CADENCE_HOME`, `CADENCE_WEB_DIR`/`CADENCE_MIGRATIONS_DIR` from `app.path().resolve("…", BaseDirectory::Resource)`,
   plus resolved PATH + `CADENCE_CLAUDE_BIN` (Stage 4). Read `CommandEvent::Stdout`, regex `http://localhost:\d+`,
@@ -340,3 +340,24 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   1 pass (`builds_on_the_mock_runtime`); `bun test` 236 pass; `bun run build` green. `src-tauri/Cargo.lock`
   is tracked; `target/binaries/resources/gen` git-ignored (confirmed). *Next:* 3.2 — the Rust sidecar
   supervisor (spawn cadence-server, parse stdout→URL, navigate + show the window, kill on exit).
+
+- **2026-06-09 · 3.2 (sidecar supervisor in Rust).** Rewrote `src-tauri/src/lib.rs`: `run()` now
+  `.build(generate_context!())` then `app.run(|h,e| …)` so it can kill the sidecar on
+  `RunEvent::ExitRequested|Exit` (child stored in a managed `SidecarChild(Mutex<Option<CommandChild>>)`).
+  `setup()` branches on `cfg!(debug_assertions)`: **dev** → navigate the (hidden) main window to the
+  config `devUrl` + `show()` (Vite is already served by the `bun run dev` beforeDevCommand, so no
+  spawn); **prod** → `app.shell().sidecar("cadence-server")` (basename — verified `relative_command_path`
+  joins to the exe dir, and the bundle places the sidecar at `Contents/MacOS/cadence-server`) with
+  `sidecar_env` (CADENCE_PORT=0 + HOME + WEB_DIR/MIGRATIONS_DIR from
+  `app.path().resolve("resources/{web,drizzle}", BaseDirectory::Resource)`), then an async task reads
+  `CommandEvent::Stdout`, runs `parse_gateway_url`, and navigates+shows on the first
+  `http://localhost:<port>`. Factored 3 pure fns (`parse_gateway_url`, `sidecar_env`, `start_url`) —
+  `start_url` is the single dev/prod URL decision and is used in **both** real branches (no dead-code
+  warning). `cargo test` = 4 pass (URL parse, env map, dev/prod branch, mock-runtime build). **The
+  `tauri` CLI normalized `Cargo.toml`** (added `features = []` to `tauri`/`tauri-build`) during the
+  build — kept as-is. **Verified:** `cargo test` 4 pass; `bun x tauri build` → **`Cadence.app`** +
+  `Cadence_0.1.0_aarch64.dmg`; bundle inspection confirms `Contents/MacOS/cadence-server` (64MB) +
+  `Contents/Resources/resources/web/index.html` + drizzle migrations are present (so the resource
+  resolution + sidecar name are correct — de-risks 3.3). `bun test` 236 pass; `bun run build` green.
+  *Next:* 3.3 — `scripts/app-smoke.ts` launches the built `.app`, polls `runtime.json`, curls health,
+  asserts exactly one `cadence-server`, quits → asserts no orphan, relaunch → still one.
