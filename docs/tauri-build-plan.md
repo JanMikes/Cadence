@@ -82,10 +82,10 @@ only if an install genuinely fails — recorded as a Blocker.)
 
 ## Status snapshot ← the loop keeps this current
 - **Current stage:** Stage 5 — in progress (native shell — full pass).
-- **Last completed step:** 5.3 (native notifications bridge).
-- **Next step:** 5.4 (single-instance).
+- **Last completed step:** 5.4 (single-instance).
+- **Next step:** 5.5 (autostart).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (5.3 done — cargo test 10 pass; bun test 241; native notif bridge).
+- **Last updated:** 2026-06-09 (5.4 done — app:smoke single-instance green: 2nd launch → still one sidecar).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -194,7 +194,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 - [x] **5.3 Native notifications bridge.** `[visual]` In `notifications/store.ts` `fireDesktop()`: under `__TAURI__`,
   use `@tauri-apps/plugin-notification`; else keep Web Notifications. Capability grants `notification:default` to the localhost origin.
   - Verify `[auto]`: `bun test` — the web path is unchanged when `__TAURI__` is absent; the Tauri branch is taken when it's mocked present; `bun run build` green. §Visual: a `needs_feedback`/`delivered` event raises a real macOS banner.
-- [ ] **5.4 Single-instance.** `[auto]` `tauri-plugin-single-instance`; on 2nd launch focus the existing window (+ optionally fire `quick-capture`).
+- [x] **5.4 Single-instance.** `[auto]` `tauri-plugin-single-instance`; on 2nd launch focus the existing window (+ optionally fire `quick-capture`).
   - Verify `[auto]`: `cargo build`; extend `app:smoke` — relaunch while running asserts exactly one `cadence-server` and one window. §Visual: 2nd launch visibly focuses the running window.
 - [ ] **5.5 Autostart.** `[auto]` `tauri-plugin-autostart` (LaunchAgent) + a "Launch at login" toggle in web Settings (via the `__TAURI__` bridge).
   - Verify `[auto]`: `cargo build`; `bun run build`; extend `app:smoke` — enabling autostart creates `~/Library/LaunchAgents/<id>.plist`, disabling removes it. §Visual: after enabling + reboot, Cadence launches to the tray.
@@ -452,3 +452,18 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   path doesn't throw without it; `cargo test` 10 pass; `bun test` 241 pass (+2); `cargo build` validates
   the capability; `bun run build` + `typecheck` green. §Visual (5.3) item already queued. *Next:* 5.4 —
   single-instance (`tauri-plugin-single-instance`; 2nd launch focuses the running window; extend `app:smoke`).
+
+- **2026-06-09 · 5.4 (single-instance).** Added `tauri-plugin-single-instance`, registered as the
+  **first** plugin in `run()` (inside `#[cfg(desktop)]`) so a 2nd launch is short-circuited before any
+  other init; its callback `show_main(app)` focuses the running window. **Gotcha (recorded):** the dep
+  can't live under `[target.'cfg(desktop)'.dependencies]` — `desktop` is a Tauri *build-script* cfg
+  (fine for `#[cfg(desktop)]` in code) but NOT a cargo target cfg, so the crate silently doesn't link
+  (E0433). Used the canonical desktop target spec `cfg(not(any(target_os="android", target_os="ios")))`
+  instead. Extended `scripts/app-smoke.ts`: after the first instance is up, relaunch the app binary and
+  assert the 2nd process exits (raced against an 8s timeout so a regression fails loudly, not hangs)
+  and the `cadence-server` count stays at baseline+1 (no duplicate sidecar) with the original sidecar
+  still alive; the finally-cleanup now reaps both processes. Rebuilt the `.app`. **Verified:** `cargo
+  test` 10 pass; `bun run app:smoke` exits 0 — *"single-instance ok — still exactly one sidecar"* then
+  clean shutdown, no orphan; `bun test` 241 pass; `bun run build` green. §Visual (5.4) item already
+  queued. *Next:* 5.5 — autostart (`tauri-plugin-autostart` + a "Launch at login" toggle; extend
+  `app:smoke` to assert the LaunchAgent plist appears/disappears).

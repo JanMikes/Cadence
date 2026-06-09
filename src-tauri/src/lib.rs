@@ -195,7 +195,18 @@ const QUICK_CAPTURE_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Single-instance MUST be the first plugin so a 2nd launch is short-circuited before any other
+    // init (e.g. spawning a duplicate sidecar) — it just focuses the already-running window.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app);
+        }));
+    }
+
+    builder = builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init());
 

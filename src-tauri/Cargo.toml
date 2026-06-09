@@ -27,6 +27,12 @@ tauri-plugin-shell = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 
+# Single-instance must be registered FIRST (see run()); a 2nd launch focuses the running window.
+# `desktop` is a Tauri build-script cfg (valid for #[cfg] in code) but NOT a cargo target cfg, so the
+# dependency uses the canonical "desktop" target spec instead.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+
 # POSIX signal handling so the app terminates cleanly (killing the sidecar) on SIGTERM/SIGINT — the
 # in-app RunEvent path doesn't cover an external `kill`/Ctrl-C. Unix-only (the target platforms here).
 [target.'cfg(unix)'.dependencies]

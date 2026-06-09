@@ -56,6 +56,7 @@ const baseline = countSidecars();
 const before = readRuntime(); // a running dev gateway's descriptor, if any — restored at the end
 
 let child: Bun.Subprocess | undefined;
+let second: Bun.Subprocess | undefined;
 let sidecarPid: number | undefined;
 let ok = false;
 
@@ -92,6 +93,27 @@ try {
   }
   console.log(`[app-smoke] health ok (${health.app}); exactly one sidecar (count=${running})`);
 
+  // --- single-instance: a 2nd launch must NOT start a duplicate app/sidecar; it focuses the running
+  // one and exits. (Timed so a single-instance regression fails loudly instead of hanging the smoke.) ---
+  console.log("[app-smoke] relaunching to verify single-instance…");
+  second = Bun.spawn([appBin], { stdout: "inherit", stderr: "inherit" });
+  const secondExited = await Promise.race([
+    second.exited.then(() => true),
+    Bun.sleep(8000).then(() => false),
+  ]);
+  if (!secondExited) {
+    throw new Error("single-instance violated: the 2nd launch did not exit (ran as a duplicate instance)");
+  }
+  await Bun.sleep(800);
+  const afterRelaunch = countSidecars();
+  if (afterRelaunch !== baseline + 1) {
+    throw new Error(
+      `single-instance violated: expected ${baseline + 1} cadence-server after relaunch, found ${afterRelaunch}`,
+    );
+  }
+  if (!pidAlive(sidecarPid)) throw new Error("the original sidecar died after the 2nd launch");
+  console.log(`[app-smoke] single-instance ok — still exactly one sidecar (count=${afterRelaunch})`);
+
   // Quit the app: SIGTERM → the supervisor's signal handler kills the sidecar, then exits.
   process.kill(child.pid as number, "SIGTERM");
   await child.exited;
@@ -106,11 +128,13 @@ try {
   console.log("[app-smoke] clean shutdown — no orphaned cadence-server");
   ok = true;
 } finally {
-  // Never leave the app or its sidecar running.
-  try {
-    if (child?.pid && pidAlive(child.pid)) process.kill(child.pid, "SIGKILL");
-  } catch {
-    /* already gone */
+  // Never leave the app(s) or sidecar running.
+  for (const proc of [second, child]) {
+    try {
+      if (proc?.pid && pidAlive(proc.pid)) process.kill(proc.pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
   }
   if (sidecarPid && pidAlive(sidecarPid)) {
     try {
