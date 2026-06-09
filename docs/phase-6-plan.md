@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.f (close duplicate-spawn endpoints: plan-approve idempotency, ActivityTracker keying).
+- **Current step:** 6.1.g (stuck-run UX with teeth + default stage timeouts).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -146,11 +146,12 @@ zombies. Implications the fix MUST honor:
     spawn total; orphan from boot #1 is adopted-or-killed at boot #2.
     ✓ 2026-06-10 (`991f0b6`; **kill chosen over adopt** — see Journal; verify realized as: boot #2
     kills the orphan then heals exactly once, ≤1 spawn per boot, ≤3 per 24h by 6.1.c).
-- [ ] **6.1.f Close the duplicate-spawn endpoints.** `/refine` goes through 6.1.b; plan-approve
+- [x] **6.1.f Close the duplicate-spawn endpoints.** `/refine` goes through 6.1.b; plan-approve
   becomes idempotent (409/no-op when a chain is already active — remove the `implementing`
   back-compat double-run at `api.ts:330`); fix `ActivityTracker` keying to `(taskId, role)` with
   proper refcounting.
   - Verify: tests — double POST approve → single chain; tracker survives concurrent stages.
+    ✓ 2026-06-10 (`b1dc606`, 331 tests; back-compat kept for STRANDED tasks only, see Journal).
 - [ ] **6.1.g Stuck-run UX with teeth + default timeouts.** The “A run looks stuck” path and the
   Sessions tile gain labeled actions: **View output** · **Kill run** · **Kill & retry** (budgeted).
   Default `timeoutMs` per role class (read stages 15 min; implementer/fleet 60 min; configurable in
@@ -522,3 +523,13 @@ yourself.
   (`sleep 30`) orphan-kill test and the boot-sequence composition test. NOTE for 6.1.g: a
   `refining` task with no live run is invisible at runtime (attention covers implementing/verifying
   only) — surface it in the attention feed.
+- **2026-06-10 — 6.1.f done** (`b1dc606`). **Decision:** plan-approve 409s only when the chain is
+  *actively running* (`activity.isActive`); a task stranded in `implementing` with no live chain
+  may still re-approve — the old back-compat was a recovery path worth keeping, now guarded (and
+  the 6.1.b stage dedupe backstops the remaining microtask race; a losing chain dies at spawn with
+  StageConflictError). ActivityTracker rekeyed per (task, stage) with `end(taskId, stage)`
+  precision; `activity:end` now carries `next` (surviving stage) and the web store falls back to it.
+  De-flaked two pre-existing gateway tests that approved plans mid-planner (legal before the guard,
+  409 now): they wait for `plan_review` first. Double-approve test runs against a real repo-backed
+  worktree project so the implementer genuinely executes (a project-less task bails too fast to
+  observe).
