@@ -94,22 +94,81 @@ test("checkSessions: a running session with a dead pid is ended and its task res
 
 test("checkSessions: a live fresh session is left alone; a long-idle one is surfaced once", () => {
   const hub = new WsHub();
-  const liveId = insertSession({ status: "running", pid: process.pid, startedAt: Date.now() });
+  const now = Date.now();
+  const liveId = insertSession({ status: "running", pid: 11111, startedAt: now });
   const idleId = insertSession({
     status: "running",
-    pid: process.pid, // alive, so not "dead" — only the long idle should flag it
-    startedAt: Date.now() - 60 * 60 * 1000, // 1h ago, no transcript → idle
+    pid: 22222, // honestly alive for an hour (signature matches) — only the idleness flags it
+    startedAt: now - 60 * 60 * 1000, // 1h ago, no transcript → idle
   });
+  // Probe an honest world: both processes exist, are not defunct, and their start
+  // times match their rows (etime ≈ how long ago the row says it started).
+  const probe = {
+    alive: () => true,
+    proc: (pid: number) => ({ stat: "S+", etimeSec: pid === 22222 ? 3600 : 5, command: "claude" }),
+    now: Date.now,
+  };
   const notified = new Set<string>();
 
-  const r1 = checkSessions(db, hub, notified);
+  const r1 = checkSessions(db, hub, notified, now, probe);
   expect(getSession(db, liveId)?.status).toBe("running"); // untouched
   expect(r1.dead).toBe(0);
   expect(r1.stuck).toBe(1);
   expect(notified.has(idleId)).toBe(true);
 
   // a second pass must not re-nudge the same session
-  expect(checkSessions(db, hub, notified).stuck).toBe(0);
+  expect(checkSessions(db, hub, notified, now, probe).stuck).toBe(0);
+});
+
+test("checkSessions sweep: a DEFUNCT zombie (passes kill(0)) is finalized and its task rescued (§6.1.d)", () => {
+  // The 17-zombie incident: dead discovery runs whose pids sat defunct for 15+ hours.
+  const taskId = implementingTask("zombie bait");
+  const sid = insertSession({ taskId, status: "running", pid: 4242, role: "implementer" });
+  const probe = {
+    alive: () => true, // kill(0) lies for defunct processes — exactly the incident
+    proc: () => ({ stat: "Z+", etimeSec: 5, command: "(claude)" }),
+    now: Date.now,
+  };
+
+  const r = checkSessions(db, new WsHub(), new Set(), Date.now(), probe);
+
+  expect(r.dead).toBe(1);
+  expect(getSession(db, sid)?.status).toBe("failed");
+  expect(getTask(db, taskId)?.status).not.toBe("implementing");
+});
+
+test("checkSessions sweep: a recycled pid (start-time signature mismatch) is finalized (§6.1.d)", () => {
+  const sid = insertSession({
+    status: "running",
+    pid: 33333,
+    startedAt: Date.now() - 2 * 60 * 60 * 1000, // the row is 2h old…
+  });
+  const probe = {
+    alive: () => true,
+    proc: () => ({ stat: "S+", etimeSec: 10, command: "some-other-process" }), // …the pid is 10s old
+    now: Date.now,
+  };
+
+  const r = checkSessions(db, new WsHub(), new Set(), Date.now(), probe);
+
+  expect(r.dead).toBe(1);
+  expect(getSession(db, sid)?.status).toBe("failed");
+});
+
+test("reconcileOrphans: a defunct survivor is NOT kept running at boot (§6.1.d)", () => {
+  const taskId = implementingTask("boot zombie");
+  const sid = insertSession({ taskId, status: "running", pid: 4242, role: "implementer" });
+  const probe = {
+    alive: () => true,
+    proc: () => ({ stat: "Z", etimeSec: 100, command: "(claude)" }),
+    now: Date.now,
+  };
+
+  const ended = reconcileOrphans(db, new WsHub(), probe);
+
+  expect(ended).toBe(1);
+  expect(getSession(db, sid)?.status).toBe("failed");
+  expect(getTask(db, taskId)?.status).toBe("ready"); // rescued, re-PLAYable
 });
 
 test("reconcileOrphans leaves a session whose process survived the restart running", () => {

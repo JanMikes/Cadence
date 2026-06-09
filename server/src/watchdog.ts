@@ -2,9 +2,10 @@ import { statSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
+import { isSessionRowAlive, type LivenessProbe, REAL_PROBE } from "./liveness";
 import { notifyOnTransition } from "./notify";
 import { taskDiff } from "./review";
-import { endSession, isProcessAlive, listSessions } from "./sessions";
+import { endSession, listSessions } from "./sessions";
 import { appendContext, readPlan } from "./store/store";
 import { getTask, listTasks, updateTask } from "./tasks";
 import { resolveTranscriptPath } from "./transcripts";
@@ -23,6 +24,10 @@ import type { WsHub } from "./ws";
  * Both are deterministic (pid liveness + transcript mtime) — cheap and reliable, no agent
  * spawn required. A task in an active-work state therefore always has either a live run
  * (spinner) or a surfaced "needs you" reason — never invisible limbo.
+ *
+ * Liveness is the HONEST verdict from liveness.ts (§6.1.d): kill(0) alone kept 17
+ * defunct zombies "running" for 15+ hours — a defunct or pid-recycled process is dead
+ * here, so the periodic pass doubles as the sweep that finalizes lying rows.
  */
 
 const ACTIVE_WORK: ReadonlySet<string> = new Set(["implementing", "verifying"]);
@@ -110,14 +115,14 @@ export function recoverStrandedTask(db: Db, hub: WsHub, taskId: string, reason: 
  * "running" status: output keeps streaming from the transcript, and Stop/Kill work by pid.
  * Returns the number of sessions reconciled.
  */
-export function reconcileOrphans(db: Db, hub: WsHub): number {
+export function reconcileOrphans(db: Db, hub: WsHub, probe: LivenessProbe = REAL_PROBE): number {
   let ended = 0;
   const aliveTasks = new Set<string>();
   for (const s of listSessions(db)) {
     if (!RUNNING.has(s.status)) continue;
-    if (s.pid != null && isProcessAlive(s.pid)) {
+    if (s.pid != null && isSessionRowAlive(s, probe)) {
       if (s.taskId) aliveTasks.add(s.taskId);
-      continue; // survived the restart — still genuinely running
+      continue; // survived the restart — still genuinely running (honestly verified)
     }
     endSession(db, s.id, "failed");
     hub.broadcast({ type: "event", name: "session:updated", payload: s.id });
@@ -145,13 +150,17 @@ export function checkSessions(
   hub: WsHub,
   notified: Set<string>,
   now: number = Date.now(),
+  probe: LivenessProbe = REAL_PROBE,
 ): { dead: number; stuck: number } {
   let dead = 0;
   let stuck = 0;
   for (const s of listSessions(db)) {
     if (!RUNNING.has(s.status)) continue;
 
-    if (s.pid != null && !isProcessAlive(s.pid)) {
+    // Honest sweep (§6.1.d): dead, defunct-zombie and pid-recycled runs all finalize
+    // here — including rows that never got a pid (gateway died between insert and
+    // spawn) once they age past the pre-spawn grace.
+    if (!isSessionRowAlive(s, { ...probe, now: () => now })) {
       endSession(db, s.id, "failed");
       hub.broadcast({ type: "event", name: "session:updated", payload: s.id });
       dead += 1;

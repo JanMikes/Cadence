@@ -2,6 +2,7 @@ import type { ClaudeEvent, Session, UpdateSessionInput } from "@cadence/shared";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
+import { isRunPidAlive } from "./liveness";
 import { openSession, type SessionHandle } from "./spawn";
 import { transcriptPathFor } from "./transcripts";
 import type { WsHub } from "./ws";
@@ -25,15 +26,9 @@ export function getSession(db: Db, id: string): Session | null {
   return row ?? null;
 }
 
-/** Whether `pid` is a live process. Treats EPERM (exists, not ours) as alive. */
-export function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return (err as NodeJS.ErrnoException)?.code === "EPERM";
-  }
-}
+// The implementation moved to liveness.ts (§6.1.d) — re-exported so existing
+// importers keep working; all liveness verdicts now share one honest definition.
+export { isProcessAlive } from "./liveness";
 
 const RUNNING_STATUSES: ReadonlySet<string> = new Set(["spawning", "running"]);
 
@@ -41,12 +36,15 @@ const RUNNING_STATUSES: ReadonlySet<string> = new Set(["spawning", "running"]);
  * Honest liveness for any session row (spec §10: visible system status):
  * - canChat — Cadence holds a warm stdin handle (Continue chat works).
  * - isLive  — the process is actually alive: a warm handle OR a running pid
- *   (oneshot pipeline runs, and runs that survived a gateway restart).
+ *   (oneshot pipeline runs, and runs that survived a gateway restart). Verified
+ *   honestly (§6.1.d): a defunct zombie or a recycled pid is NOT alive — the
+ *   green dot must never lie again.
  */
 export function sessionRunState(spawn: SpawnManager, s: Session): { canChat: boolean; isLive: boolean } {
   const canChat = spawn.liveIds().includes(s.id);
   const isLive =
-    canChat || (RUNNING_STATUSES.has(s.status) && s.pid != null && isProcessAlive(s.pid));
+    canChat ||
+    (RUNNING_STATUSES.has(s.status) && s.pid != null && isRunPidAlive(s.pid, s.startedAt));
   return { canChat, isLive };
 }
 
@@ -62,7 +60,9 @@ export function signalSession(spawn: SpawnManager, s: Session, action: "stop" | 
     else spawn.close(s.id);
     return true;
   }
-  if (s.pid != null && isProcessAlive(s.pid)) {
+  // Honest check before signalling (§6.1.d): never SIGKILL a recycled pid that now
+  // belongs to some unrelated process.
+  if (s.pid != null && isRunPidAlive(s.pid, s.startedAt)) {
     try {
       process.kill(s.pid, action === "kill" ? "SIGKILL" : "SIGINT");
       return true;

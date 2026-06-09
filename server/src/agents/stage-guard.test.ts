@@ -5,18 +5,13 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { sessions } from "../db/schema";
+import type { LivenessProbe } from "../liveness";
 import { listTaskSessions } from "../sessions";
 import { bootstrap } from "../store/store";
 import { createTask } from "../tasks";
 import { WsHub } from "../ws";
 import { makeRecordingRunner } from "./recording-runner";
-import {
-  classifyStat,
-  findLiveStage,
-  isStagePidAlive,
-  type PidProbe,
-  StageConflictError,
-} from "./stage-guard";
+import { findLiveStage, StageConflictError } from "./stage-guard";
 
 let db: Db;
 let home: string;
@@ -55,31 +50,12 @@ function seedRun(
   return id;
 }
 
-const aliveProbe: PidProbe = { alive: () => true, stat: () => "S+" };
-const zombieProbe: PidProbe = { alive: () => true, stat: () => "Z+" }; // defunct passes kill(0)!
-const deadProbe: PidProbe = { alive: () => false, stat: () => null };
-
-// --- honest liveness -------------------------------------------------------
-
-test("classifyStat: defunct (Z) is stale no matter what kill(0) says", () => {
-  expect(classifyStat("Z")).toBe("stale");
-  expect(classifyStat("Z+")).toBe("stale");
-  expect(classifyStat("z")).toBe("stale");
-  expect(classifyStat(null)).toBe("stale");
-  expect(classifyStat("")).toBe("stale");
-  expect(classifyStat("S+")).toBe("alive");
-  expect(classifyStat("R")).toBe("alive");
-  expect(classifyStat("SN")).toBe("alive");
-});
-
-test("isStagePidAlive: dead, defunct and null pids are not alive", () => {
-  expect(isStagePidAlive(null)).toBe(false);
-  expect(isStagePidAlive(1234, deadProbe)).toBe(false);
-  expect(isStagePidAlive(1234, zombieProbe)).toBe(false); // the 15-zombie incident
-  expect(isStagePidAlive(1234, aliveProbe)).toBe(true);
-  // the real probes agree the current test process is alive
-  expect(isStagePidAlive(process.pid)).toBe(true);
-});
+// Honest-liveness unit tests live in ../liveness.test.ts; here we only need probes.
+const zombieProbe: LivenessProbe = {
+  alive: () => true, // defunct passes kill(0)!
+  proc: () => ({ stat: "Z+", etimeSec: 5, command: "(claude)" }),
+  now: Date.now,
+};
 
 // --- findLiveStage ---------------------------------------------------------
 
