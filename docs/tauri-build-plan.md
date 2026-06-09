@@ -82,10 +82,10 @@ only if an install genuinely fails — recorded as a Blocker.)
 
 ## Status snapshot ← the loop keeps this current
 - **Current stage:** Stage 1 — in progress (relocatable gateway, pure TS).
-- **Last completed step:** 1.1 (`CADENCE_WEB_DIR` override).
-- **Next step:** 1.2 (`CADENCE_MIGRATIONS_DIR` override).
+- **Last completed step:** 1.2 (`CADENCE_MIGRATIONS_DIR` override).
+- **Next step:** 1.3 (runtime port file).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (1.1 done — 234 tests).
+- **Last updated:** 2026-06-09 (1.2 done — 235 tests).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -120,7 +120,7 @@ only if an install genuinely fails — recorded as a Blocker.)
 ## Stage 1 — Relocatable gateway (pure TS — fully auto-verifiable; do FIRST to de-risk)
 - [x] **1.1 `CADENCE_WEB_DIR` override.** `[auto]` `server/src/gateway.ts`: `webDir = opts.webDir ?? process.env.CADENCE_WEB_DIR ?? DEFAULT_WEB_DIR`.
   - Verify: `bun test` — a gateway with `CADENCE_WEB_DIR=<fixture>` serves the fixture `index.html`; existing tests green; `bun run build` green.
-- [ ] **1.2 `CADENCE_MIGRATIONS_DIR` override.** `[auto]` `server/src/db/client.ts`: `migrationsFolder` reads `process.env.CADENCE_MIGRATIONS_DIR ?? <relative default>`.
+- [x] **1.2 `CADENCE_MIGRATIONS_DIR` override.** `[auto]` `server/src/db/client.ts`: `migrationsFolder` reads `process.env.CADENCE_MIGRATIONS_DIR ?? <relative default>`.
   - Verify: `bun test` — `openAndMigrate` on a temp DB with `CADENCE_MIGRATIONS_DIR=server/drizzle` creates all tables; existing migration tests green; `bun run build` green.
 - [ ] **1.3 Runtime port file.** `[auto]` On startup the gateway writes `{ "port": <n>, "url": "...", "pid": <n> }` to `$CADENCE_HOME/runtime.json`; remove it on graceful stop. Enables the app-smoke + future tooling to find the ephemeral port.
   - Verify: `bun test` — starting a gateway writes `runtime.json` with the bound port; `stop()` removes it; `bun run build` green.
@@ -267,3 +267,12 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   gateway with **no** `webDir` opt but `CADENCE_WEB_DIR` pointed at a temp fixture and asserts `/`
   serves the fixture's `index.html`. Verified: gateway suite 40 pass; full `bun test` 234 pass (+1);
   `bun run build` green. *Next:* 1.2 — `CADENCE_MIGRATIONS_DIR` override in `server/src/db/client.ts`.
+
+- **2026-06-09 · 1.2 (`CADENCE_MIGRATIONS_DIR` override).** `server/src/db/client.ts`: `migrateDb`
+  now migrates from `process.env.CADENCE_MIGRATIONS_DIR ?? migrationsFolder`, resolved **at call time**
+  (not import time) so a test can set the env then call `openAndMigrate`. `migrationsFolder` const
+  stays the source-relative default; it's internal to `client.ts` (no external importers), so no
+  breakage. Added a `db.test.ts` case proving the env is actually consulted: an empty dir → migrate
+  throws (no drizzle journal); the real `server/drizzle` dir → every core table is created (selects
+  return `[]` instead of "no such table"). Verified: db suite 3 pass; full `bun test` 235 pass (+1);
+  `bun run build` green. *Next:* 1.3 — write `$CADENCE_HOME/runtime.json` on startup, remove on stop.

@@ -1,6 +1,9 @@
 import { beforeAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
-import { migrateDb, openDb, type Db } from "./client";
+import { migrateDb, openAndMigrate, openDb, type Db } from "./client";
 import {
   events,
   fleets,
@@ -88,4 +91,30 @@ test("foreign keys are enforced", () => {
       .values({ taskId: crypto.randomUUID(), type: "orphan" })
       .run(),
   ).toThrow();
+});
+
+test("CADENCE_MIGRATIONS_DIR relocates the migrations source (compiled-sidecar path)", () => {
+  const realDrizzle = join(import.meta.dir, "..", "..", "drizzle"); // = server/drizzle
+  const prev = process.env.CADENCE_MIGRATIONS_DIR;
+  const emptyDir = mkdtempSync(join(tmpdir(), "cadence-nomig-"));
+  try {
+    // The env dir is actually consulted: a folder without the drizzle journal can't migrate.
+    process.env.CADENCE_MIGRATIONS_DIR = emptyDir;
+    expect(() => openAndMigrate(":memory:")).toThrow();
+
+    // Pointed at the real drizzle folder, every table is created — a select would throw
+    // "no such table" if the migration hadn't run from the env-supplied directory.
+    process.env.CADENCE_MIGRATIONS_DIR = realDrizzle;
+    const relocated = openAndMigrate(":memory:");
+    expect(relocated.select().from(projects).all()).toEqual([]);
+    expect(relocated.select().from(tasks).all()).toEqual([]);
+    expect(relocated.select().from(sessions).all()).toEqual([]);
+    expect(relocated.select().from(events).all()).toEqual([]);
+    expect(relocated.select().from(fleets).all()).toEqual([]);
+    expect(relocated.select().from(suggestions).all()).toEqual([]);
+  } finally {
+    if (prev === undefined) delete process.env.CADENCE_MIGRATIONS_DIR;
+    else process.env.CADENCE_MIGRATIONS_DIR = prev;
+    rmSync(emptyDir, { recursive: true, force: true });
+  }
 });
