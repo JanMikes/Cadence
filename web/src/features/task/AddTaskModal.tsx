@@ -3,6 +3,7 @@ import { Plus, X } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { createTask } from "../../lib/api";
+import { isTauri } from "../../lib/tauri";
 
 /** True when focus is in a text field, so a bare-key shortcut shouldn't hijack it. */
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -107,7 +108,17 @@ export function AddTaskModal({
       >
         <form onSubmit={submit}>
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold tracking-tight">Add task</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold tracking-tight">Add task</h2>
+              {isTauri() ? (
+                <kbd
+                  title="Global shortcut: opens quick-capture from any app"
+                  className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                >
+                  ⌘⇧Space anywhere
+                </kbd>
+              ) : null}
+            </div>
             <LabeledIconButton
               icon={<X />}
               label="Close"

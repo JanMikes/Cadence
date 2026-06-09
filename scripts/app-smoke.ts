@@ -19,7 +19,7 @@ import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
 const appPath = join(root, "src-tauri", "target", "release", "bundle", "macos", "Cadence.app");
-const appBin = join(appPath, "Contents", "MacOS", "app");
+const appBin = join(appPath, "Contents", "MacOS", "Cadence"); // mainBinaryName = "Cadence"
 const runtimeFile = join(homedir(), ".cadence", "runtime.json");
 // The LaunchAgent plist is named after package_info().name (the product name), not the bundle id.
 const autostartPlist = join(homedir(), "Library", "LaunchAgents", "Cadence.plist");
