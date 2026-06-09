@@ -82,10 +82,10 @@ only if an install genuinely fails — recorded as a Blocker.)
 
 ## Status snapshot ← the loop keeps this current
 - **Current stage:** Stage 5 — in progress (native shell — full pass).
-- **Last completed step:** 5.2 (global hotkey → quick-capture).
-- **Next step:** 5.3 (native notifications bridge).
+- **Last completed step:** 5.3 (native notifications bridge).
+- **Next step:** 5.4 (single-instance).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (5.2 done — cargo test 10 pass; bun test 239; hotkey + web bridge).
+- **Last updated:** 2026-06-09 (5.3 done — cargo test 10 pass; bun test 241; native notif bridge).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -191,7 +191,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   - Verify `[auto]`: `cargo test` asserts `global_shortcut().is_registered("CmdOrCtrl+Shift+Space")`; `bun test` asserts
     `useTauriBridge` is inert without `__TAURI__` and opens the modal when a mocked event fires; `bun run build` green.
     §Visual: the hotkey from another app brings Cadence forward with the capture modal focused → task lands in Inbox.
-- [ ] **5.3 Native notifications bridge.** `[visual]` In `notifications/store.ts` `fireDesktop()`: under `__TAURI__`,
+- [x] **5.3 Native notifications bridge.** `[visual]` In `notifications/store.ts` `fireDesktop()`: under `__TAURI__`,
   use `@tauri-apps/plugin-notification`; else keep Web Notifications. Capability grants `notification:default` to the localhost origin.
   - Verify `[auto]`: `bun test` — the web path is unchanged when `__TAURI__` is absent; the Tauri branch is taken when it's mocked present; `bun run build` green. §Visual: a `needs_feedback`/`delivered` event raises a real macOS banner.
 - [ ] **5.4 Single-instance.** `[auto]` `tauri-plugin-single-instance`; on 2nd launch focus the existing window (+ optionally fire `quick-capture`).
@@ -440,3 +440,15 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   mocked event); `cargo build` validates the capability/conf; `bun run build` + `typecheck` green.
   §Visual (5.2) item already queued. *Next:* 5.3 — native notifications bridge (`fireDesktop` →
   `@tauri-apps/plugin-notification` under `__TAURI__`, else Web Notifications).
+
+- **2026-06-09 · 5.3 (native notifications bridge).** Rust: registered `tauri-plugin-notification` and
+  granted `notification:default` in the default capability (now that the plugin exists, so it
+  validates). Web: extended `lib/tauri.ts` with `tauriNotify(title, body)` — uses the
+  `withGlobalTauri` `window.__TAURI__.notification.sendNotification` (no `@tauri-apps/plugin-notification`
+  npm dep needed), returns `true` if handled else `false`; `useTauriBridge` now also requests
+  notification permission once. `notifications/store.ts` `fireDesktop` tries `tauriNotify` first and
+  falls back to the existing Web Notifications path unchanged. **Verified:** extended `store.test.ts` —
+  a `needs_feedback` add fires a native banner when `__TAURI__.notification` is mocked, and the plain
+  path doesn't throw without it; `cargo test` 10 pass; `bun test` 241 pass (+2); `cargo build` validates
+  the capability; `bun run build` + `typecheck` green. §Visual (5.3) item already queued. *Next:* 5.4 —
+  single-instance (`tauri-plugin-single-instance`; 2nd launch focuses the running window; extend `app:smoke`).

@@ -11,6 +11,11 @@ type TauriGlobal = {
   event?: {
     listen?: (event: string, handler: (e: unknown) => void) => Promise<() => void>;
   };
+  notification?: {
+    sendNotification?: (notification: { title: string; body?: string } | string) => void;
+    isPermissionGranted?: () => Promise<boolean>;
+    requestPermission?: () => Promise<string>;
+  };
 };
 
 function tauriGlobal(): TauriGlobal | undefined {
@@ -34,14 +39,36 @@ export function subscribeQuickCapture(onCapture: () => void): Promise<(() => voi
 }
 
 /**
+ * Raise a real OS notification via the Tauri shell. Returns `true` if handled (inside Tauri), `false`
+ * in a plain browser so the caller can fall back to the Web Notifications API. Permission is requested
+ * once by `useTauriBridge`; an un-granted notification simply no-ops at the OS layer.
+ */
+export function tauriNotify(title: string, body?: string): boolean {
+  const send = tauriGlobal()?.notification?.sendNotification;
+  if (!send) return false;
+  send(body ? { title, body } : { title });
+  return true;
+}
+
+/**
  * React wiring for the native bridge: opens quick-capture from the global hotkey / tray. Subscribes
  * once and always calls the latest `onQuickCapture` (via a ref), so an inline callback won't churn the
  * subscription. Inert outside the Tauri shell.
  */
+/** Ask for OS notification permission once so `tauriNotify` banners can show. No-op outside Tauri. */
+function ensureNotificationPermission(): void {
+  const n = tauriGlobal()?.notification;
+  if (!n?.isPermissionGranted || !n.requestPermission) return;
+  void n.isPermissionGranted().then((granted) => {
+    if (!granted) void n.requestPermission?.();
+  });
+}
+
 export function useTauriBridge(onQuickCapture: () => void): void {
   const cb = useRef(onQuickCapture);
   cb.current = onQuickCapture;
   useEffect(() => {
+    ensureNotificationPermission();
     let unlisten: (() => void) | null = null;
     let active = true;
     void subscribeQuickCapture(() => cb.current()).then((u) => {

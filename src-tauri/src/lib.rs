@@ -195,7 +195,9 @@ const QUICK_CAPTURE_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default().plugin(tauri_plugin_shell::init());
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init());
 
     // Global shortcut (desktop only): CmdOrCtrl+Shift+Space → show the window + emit quick-capture.
     #[cfg(desktop)]

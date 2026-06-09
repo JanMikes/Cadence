@@ -1,5 +1,6 @@
 import type { NotifyPayload } from "@cadence/shared";
 import { useSyncExternalStore } from "react";
+import { tauriNotify } from "../../lib/tauri";
 import { subscribe as subscribeWs } from "../../lib/ws";
 
 export interface AppNotification {
@@ -34,6 +35,9 @@ export function addNotification(n: {
 }
 
 function fireDesktop(n: AppNotification): void {
+  // Inside Cadence.app, raise a real macOS banner via the Tauri notification plugin; in a plain
+  // browser, fall back to the Web Notifications API (unchanged behaviour).
+  if (tauriNotify(n.title, n.body)) return;
   if (typeof Notification !== "undefined" && Notification.permission === "granted") {
     try {
       new Notification(n.title, { body: n.body });
