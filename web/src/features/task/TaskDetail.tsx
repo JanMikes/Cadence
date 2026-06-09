@@ -32,11 +32,15 @@ export function TaskDetail({
   taskId,
   onClose,
   onOpenSession,
+  onOpenSessionDetail,
   onOpenTask,
 }: {
   taskId: string;
   onClose: () => void;
+  /** Open the live chat panel (used right after spawning a fresh session). */
   onOpenSession: (sessionId: string) => void;
+  /** Open the rich session detail drawer (used when clicking an existing session). */
+  onOpenSessionDetail?: (sessionId: string) => void;
   onOpenTask?: (taskId: string) => void;
 }) {
   const qc = useQueryClient();
@@ -292,7 +296,7 @@ export function TaskDetail({
                   <li key={s.id}>
                     <button
                       type="button"
-                      onClick={() => onOpenSession(s.id)}
+                      onClick={() => (onOpenSessionDetail ?? onOpenSession)(s.id)}
                       className="flex w-full items-center justify-between rounded-md border border-border bg-card/50 px-3 py-2 text-left text-xs transition-colors hover:border-primary/50"
                     >
                       <span className="font-mono">{s.id.slice(0, 8)}</span>

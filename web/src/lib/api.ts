@@ -24,6 +24,7 @@ import type {
   SearchHit,
   SelfMonitor,
   Session,
+  SessionDetail,
   SpawnSessionInput,
   Suggestion,
   SuggestionAction,
@@ -39,6 +40,7 @@ import type {
   UpdateFleetInput,
   VerifyReport,
   UpdateProjectInput,
+  UpdateSessionInput,
   UpdateTaskInput,
   UsageResponse,
 } from "@cadence/shared";
@@ -322,6 +324,36 @@ export function spawnSession(taskId: string, input: SpawnSessionInput = {}): Pro
 
 export function getSessions(): Promise<Session[]> {
   return fetch("/api/sessions").then(json<Session[]>);
+}
+
+export function getSessionDetail(id: string): Promise<SessionDetail> {
+  return fetch(`/api/sessions/${id}`).then(json<SessionDetail>);
+}
+
+export function updateSession(id: string, patch: UpdateSessionInput): Promise<SessionDetail> {
+  return fetch(`/api/sessions/${id}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  }).then(json<SessionDetail>);
+}
+
+export function deleteSession(id: string): Promise<{ deleted: boolean }> {
+  return fetch(`/api/sessions/${id}`, { method: "DELETE" }).then(json<{ deleted: boolean }>);
+}
+
+/** Gracefully stop (EOF) a live warm session; it finishes its turn then exits. */
+export function stopSession(id: string): Promise<{ ok: boolean; action: string }> {
+  return fetch(`/api/sessions/${id}/stop`, { method: "POST" }).then(
+    json<{ ok: boolean; action: string }>,
+  );
+}
+
+/** Hard-kill (SIGINT) a live warm session. */
+export function killSession(id: string): Promise<{ ok: boolean; action: string }> {
+  return fetch(`/api/sessions/${id}/kill`, { method: "POST" }).then(
+    json<{ ok: boolean; action: string }>,
+  );
 }
 
 export function getLiveSessions(): Promise<LiveSession[]> {

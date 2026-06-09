@@ -115,3 +115,58 @@ test("posting to an unknown session is a 409", async () => {
   });
   expect(res.status).toBe(409);
 });
+
+test("session detail exposes liveness; assigning a task organizes it", async () => {
+  const session = gw.spawn.spawn({ cwd: home, role: "chat", command: MOCK_CMD });
+
+  // detail reports it as live right after spawn
+  const detail = (await fetch(`${gw.url}/api/sessions/${session.id}`).then((r) => r.json())) as {
+    id: string;
+    isLive: boolean;
+    taskId: string | null;
+  };
+  expect(detail.id).toBe(session.id);
+  expect(detail.isLive).toBe(true);
+
+  // make a task and assign the session to it
+  const task = (await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Owns a session" }),
+  }).then((r) => r.json())) as { id: string };
+
+  const patched = (await fetch(`${gw.url}/api/sessions/${session.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ taskId: task.id }),
+  }).then((r) => r.json())) as { taskId: string | null };
+  expect(patched.taskId).toBe(task.id);
+
+  // the task's session list now includes it
+  const taskSessions = (await fetch(`${gw.url}/api/tasks/${task.id}/sessions`).then((r) =>
+    r.json(),
+  )) as Array<{ id: string }>;
+  expect(taskSessions.some((s) => s.id === session.id)).toBe(true);
+
+  // an unknown task is rejected (400)
+  const bad = await fetch(`${gw.url}/api/sessions/${session.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ taskId: "nope" }),
+  });
+  expect(bad.status).toBe(400);
+
+  gw.spawn.kill(session.id);
+});
+
+test("stop on an unknown session is a 404; delete removes the row", async () => {
+  const res = await fetch(`${gw.url}/api/sessions/not-a-session/stop`, { method: "POST" });
+  expect(res.status).toBe(404);
+
+  const session = gw.spawn.spawn({ cwd: home, role: "chat", command: MOCK_CMD });
+  const del = (await fetch(`${gw.url}/api/sessions/${session.id}`, { method: "DELETE" }).then((r) =>
+    r.json(),
+  )) as { deleted: boolean };
+  expect(del.deleted).toBe(true);
+  expect(getSession(db, session.id)).toBeNull();
+});

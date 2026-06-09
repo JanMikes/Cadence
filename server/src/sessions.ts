@@ -1,4 +1,4 @@
-import type { ClaudeEvent, Session } from "@cadence/shared";
+import type { ClaudeEvent, Session, UpdateSessionInput } from "@cadence/shared";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
@@ -41,6 +41,29 @@ export function listTaskSessions(db: Db, taskId: string): Session[] {
 /** Sum of a task's session costs (an effort signal, not a budget — §10). */
 export function taskCostUsd(db: Db, taskId: string): number {
   return listTaskSessions(db, taskId).reduce((sum, s) => sum + (s.costUsd ?? 0), 0);
+}
+
+/**
+ * Re-organize a session: (re)assign it to a task/project/fleet, or clear a link
+ * (null). Index-only — sessions are runtime artifacts, so this is a pure DB write
+ * (no markdown). Returns the updated row, or null if the session is gone.
+ */
+export function updateSession(db: Db, id: string, patch: UpdateSessionInput): Session | null {
+  const set: Partial<typeof sessions.$inferInsert> = {};
+  if ("taskId" in patch) set.taskId = patch.taskId ?? null;
+  if ("projectId" in patch) set.projectId = patch.projectId ?? null;
+  if ("fleetId" in patch) set.fleetId = patch.fleetId ?? null;
+  if (Object.keys(set).length > 0) {
+    db.update(sessions).set(set).where(eq(sessions.id, id)).run();
+  }
+  return getSession(db, id);
+}
+
+/** Drop a session row (its events cascade). Returns whether a row existed. */
+export function deleteSession(db: Db, id: string): boolean {
+  const existed = getSession(db, id) != null;
+  db.delete(sessions).where(eq(sessions.id, id)).run();
+  return existed;
 }
 
 export interface SpawnArgs {

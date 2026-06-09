@@ -7,7 +7,7 @@ test("SessionsView renders live + tracked session sections", () => {
   const qc = new QueryClient();
   const html = renderToStaticMarkup(
     <QueryClientProvider client={qc}>
-      <SessionsView />
+      <SessionsView onOpenSessionDetail={() => {}} />
     </QueryClientProvider>,
   );
   expect(html).toContain("Sessions");

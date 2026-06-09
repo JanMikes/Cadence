@@ -10,12 +10,14 @@ import { Fleets } from "./features/fleets/Fleets";
 import { Inbox } from "./features/inbox/Inbox";
 import { Memory } from "./features/memory/Memory";
 import { Projects } from "./features/projects/Projects";
+import { SessionDetail } from "./features/session/SessionDetail";
 import { SessionPanel } from "./features/session/SessionPanel";
 import { NotificationsView } from "./features/notifications/NotificationsView";
 import { useNotifications } from "./features/notifications/store";
 import { CommandPalette } from "./features/search/CommandPalette";
 import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
+import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
 import { cn } from "./lib/utils";
@@ -26,6 +28,8 @@ export function App() {
   const [view, setView] = useState<ViewId>("today");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionDetailId, setSessionDetailId] = useState<string | null>(null);
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
   const notifications = useNotifications();
@@ -64,6 +68,7 @@ export function App() {
         }}
         topBar={<UsageBar />}
         navBadges={{ notifications: unread }}
+        primaryAction={<AddTaskButton onClick={() => setAddTaskOpen(true)} />}
         status={
           <span className="inline-flex items-center gap-1.5">
             <span className={cn("size-2 rounded-full", dot)} />
@@ -77,7 +82,7 @@ export function App() {
         {view === "calendar" ? <Calendar onOpenTask={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}
         {view === "fleets" ? <Fleets /> : null}
-        {view === "sessions" ? <SessionsView /> : null}
+        {view === "sessions" ? <SessionsView onOpenSessionDetail={setSessionDetailId} /> : null}
         {view === "analytics" ? <Analytics /> : null}
         {view === "memory" ? <Memory /> : null}
         {view === "notifications" ? <NotificationsView onOpenTask={setSelectedId} /> : null}
@@ -89,7 +94,23 @@ export function App() {
           taskId={selectedId}
           onClose={() => setSelectedId(null)}
           onOpenSession={setActiveSessionId}
+          onOpenSessionDetail={setSessionDetailId}
           onOpenTask={setSelectedId}
+        />
+      ) : null}
+
+      {sessionDetailId ? (
+        <SessionDetail
+          sessionId={sessionDetailId}
+          onClose={() => setSessionDetailId(null)}
+          onContinue={(id) => {
+            setSessionDetailId(null);
+            setActiveSessionId(id);
+          }}
+          onOpenTask={(id) => {
+            setSessionDetailId(null);
+            setSelectedId(id);
+          }}
         />
       ) : null}
 
@@ -103,7 +124,10 @@ export function App() {
           setView(v);
           setSelectedId(null);
         }}
+        onAddTask={() => setAddTaskOpen(true)}
       />
+
+      <AddTaskModal open={addTaskOpen} onOpenChange={setAddTaskOpen} />
 
       <ApprovalsBar />
     </>

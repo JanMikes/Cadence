@@ -58,6 +58,8 @@ export interface AppShellProps {
   topBar?: ReactNode;
   /** Unread-count badges per nav item (e.g. notifications). */
   navBadges?: Partial<Record<ViewId, number>>;
+  /** Prominent action pinned under the logo, above the nav (e.g. "Add task"). */
+  primaryAction?: ReactNode;
 }
 
 export function AppShell({
@@ -67,6 +69,7 @@ export function AppShell({
   status,
   topBar,
   navBadges,
+  primaryAction,
 }: AppShellProps) {
   return (
     <div className="flex h-full bg-background text-foreground">
@@ -75,6 +78,8 @@ export function AppShell({
           <Sparkles className="size-5 text-primary" />
           <span className="font-semibold tracking-tight">Cadence</span>
         </div>
+
+        {primaryAction ? <div className="px-2 pt-2">{primaryAction}</div> : null}
 
         <nav className="flex flex-col gap-1 p-2">
           {NAV.map((item) => {

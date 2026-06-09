@@ -42,4 +42,15 @@
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
   }
+
+  /* Tailwind v4 Preflight makes buttons use `cursor: default`. Restore the
+     expected pointer for every interactive control — nav items, clickable
+     cards, etc. (Utilities like `cursor-grab` still win, being a later layer.) */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  label[for],
+  select,
+  summary {
+    cursor: pointer;
+  }
 }

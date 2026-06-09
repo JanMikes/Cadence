@@ -392,6 +392,19 @@ export interface SpawnSessionInput {
   role?: string;
 }
 
+/** A tracked session plus runtime info, for the detail view. */
+export interface SessionDetail extends Session {
+  /** True if Cadence still holds a live process handle (can chat / stop / kill). */
+  isLive: boolean;
+}
+
+/** Patch to re-organize a session — assign it to a task/project/fleet (null clears). */
+export interface UpdateSessionInput {
+  taskId?: string | null;
+  projectId?: string | null;
+  fleetId?: string | null;
+}
+
 /**
  * A parsed line from `claude --output-format stream-json` (§3.2 of the control
  * surfaces doc). The schema is internal/unversioned, so this stays permissive —

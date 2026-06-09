@@ -12,9 +12,11 @@ import {
   type ResolveSuggestionInput,
   type ReviewActionInput,
   SCHEMA_VERSION,
+  type SessionDetail,
   type SpawnSessionInput,
   type UpdateFleetInput,
   type UpdateProjectInput,
+  type UpdateSessionInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
 import { runDelivery } from "./agents/delivery";
@@ -34,7 +36,7 @@ import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
 import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents } from "./events";
-import { createFleet, getFleet, listFleets, updateFleet } from "./fleets";
+import { createFleet, getFleet, getFleetById, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
 import {
   listLearnedEntries,
@@ -55,6 +57,7 @@ import { mergeTask, taskDiff } from "./review";
 import {
   createProject,
   getProject,
+  getProjectById,
   listProjects,
   resolveProjectAutonomy,
   updateProject,
@@ -69,7 +72,14 @@ import {
   readVerify,
   writeSettings,
 } from "./store/store";
-import { getSession, listSessions, listTaskSessions, type SpawnManager } from "./sessions";
+import {
+  deleteSession,
+  getSession,
+  listSessions,
+  listTaskSessions,
+  type SpawnManager,
+  updateSession,
+} from "./sessions";
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
 import { readLiveSessions, readTranscript } from "./transcripts";
@@ -688,6 +698,63 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       writeSettings(next);
       ctx.hub.broadcast({ type: "event", name: "settings:updated" });
       return Response.json(next);
+    }
+    return methodNotAllowed();
+  }
+
+  // Stop (graceful EOF) / kill (SIGINT) a live warm session. 409 if it isn't live.
+  const sessionSignalMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/(stop|kill)$/);
+  if (sessionSignalMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const id = sessionSignalMatch[1] as string;
+    const action = sessionSignalMatch[2] as "stop" | "kill";
+    if (!getSession(ctx.db, id)) return notFound(pathname);
+    if (!ctx.spawn.liveIds().includes(id)) {
+      return Response.json({ error: "session_not_live", id }, { status: 409 });
+    }
+    if (action === "kill") ctx.spawn.kill(id);
+    else ctx.spawn.close(id);
+    return Response.json({ ok: true, action });
+  }
+
+  // Single session: detail (+ liveness), re-organize (assign), or delete.
+  const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/);
+  if (sessionMatch) {
+    const id = sessionMatch[1] as string;
+    const session = getSession(ctx.db, id);
+    if (!session) return notFound(pathname);
+    const withLive = (s: typeof session): SessionDetail => ({
+      ...s,
+      isLive: ctx.spawn.liveIds().includes(id),
+    });
+    if (method === "GET") return Response.json(withLive(session));
+    if (method === "PATCH") {
+      let patch: UpdateSessionInput;
+      try {
+        patch = (await req.json()) as UpdateSessionInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      // A non-null link must point at an existing entity; null clears it.
+      if (patch.taskId && !getTask(ctx.db, patch.taskId)) {
+        return badRequest(`unknown task "${patch.taskId}"`);
+      }
+      if (patch.projectId && !getProjectById(ctx.db, patch.projectId)) {
+        return badRequest(`unknown project "${patch.projectId}"`);
+      }
+      if (patch.fleetId && !getFleetById(ctx.db, patch.fleetId)) {
+        return badRequest(`unknown fleet "${patch.fleetId}"`);
+      }
+      const updated = updateSession(ctx.db, id, patch);
+      if (!updated) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "session:updated", payload: id });
+      return Response.json(withLive(updated));
+    }
+    if (method === "DELETE") {
+      ctx.spawn.kill(id); // stop the process if it's still live before dropping the row
+      const deleted = deleteSession(ctx.db, id);
+      ctx.hub.broadcast({ type: "event", name: "session:deleted", payload: id });
+      return Response.json({ deleted });
     }
     return methodNotAllowed();
   }

@@ -31,9 +31,12 @@ const NAV: Array<{ id: ViewId; label: string }> = [
 export function CommandPalette({
   onOpenTask,
   onNavigate,
+  onAddTask,
 }: {
   onOpenTask: (taskId: string) => void;
   onNavigate: (view: ViewId) => void;
+  /** Optional quick-action: open the Add-task modal. */
+  onAddTask?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -75,6 +78,10 @@ export function CommandPalette({
   if (!open) return null;
 
   const ql = q.toLowerCase();
+  const quickActions: PaletteItem[] =
+    onAddTask && "add task".includes(ql)
+      ? [{ id: "action:add-task", label: "Add task", sub: "C", run: () => onAddTask() }]
+      : [];
   const actions: PaletteItem[] = NAV.filter((n) => n.label.toLowerCase().includes(ql)).map((n) => ({
     id: `nav:${n.id}`,
     label: n.label,
@@ -125,8 +132,8 @@ export function CommandPalette({
       }));
 
   const items = hasQuery
-    ? [...taskItems, ...transcriptItems, ...actions, ...saveItem]
-    : [...savedItems, ...actions];
+    ? [...taskItems, ...transcriptItems, ...quickActions, ...actions, ...saveItem]
+    : [...quickActions, ...savedItems, ...actions];
 
   const close = () => setOpen(false);
   const select = (i: number) => {
