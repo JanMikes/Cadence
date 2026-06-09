@@ -10,13 +10,13 @@
 
 ## Status snapshot  ← the building agent keeps this current
 - **🎉 BUILD COMPLETE (2026-06-07).** All phases done + accepted: Phase 0 (foundation), 1 (task core +
-  manual spawn), 2 (autonomy), 3 (execution), 4 (multi-repo/analytics/polish; 4.7 Tauri re-opened 2026-06-09),
+  manual spawn), 2 (autonomy), 3 (execution), 4 (multi-repo/analytics/polish; 4.7 Tauri wrap done 2026-06-09),
   5 (self-improving). **226 tests pass, `bun run build` green across shared/server/web.**
 - **Current phase:** — (build finished)
 - **Last completed step:** 5.5 ("What Cadence learned" feed) — Phase 5 done + accepted
-- **Next step:** **4.7 Tauri desktop wrap** — re-opened 2026-06-09 as an active staged, self-healing
-  loop (ledger: [`tauri-build-plan.md`](tauri-build-plan.md)). Other open follow-up: full PLAY-pipeline
-  fan-out per fleet repo (4.1 did the implement fan-out).
+- **Next step:** none — **4.7 Tauri desktop wrap is DONE** (2026-06-09; `Cadence.app` + `.dmg`, full
+  native shell, all `[auto]` gates green — see [`tauri-build-plan.md`](tauri-build-plan.md)). Only open
+  follow-up: full PLAY-pipeline fan-out per fleet repo (4.1 did the implement fan-out).
 - **Safety posture:** execution auto-modifies repos only on user-initiated **PLAY**, inside a per-task
   **git worktree**, under the resolved permission mode (Auto/Manual/Dangerous; Dangerous requires
   isolation). Autonomy stays **OFF by default**. All agent runs were **mock-tested** through the build —
@@ -291,9 +291,11 @@ mocked; a real-claude execution smoke is available on request — autonomy/execu
 - [x] 4.4 Extend search to transcripts (FTS over `*.jsonl`) + saved filters.
 - [x] 4.5 Calendar / deadline view.
 - [x] 4.6 Scheduled / background sweep mode.
-- [~] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey. — **IN PROGRESS** (re-opened 2026-06-09,
-  Jan's call): now building the native desktop shell as its own staged, self-healing loop — see
-  [`tauri-build-plan.md`](tauri-build-plan.md) (loop prompt [`tauri-build-prompt.md`](tauri-build-prompt.md)).
+- [x] 4.7 (optional) Tauri wrap: menubar + OS-global hotkey. — **DONE** (2026-06-09): the native macOS
+  shell (`Cadence.app`) supervises the Bun gateway as a self-contained sidecar and hosts the unchanged
+  web UI from the gateway origin; full native shell (tray · global hotkey · native notifications ·
+  single-instance · autostart · login-shell PATH + `claude` resolution). Built + accepted via the staged
+  loop — see [`tauri-build-plan.md`](tauri-build-plan.md) + [`tauri-wrap.md`](tauri-wrap.md).
 
 **Acceptance check (manual):** a fleet task spawns sessions across multiple repos with per-repo
 sub-results; analytics show per-project throughput + cost; transcript search returns matches across
@@ -1070,3 +1072,19 @@ review and revert a memory entry.
   the Dangerous guardrail, and a closed self-improvement loop (memory → Reflector → proactive proposals
   → review/revert). Autonomy OFF by default; all agent work mock-tested. **Next: a human real-Claude
   smoke + daily use; optional follow-ups noted in the Status snapshot.**
+
+- **2026-06-09 · 4.7 (Tauri wrap) — RE-OPENED → DONE + ACCEPTED.** Jan reversed the out-of-scope call
+  and the optional Tauri desktop wrap was built as its own staged, self-healing loop
+  ([`tauri-build-plan.md`](tauri-build-plan.md), prompt [`tauri-build-prompt.md`](tauri-build-prompt.md)),
+  6 stages / 14 steps, one verified commit each (`build(4.7.<stage>.<step>)`). The native macOS shell
+  (`Cadence.app`) supervises the Bun gateway as a self-contained `bun build --compile` sidecar
+  (`bun:sqlite` works with no Bun installed), discovers its ephemeral port from stdout + `runtime.json`,
+  and hosts the **unchanged** web UI from the gateway's own localhost origin (zero frontend rework — web
+  bridges are feature-detected on `window.__TAURI__`). Full native shell: tray/menubar, global hotkey
+  (`CmdOrCtrl+Shift+Space` → quick-capture), native notifications, single-instance, autostart, and
+  login-shell PATH + explicit `claude` path so a Finder-launched app finds `claude`/`git`. **Acceptance
+  (all `[auto]` green):** `bun test` 233→243, `cargo test` 10 (mock runtime), `bun run sidecar:smoke` +
+  `bun run app:smoke` (spawn · serve · single-instance · clean shutdown/no-orphan · autostart plist),
+  `bun run build` + `typecheck`, `bun x tauri build` → `Cadence.app` + `.dmg`. Docs: [`tauri-wrap.md`](tauri-wrap.md).
+  macOS-irreducible visual checks (no WKWebView WebDriver) deferred to the one-time § Visual checklist.
+  → **Phase 4 is now 7/7; the optional wrap is delivered. Web-first stands; the shell is additive.**

@@ -8,8 +8,12 @@ only what it needs), and on my **PLAY** implements, verifies, and delivers — w
 steer in real time. No cloud, no external API, no Docker, no other users. Everything saved locally
 (SQLite + Claude Code's `~/.claude/` files).
 
-> **Status:** spec + backlog defined (2026-06-06). Next: build **Phase 1** (task core + manual
-> spawn, no autonomy yet). Not yet a git repo — `git init` when we start Phase 0.
+> **Status:** 🎉 **BUILD COMPLETE** (Phases 0–5, 2026-06-07) **+ the optional Tauri desktop wrap**
+> (4.7, 2026-06-09) — `Cadence.app` supervises the Bun gateway as a self-contained sidecar and hosts
+> the unchanged web UI; full native shell (tray · hotkey · notifications · single-instance · autostart).
+> All `[auto]` gates green. Next: a human real-Claude smoke + the one-time § Visual checklist
+> ([docs/tauri-build-plan.md](docs/tauri-build-plan.md)). See [docs/build-plan.md](docs/build-plan.md)
+> (build ledger) + [docs/tauri-wrap.md](docs/tauri-wrap.md).
 
 ## Read these first (in order)
 

@@ -81,11 +81,17 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 6 — in progress (release, docs, acceptance).
-- **Last completed step:** 6.1 (release build + docs).
-- **Next step:** 6.2 (final acceptance + ledger close).
+- **🎉 TAURI WRAP COMPLETE (2026-06-09).** All 6 stages done + accepted. The built `Cadence.app`
+  supervises the self-contained Bun gateway sidecar, hosts the unchanged web UI from the gateway's own
+  localhost origin, and ships the full native shell (tray · global hotkey · native notifications ·
+  single-instance · autostart · login-shell PATH + `claude` resolution). **243 `bun test`, 10
+  `cargo test`, `sidecar:smoke` + `app:smoke` green, `bun run build`/`typecheck` green, `bun x tauri
+  build` → `Cadence.app` + `.dmg`.**
+- **Current stage:** — (wrap finished)
+- **Last completed step:** 6.2 (final acceptance + ledger close).
+- **Next step:** none — run the § Visual smoke checklist once by eye.
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (6.1 done — Cadence.app + .dmg; app:smoke green vs release; tauri-wrap.md).
+- **Last updated:** 2026-06-09 (wrap complete).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -205,7 +211,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 - [x] **6.1 Release build + docs.** `[auto]` `bun x tauri build` → `.app` + `.dmg`. Add `docs/tauri-wrap.md` (prereqs,
   dev workflow, `sidecar:build`/`app:smoke`/`tauri:build`, signing/notarization notes — unsigned is fine for personal local use).
   - Verify `[auto]`: `bun x tauri build` produces a launchable bundle; `bun run app:smoke` green against the release build. §Visual: install the `.dmg` on a clean `~/.cadence` → first run migrates + boots.
-- [ ] **6.2 Final acceptance + ledger close.** `[auto]` Confirm every `[auto]` check across all stages is green
+- [x] **6.2 Final acceptance + ledger close.** `[auto]` Confirm every `[auto]` check across all stages is green
   (`bun test`, `cargo test`, `sidecar:smoke`, `app:smoke`, `bun run build`, `tauri build`). Flip 4.7 → `[x]` in
   `docs/build-plan.md` with a journal entry + acceptance block; tick `docs/backlog.md` (4.7 + cross-cutting
   menubar/hotkey); update `CLAUDE.md` Status; set this snapshot to `🎉 TAURI WRAP COMPLETE`. Print the consolidated
@@ -496,3 +502,13 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   + single-instance + clean shutdown + autostart, no orphan/leftover). Appended the §Visual (6.1)
   dmg-install item. *Next:* 6.2 — final acceptance: confirm every `[auto]` check green, flip 4.7 → done
   in `build-plan.md`, tick `backlog.md`, update `CLAUDE.md`, print 🎉 + the visual checklist.
+
+- **2026-06-09 · 6.2 (final acceptance + ledger close).** Ran the full automated suite — all green:
+  `bun test` 243 pass, `cargo test` 10 pass, `bun run build` + `bun run typecheck` green,
+  `bun run sidecar:smoke` PASS, `bun run app:smoke` PASS (release build), `bun x tauri build` →
+  `Cadence.app` + `Cadence_0.1.0_aarch64.dmg`. Closed the ledgers: flipped **4.7 → `[x]` done** in
+  `build-plan.md` (+ acceptance block + journal), ticked the `backlog.md` Tauri line + the cross-cutting
+  menubar/hotkey, updated `CLAUDE.md` Status, set this snapshot to **🎉 TAURI WRAP COMPLETE**. The 7
+  §Visual items remain for a one-time human pass (macOS can't automate them — no WKWebView WebDriver).
+  Backlog 4.7 is delivered: web-first stands, the native shell is additive + zero-rework, exactly as the
+  locked decision intended.
