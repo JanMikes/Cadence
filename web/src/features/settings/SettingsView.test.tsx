@@ -15,6 +15,7 @@ test("SettingsView renders the preferred-terminal + global default controls", ()
   expect(html).toContain("Preferred terminal");
   expect(html).toContain("Terminal");
   expect(html).toContain("iTerm");
+  expect(html).toContain("Claude binary path");
   expect(html).toContain("Save settings");
 });
 

@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 4 — in progress (PATH & `claude` resolution).
-- **Last completed step:** 4.1 (resolve login-shell PATH in Rust).
-- **Next step:** 4.2 ("Claude binary path" setting).
+- **Current stage:** Stage 4 — complete. Next: Stage 5 (native shell — full pass).
+- **Last completed step:** 4.2 ("Claude binary path" setting).
+- **Next step:** 5.1 (tray / menubar).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (4.1 done — cargo test 8 pass; PATH resolver wired into the sidecar env).
+- **Last updated:** 2026-06-09 (Stage 4 done — 237 tests; claudeBinPath → CADENCE_CLAUDE_BIN).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -175,7 +175,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   sanitize, set as the sidecar's `PATH`; fall back to `/usr/bin:/bin:/usr/local/bin:$HOME/.local/bin`.
   - Verify `[auto]`: `cargo test` asserts the resolver returns a non-empty PATH containing `/usr/bin` (+ that the
     fallback is used when `$SHELL` is unset). §Visual: from the **Finder-launched** `.app`, spawn a session on a task → `claude` is found and streams.
-- [ ] **4.2 "Claude binary path" setting.** `[auto]` Add optional `claudeBinPath` to the settings store + a web
+- [x] **4.2 "Claude binary path" setting.** `[auto]` Add optional `claudeBinPath` to the settings store + a web
   Settings field; the gateway exports it as `CADENCE_CLAUDE_BIN` (already honored at `spawn.ts`/`runner.ts`/`sessions.ts`).
   - Verify: `bun test` — a set `claudeBinPath` reaches the spawn env; Settings UI renders the field; `bun run build` green.
 
@@ -394,3 +394,16 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   contains `/usr/bin` — true via either the real shell or the fallback); `bun test` 236 pass;
   `bun run build` green. The §Visual "Finder-launched app finds `claude` + streams" item is already
   queued in the checklist. *Next:* 4.2 — a "Claude binary path" setting exported as `CADENCE_CLAUDE_BIN`.
+
+- **2026-06-09 · 4.2 ("Claude binary path" setting).** Added optional `claudeBinPath` to
+  `GlobalSettings` (shared). New `applyClaudeBinEnv(settings)` in `store.ts` sets/clears
+  `process.env.CADENCE_CLAUDE_BIN` from the setting — that's the exact var `spawn.ts` /
+  `agents/runner.ts` / `import.ts` already read (`?? "claude"`). Wired it into the `/api/settings`
+  PATCH handler (accepts `claudeBinPath`, trims, `""`→unset) and into gateway startup (sets it from
+  saved settings, only when present, so a dev's external env isn't clobbered). Web: a "Claude binary
+  path" text field in `SettingsView` + the `updateSettings` patch type. **Verified:** new
+  `gateway.test.ts` case proves a `claudeBinPath` PATCH makes `process.env.CADENCE_CLAUDE_BIN ?? "claude"`
+  return the custom path, and clearing reverts to `"claude"`; `SettingsView.test.tsx` asserts the
+  field renders; `bun test` 237 pass (+1); `bun run build` + `bun run typecheck` green. Stage 4
+  complete — the sidecar inherits a real PATH and an explicit `claude` path can override it. *Next:*
+  5.1 — tray / menubar (`TrayIconBuilder` + menu; first Stage 5 native-shell step).

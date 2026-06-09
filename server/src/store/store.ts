@@ -58,6 +58,15 @@ export function writeSettings(settings: GlobalSettings): void {
   writeFileSync(paths.settings(), `${JSON.stringify(settings, null, 2)}\n`);
 }
 
+/** Export the configured Claude binary path as `CADENCE_CLAUDE_BIN` — honored by spawn.ts / agents/
+ *  runner.ts / import.ts (`process.env.CADENCE_CLAUDE_BIN ?? "claude"`). Set when `claudeBinPath` is
+ *  non-empty; cleared when explicitly unset, so the setting is the single source of truth. */
+export function applyClaudeBinEnv(settings: GlobalSettings = readSettings()): void {
+  const path = settings.claudeBinPath?.trim();
+  if (path) process.env.CADENCE_CLAUDE_BIN = path;
+  else delete process.env.CADENCE_CLAUDE_BIN;
+}
+
 // ---------------------------------------------------------------- tasks (md I/O)
 
 export function writeTask(fm: TaskFrontmatter, body: string): void {

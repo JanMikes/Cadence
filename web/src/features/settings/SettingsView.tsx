@@ -18,6 +18,7 @@ export function SettingsView() {
   const [model, setModel] = useState("");
   const [prompt, setPrompt] = useState("");
   const [autonomy, setAutonomy] = useState(false);
+  const [claudeBin, setClaudeBin] = useState("");
 
   useEffect(() => {
     const s = settings.data;
@@ -28,12 +29,14 @@ export function SettingsView() {
     setModel(s.global.defaultModel ?? "");
     setPrompt(s.global.systemPrompt);
     setAutonomy(s.global.autonomy ?? false);
+    setClaudeBin(s.claudeBinPath ?? "");
   }, [settings.data]);
 
   const save = useMutation({
     mutationFn: () =>
       updateSettings({
         preferredTerminal: terminal,
+        claudeBinPath: claudeBin.trim() || undefined,
         global: {
           defaultPermissionMode: perm,
           defaultDeliveryMode: delivery,
@@ -123,6 +126,16 @@ export function SettingsView() {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder="claude-opus-4-8"
+            className={FIELD}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Claude binary path (blank = found on PATH)
+          <input
+            value={claudeBin}
+            onChange={(e) => setClaudeBin(e.target.value)}
+            placeholder="/Users/you/.local/bin/claude"
             className={FIELD}
           />
         </label>

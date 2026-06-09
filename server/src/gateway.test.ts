@@ -739,6 +739,32 @@ test("settings: GET defaults, PATCH preferredTerminal", async () => {
   expect(after.preferredTerminal).toBe("iTerm");
 });
 
+test("settings: a claudeBinPath PATCH reaches the spawn env (CADENCE_CLAUDE_BIN)", async () => {
+  const prev = process.env.CADENCE_CLAUDE_BIN;
+  try {
+    const set = (await fetch(`${gw.url}/api/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ claudeBinPath: "/custom/bin/claude" }),
+    }).then((r) => r.json())) as { claudeBinPath?: string };
+    expect(set.claudeBinPath).toBe("/custom/bin/claude");
+    // spawn.ts / agents/runner.ts / import.ts read exactly `process.env.CADENCE_CLAUDE_BIN ?? "claude"`
+    expect(process.env.CADENCE_CLAUDE_BIN ?? "claude").toBe("/custom/bin/claude");
+
+    // clearing it (empty string) unsets the override → spawns fall back to "claude"
+    const cleared = (await fetch(`${gw.url}/api/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ claudeBinPath: "" }),
+    }).then((r) => r.json())) as { claudeBinPath?: string };
+    expect(cleared.claudeBinPath).toBeUndefined();
+    expect(process.env.CADENCE_CLAUDE_BIN ?? "claude").toBe("claude");
+  } finally {
+    if (prev === undefined) delete process.env.CADENCE_CLAUDE_BIN;
+    else process.env.CADENCE_CLAUDE_BIN = prev;
+  }
+});
+
 test("open-terminal builds the resume command and invokes the launcher", async () => {
   const task = await createViaApi("Handoff task");
   // give the task a session row to hand off

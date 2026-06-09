@@ -11,7 +11,7 @@ import { handleApi } from "./api";
 import { cadenceHome, type Db, openAndMigrate } from "./db/client";
 import { claudeEnrich } from "./import";
 import { SpawnManager } from "./sessions";
-import { bootstrap } from "./store/store";
+import { applyClaudeBinEnv, bootstrap, readSettings } from "./store/store";
 import { openInTerminal } from "./terminal";
 import { startWatcher, type WatcherHandle } from "./store/watcher";
 import { WsHub, type WsData } from "./ws";
@@ -61,6 +61,11 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     bootstrap();
     db = openAndMigrate();
   }
+
+  // Export the configured Claude binary path (if any) so agent spawns find it even when the app was
+  // launched from Finder without a shell PATH (4.2). Only sets on startup; clearing is done via PATCH.
+  const startupSettings = readSettings();
+  if (startupSettings.claudeBinPath) applyClaudeBinEnv(startupSettings);
 
   const spawnManager = new SpawnManager(db, hub);
   const approvals = new ApprovalRegistry((req, event) =>

@@ -421,7 +421,7 @@ export function getSettings(): Promise<GlobalSettings> {
 }
 
 export function updateSettings(
-  patch: Partial<Pick<GlobalSettings, "preferredTerminal">> & {
+  patch: Partial<Pick<GlobalSettings, "preferredTerminal" | "claudeBinPath">> & {
     global?: Partial<GlobalSettings["global"]>;
   },
 ): Promise<GlobalSettings> {

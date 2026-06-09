@@ -64,6 +64,7 @@ import {
 } from "./projects";
 import {
   appendContext,
+  applyClaudeBinEnv,
   readContext,
   readDelivery,
   readPlan,
@@ -683,7 +684,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (pathname === "/api/settings") {
     if (method === "GET") return Response.json(readSettings());
     if (method === "PATCH") {
-      let patch: { preferredTerminal?: string; global?: Record<string, unknown> };
+      let patch: {
+        preferredTerminal?: string;
+        claudeBinPath?: string;
+        global?: Record<string, unknown>;
+      };
       try {
         patch = (await req.json()) as typeof patch;
       } catch {
@@ -693,9 +698,13 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       const next = {
         ...current,
         ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
+        ...("claudeBinPath" in patch
+          ? { claudeBinPath: patch.claudeBinPath?.trim() || undefined }
+          : {}),
         global: { ...current.global, ...(patch.global ?? {}) },
       };
       writeSettings(next);
+      applyClaudeBinEnv(next); // export CADENCE_CLAUDE_BIN so agent spawns pick up the change
       ctx.hub.broadcast({ type: "event", name: "settings:updated" });
       return Response.json(next);
     }

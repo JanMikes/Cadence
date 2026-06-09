@@ -447,6 +447,9 @@ export interface GlobalSettings {
     autonomy?: boolean;
   };
   preferredTerminal: string;
+  /** Optional explicit path to the `claude` binary; exported as CADENCE_CLAUDE_BIN for agent spawns.
+   *  Useful when the app is launched from Finder (no shell PATH) and `claude` isn't auto-discovered. */
+  claudeBinPath?: string;
 }
 
 /** Supported terminal apps for one-click handoff (macOS). */
