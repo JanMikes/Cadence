@@ -32,3 +32,34 @@ test("track() clears + emits end even when fn throws", async () => {
   expect(a.isActive("t2")).toBe(false);
   expect(events).toEqual(["activity:start", "activity:end"]);
 });
+
+test("concurrent stages on one task don't corrupt each other (§6.1.f)", () => {
+  const ends: Array<{ taskId: string; stage?: string; next?: string | null }> = [];
+  const a = new ActivityTracker((name, payload) => {
+    if (name === "activity:end") ends.push(payload);
+  });
+
+  a.start("t1", "discovery");
+  a.start("t1", "questioner"); // a second stage joins — must not overwrite the first
+  expect(a.list().map((e) => e.stage)).toEqual(["discovery", "questioner"]);
+
+  a.end("t1", "discovery"); // the FIRST stage ends — the survivor must keep the task busy
+  expect(a.isActive("t1")).toBe(true);
+  expect(a.list().map((e) => e.stage)).toEqual(["questioner"]);
+  expect(ends[0]).toEqual({ taskId: "t1", stage: "discovery", next: "questioner" });
+
+  a.end("t1", "questioner");
+  expect(a.isActive("t1")).toBe(false);
+  expect(ends[1]).toEqual({ taskId: "t1", stage: "questioner", next: null });
+});
+
+test("end() is precise: unknown stage is a no-op; without a stage it pops the newest", () => {
+  const a = new ActivityTracker(() => {});
+  a.start("t1", "implementer");
+  a.end("t1", "verifier"); // not running — must not eat the implementer entry
+  expect(a.isActive("t1")).toBe(true);
+  a.end("t1"); // stage omitted → newest entry
+  expect(a.isActive("t1")).toBe(false);
+  a.end("t1"); // already idle → no-op, no throw
+  expect(a.isActive("t1")).toBe(false);
+});

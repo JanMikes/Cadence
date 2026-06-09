@@ -321,11 +321,18 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const taskId = planApproveMatch[1] as string;
     const task = getTask(ctx.db, taskId);
     if (!task) return notFound(pathname);
+    // Idempotency guard (§6.1.f): approving while a chain is actually running must not
+    // start a second one (double-click, double-POST). A task *stranded* in implementing
+    // with no live chain (e.g. after a restart) may still re-approve — that's recovery,
+    // and the recording runner's stage dedupe backstops any race.
+    if (task.status === "implementing" && ctx.activity.isActive(taskId)) {
+      return conflict("implementation is already running for this task", { status: task.status });
+    }
     const plan = approvePlan(taskId);
     ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
-    // Approving the plan starts implementation. From Plan review (or implementing,
-    // for back-compat) we move into In progress and run the execution chain. Each
-    // stage is activity-tracked so the board card spins while Cadence works; the
+    // Approving the plan starts implementation. From Plan review (or a stranded
+    // implementing, see above) we move into In progress and run the execution chain.
+    // Each stage is activity-tracked so the board card spins while Cadence works; the
     // Implementer runs in the isolated worktree (or the locked project dir) and
     // bails gracefully if it can't.
     if (task.status === "plan_review" || task.status === "implementing") {
@@ -1155,7 +1162,7 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },
       });
-      ctx.activity.end(taskId); // clear the "queued" spinner if we showed one
+      ctx.activity.end(taskId, "queued"); // clear the "queued" spinner if we showed one
     }
 
     const r = await ctx.activity.track(taskId, "implementer", () =>

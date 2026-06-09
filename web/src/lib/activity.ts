@@ -51,8 +51,10 @@ function subscribeStore(listener: () => void): () => void {
         const p = m.payload as { taskId: string; stage: string };
         setBusy(p.taskId, p.stage);
       } else if (m.name === "activity:end") {
-        const p = m.payload as { taskId: string };
-        setBusy(p.taskId, null);
+        // `next` = a stage still working the task (concurrent stages, §6.1.f) — fall
+        // back to it instead of going dark while work continues.
+        const p = m.payload as { taskId: string; next?: string | null };
+        setBusy(p.taskId, p.next ?? null);
       }
     });
   }

@@ -292,12 +292,18 @@ test("PLAY runs the Planner (mock) → an approvable plan that POST approve conf
   });
   await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
 
-  // the planner runs in the background — poll until plan.md has steps
-  let plan = { steps: [] as Array<{ title: string }>, approved: false };
-  for (let i = 0; i < 50 && plan.steps.length === 0; i++) {
+  // the planner runs in the background — wait for the task to PARK in plan_review
+  // (not just for plan.md: approving mid-flip would now 409, §6.1.f)
+  let status = "";
+  for (let i = 0; i < 80 && status !== "plan_review"; i++) {
     await new Promise((r) => setTimeout(r, 20));
-    plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as typeof plan;
+    status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
   }
+  expect(status).toBe("plan_review");
+  const plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as {
+    steps: Array<{ title: string }>;
+    approved: boolean;
+  };
   expect(plan.steps.length).toBe(2);
   expect(plan.approved).toBe(false);
 
@@ -306,6 +312,69 @@ test("PLAY runs the Planner (mock) → an approvable plan that POST approve conf
   )) as { approved: boolean; steps: Array<{ title: string }> };
   expect(approved.approved).toBe(true);
   expect(approved.steps.length).toBe(2); // steps preserved through approval
+});
+
+test("double plan-approve starts ONE execution chain; the second POST gets 409 (§6.1.f)", async () => {
+  // A real repo-backed project so the implementer actually runs (a project-less task bails).
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-dup-"));
+  const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@e.com"]);
+  g(["config", "user.name", "T"]);
+  writeFileSync(join(repo, "README.md"), "# x\n");
+  g(["add", "."]);
+  g(["commit", "-q", "-m", "init"]);
+
+  let implementerRuns = 0;
+  implementerSideEffect = async () => {
+    implementerRuns += 1;
+    await new Promise((r) => setTimeout(r, 250)); // keep the chain visibly active
+  };
+  try {
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Dup Approve Repo", rootPath: repo, worktreesEnabled: true }),
+    }).then((r) => r.json())) as { slug: string };
+    const task = await createViaApi("Approve twice");
+    await fetch(`${gw.url}/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project: project.slug, status: "ready" }),
+    });
+    await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+    let status = "";
+    for (let i = 0; i < 80 && status !== "plan_review"; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
+    }
+    expect(status).toBe("plan_review");
+
+    const first = await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
+    expect(first.status).toBe(200);
+
+    // wait until the chain is actually running (the implementer holds it open ~250ms)
+    let active: Array<{ taskId: string }> = [];
+    for (let i = 0; i < 100 && !active.some((a) => a.taskId === task.id); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      active = (await fetch(`${gw.url}/api/activity`).then((r) => r.json())) as typeof active;
+    }
+    expect(active.some((a) => a.taskId === task.id)).toBe(true);
+
+    const second = await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
+    expect(second.status).toBe(409); // already running — no second chain
+
+    // let the chain finish, then prove only ONE implementer ever ran
+    for (let i = 0; i < 150; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      const now = (await fetch(`${gw.url}/api/activity`).then((r) => r.json())) as typeof active;
+      if (!now.some((a) => a.taskId === task.id)) break;
+    }
+    expect(implementerRuns).toBe(1);
+  } finally {
+    implementerSideEffect = null;
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 test("PLAY parks the task in Plan review, and /api/attention surfaces it", async () => {
@@ -370,12 +439,17 @@ test("execution slice (worktrees opted in): PLAY → plan → approve → Implem
     });
     await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
 
-    // wait for the Planner (background) to produce steps, then approve
-    let plan = { steps: [] as unknown[] };
-    for (let i = 0; i < 50 && plan.steps.length === 0; i++) {
+    // wait for the Planner (background) to park the task in plan_review, then approve
+    // (approving mid-planner would now 409 — §6.1.f)
+    let planStatus = "";
+    for (let i = 0; i < 80 && planStatus !== "plan_review"; i++) {
       await new Promise((r) => setTimeout(r, 20));
-      plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as typeof plan;
+      planStatus = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
     }
+    expect(planStatus).toBe("plan_review");
+    const plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as {
+      steps: unknown[];
+    };
     expect(plan.steps.length).toBe(2);
     await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
 
