@@ -14,6 +14,9 @@ steer in real time. No cloud, no external API, no Docker, no other users. Everyt
 > All `[auto]` gates green. Next: a human real-Claude smoke + the one-time § Visual checklist
 > ([docs/tauri-build-plan.md](docs/tauri-build-plan.md)). See [docs/build-plan.md](docs/build-plan.md)
 > (build ledger) + [docs/tauri-wrap.md](docs/tauri-wrap.md).
+> **Now running: Phase 6 — improvements wave 1** (runaway-spawn fix 🔥, inbox removal, settings
+> expansion, GitHub/GitLab forge, code-review module) — ledger:
+> [docs/phase-6-plan.md](docs/phase-6-plan.md) · loop prompt: [docs/phase-6-prompt.md](docs/phase-6-prompt.md).
 
 ## Read these first (in order)
 

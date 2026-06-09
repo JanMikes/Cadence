@@ -105,6 +105,26 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] **Proactive proposals** via notifications (stale, merge, recalibrate, "what I learned")
 - [ ] **"What Cadence learned" feed**: reviewable / revertable memory changes
 
+## Phase 6 — Improvements wave 1 (post-build)
+**Ledger with full specs, locked decisions & journal: [`phase-6-plan.md`](phase-6-plan.md) · loop
+prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
+- [ ] **6.1 🔥 Runaway agent spawns + zombie sessions** — boot-time heal × `bun --watch` restarts
+      spawned 15 discovery agents on one task; add DB-level dedupe, attempt budget/circuit breaker,
+      honest pid liveness (defeat reuse), adopt-or-kill boot reconcile, process-group kills,
+      stuck-run kill UX, stage timeouts
+- [ ] **6.2 Remove Inbox view** — capture modal + board inbox column cover it; nav simplification
+- [ ] **6.3 Settings expansion** — per-agent editable prompts + per-agent model (registry +
+      overrides), Czech `d.m.Y H:i:s` date/time format setting + central formatter, operations
+      knobs (stuck threshold, timeouts, attempt caps, concurrency), composed context wired into
+      one-shot agents
+- [ ] **6.4 GitHub/GitLab forge foundation** — remote-URL forge detection, `gh`/`glab` capability
+      probe, project Repository card, forge-aware `auto_pr` delivery (PR/MR URL on task + Open
+      link), forge capability line in composed context
+- [ ] **6.5 ⭐ Code-review module** — `code_review` task type with inferred perform/address
+      direction, reviewer + review-responder agents (editable prompts), forge review data layer
+      (diff/threads/publish/resolve), findings-centric Review Workspace UI with explicit-confirm
+      publishing, board type filter + badges, review settings
+
 ---
 
 ## Cross-cutting (every phase)
