@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 0 — not started.
-- **Last completed step:** none.
-- **Next step:** 0.1 (toolchain ensure).
+- **Current stage:** Stage 0 — in progress.
+- **Last completed step:** 0.1 (toolchain ensure).
+- **Next step:** 0.2 (re-open 4.7 + wire ledgers).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (plan authored, doc-grounded).
+- **Last updated:** 2026-06-09 (0.1 done — rustc/cargo 1.96.0, tauri-cli 2.11.2).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -103,7 +103,7 @@ only if an install genuinely fails — recorded as a Blocker.)
 ---
 
 ## Stage 0 — Prerequisites & re-open
-- [ ] **0.1 Ensure toolchain.** `[auto]` Idempotent: skip anything already present.
+- [x] **0.1 Ensure toolchain.** `[auto]` Idempotent: skip anything already present.
   - `rustc`/`cargo`: if absent, install non-interactively: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y`, then source `~/.cargo/env`.
   - Tauri CLI: `bun x tauri --version`; if absent, `bun add -d @tauri-apps/cli`.
   - Xcode CLT: `xcode-select -p`. If absent (rare — `git` works here, so it's present), record a Blocker with
@@ -239,3 +239,13 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 
 ## Progress Journal (append-only — newest at bottom)
 <!-- Each entry: date · stage.step · what you did · decisions · deviations · notes for next session. -->
+
+- **2026-06-09 · 0.1 (toolchain ensure).** Installed the Rust toolchain via rustup non-interactively
+  (`rustc`/`cargo` 1.96.0, host triple `aarch64-apple-darwin`) — lives outside the repo under
+  `~/.cargo` + `~/.rustup`, so no repo diff from it. Added `@tauri-apps/cli@2.11.2` as a dev dep
+  (`bun add -d`), the only repo change (`package.json` + `bun.lock`). Xcode CLT already present
+  (`/Library/Developer/CommandLineTools`). Verified: `rustc`/`cargo`/`bun x tauri --version` all
+  report; `bun test` 233 pass / 0 fail; `bun run build` green across shared/server/web.
+  *Next:* 0.2 — re-open 4.7 in `build-plan.md` + `backlog.md`, add `src-tauri/{target,binaries,resources,gen}/`
+  to `.gitignore`. To use cargo/rustc in later steps, `source "$HOME/.cargo/env"` first (shell state
+  doesn't persist between tool calls).
