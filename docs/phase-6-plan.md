@@ -95,7 +95,8 @@ zombies. Implications the fix MUST honor:
 
 ### Sub-steps
 
-- [ ] **6.1.a Containment — DO THIS BEFORE ANY OTHER CODE EDIT IN PHASE 6.**
+- [x] **6.1.a Containment — DO THIS BEFORE ANY OTHER CODE EDIT IN PHASE 6.** ✓ complete 2026-06-10
+  (data cleanup + gateway stop + `autonomy: false`; all verify checks pass — see Journal).
   1. Stop the dev gateway if running (`pgrep -f "bun run --filter=@cadence"`; also the
      `bun --watch src/index.ts` child) and any Tauri-supervised sidecar.
   2. `ps` sweep: kill any live Cadence-spawned `claude -p … stream-json` process (none expected;
@@ -465,3 +466,11 @@ yourself.
   remain in `refining`** → heal-on-boot is currently inert. Defunct process-table entries clear when
   the dev gateway (same-PID `bun --watch`, parent of them all) is stopped. Remaining for 6.1.a
   during code work: stop gateway + `autonomy: false` + final re-verify.
+- **2026-06-10 — 6.0 + 6.1.a complete.** Baseline gates green (typecheck ✓, **305 tests** ✓ — ledger
+  said 226, repo moved on, snapshot was stale —, build ✓); plan committed (`f09015c`). Containment
+  finished: `autonomy: false` PATCHed via live API, dev gateway (pids 94134-94137, up 2d6h) stopped —
+  killing it **reaped all 17 cadence defunct entries** as predicted. Re-verified: 0 sessions rows in
+  `running|spawning`; no `claude -p` / cadence dev processes. 6 unrelated defunct pids remain,
+  children of the user's interactive terminal claude sessions — not ours, not actionable. The repo
+  is now safe to edit freely. NOTE for 6.1.h: restart dev gateway + restore `autonomy: true` when
+  6.1 code work is done; user's web UI is DOWN until then.
