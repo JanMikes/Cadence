@@ -110,3 +110,40 @@ export function isSessionRowAlive(
   if (row.pid != null) return isRunPidAlive(row.pid, row.startedAt, probe);
   return probe.now() - (row.startedAt ?? 0) < PRE_SPAWN_GRACE_MS;
 }
+
+// --- process control (§6.1.e) ----------------------------------------------
+
+/**
+ * Signal a run's whole process GROUP (one-shots spawn detached as group leaders, so
+ * claude's own children die with it); falls back to the single pid for processes
+ * that predate group spawning or aren't leaders.
+ */
+export function killGroup(pid: number, signal: NodeJS.Signals): boolean {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    try {
+      process.kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Graceful stop with escalation: SIGTERM now, SIGKILL after `graceMs` if the process
+ * is still around. Fire-and-forget (the escalation timer never keeps the host alive).
+ */
+export function killProcessTree(
+  pid: number,
+  opts: { graceMs?: number; probe?: LivenessProbe } = {},
+): void {
+  const probe = opts.probe ?? REAL_PROBE;
+  killGroup(pid, "SIGTERM");
+  const timer = setTimeout(() => {
+    if (probe.alive(pid)) killGroup(pid, "SIGKILL");
+  }, opts.graceMs ?? 5_000);
+  if (typeof timer.unref === "function") timer.unref();
+}

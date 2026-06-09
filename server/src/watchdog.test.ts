@@ -171,13 +171,36 @@ test("reconcileOrphans: a defunct survivor is NOT kept running at boot (§6.1.d)
   expect(getTask(db, taskId)?.status).toBe("ready"); // rescued, re-PLAYable
 });
 
-test("reconcileOrphans leaves a session whose process survived the restart running", () => {
+test("reconcileOrphans leaves a WARM chat whose process survived the restart running", () => {
   const taskId = implementingTask("survivor");
-  const sid = insertSession({ taskId, status: "running", role: "implementer", pid: process.pid });
+  const sid = insertSession({ taskId, status: "running", role: "chat", kind: "warm", pid: process.pid });
 
   const ended = reconcileOrphans(db, new WsHub());
 
   expect(ended).toBe(0);
-  expect(getSession(db, sid)?.status).toBe("running"); // still honestly running
+  expect(getSession(db, sid)?.status).toBe("running"); // still honestly (and usefully) running
   expect(getTask(db, taskId)?.status).toBe("implementing"); // not rescued — its run is alive
+});
+
+test("reconcileOrphans KILLS an orphaned-but-alive one-shot — its result can never reach the task (§6.1.e)", async () => {
+  // A real child stands in for the orphan; reconcile must stop it, not babysit it.
+  const orphan = Bun.spawn(["sleep", "30"]);
+  try {
+    const taskId = implementingTask("orphaned implement");
+    const sid = insertSession({ taskId, status: "running", role: "implementer", pid: orphan.pid });
+
+    const ended = reconcileOrphans(db, new WsHub());
+
+    expect(ended).toBe(1);
+    expect(getSession(db, sid)?.status).toBe("killed");
+    expect(getTask(db, taskId)?.status).toBe("ready"); // rescued → re-PLAYable
+    // SIGTERM actually landed — the process exits (don't wait for the 5s SIGKILL escalation)
+    const exited = await Promise.race([
+      orphan.exited.then(() => true),
+      new Promise<false>((r) => setTimeout(() => r(false), 2_000)),
+    ]);
+    expect(exited).toBe(true);
+  } finally {
+    orphan.kill(9);
+  }
 });

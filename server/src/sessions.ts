@@ -2,7 +2,7 @@ import type { ClaudeEvent, Session, UpdateSessionInput } from "@cadence/shared";
 import { desc, eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
-import { isRunPidAlive } from "./liveness";
+import { isRunPidAlive, killGroup } from "./liveness";
 import { openSession, type SessionHandle } from "./spawn";
 import { transcriptPathFor } from "./transcripts";
 import type { WsHub } from "./ws";
@@ -61,14 +61,10 @@ export function signalSession(spawn: SpawnManager, s: Session, action: "stop" | 
     return true;
   }
   // Honest check before signalling (§6.1.d): never SIGKILL a recycled pid that now
-  // belongs to some unrelated process.
+  // belongs to some unrelated process. Kill targets the whole process group (§6.1.e)
+  // so claude's own children die with it.
   if (s.pid != null && isRunPidAlive(s.pid, s.startedAt)) {
-    try {
-      process.kill(s.pid, action === "kill" ? "SIGKILL" : "SIGINT");
-      return true;
-    } catch {
-      return false;
-    }
+    return killGroup(s.pid, action === "kill" ? "SIGKILL" : "SIGINT");
   }
   return false;
 }

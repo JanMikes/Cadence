@@ -1,5 +1,6 @@
 import type { AgentResult, ClaudeEvent } from "@cadence/shared";
 import { spawn } from "node:child_process";
+import { killGroup } from "../liveness";
 
 /** Default model per agent role (spec §7; overridable per project/task). */
 export function modelForRole(role?: string): string | undefined {
@@ -107,9 +108,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
 
   return await new Promise<AgentResult>((resolve, reject) => {
     // Capture stderr too (don't discard it) so a failing agent run is diagnosable instead of silent.
+    // detached: the child leads its own process GROUP (§6.1.e), so stopping a run can kill
+    // claude *and its children* via kill(-pid) instead of leaving grandchildren behind.
     const child = spawn(base[0] as string, [...base.slice(1), ...args], {
       cwd: opts.cwd,
       stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
     });
     opts.onSpawn?.(child.pid ?? null);
 
@@ -136,7 +140,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
 
     const timer = opts.timeoutMs
       ? setTimeout(() => {
-          child.kill("SIGKILL");
+          if (child.pid != null) killGroup(child.pid, "SIGKILL");
+          else child.kill("SIGKILL");
           reject(new Error("agent timed out"));
         }, opts.timeoutMs)
       : null;

@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
-import { isSessionRowAlive, type LivenessProbe, REAL_PROBE } from "./liveness";
+import { isSessionRowAlive, killProcessTree, type LivenessProbe, REAL_PROBE } from "./liveness";
 import { notifyOnTransition } from "./notify";
 import { taskDiff } from "./review";
 import { endSession, listSessions } from "./sessions";
@@ -110,9 +110,14 @@ export function recoverStrandedTask(db: Db, hub: WsHub, taskId: string, reason: 
 
 /**
  * Startup reconciliation — runs regardless of autonomy (a correctness concern). Ends every
- * still-running session whose process is actually gone and rescues stranded tasks. A claude
- * child CAN outlive a gateway restart (it's a separate process) — those keep their honest
- * "running" status: output keeps streaming from the transcript, and Stop/Kill work by pid.
+ * still-running session whose process is actually gone and rescues stranded tasks.
+ *
+ * Orphaned ONE-SHOTS that did survive the restart are KILLED, not adopted (§6.1.e): their
+ * driving promise died with the old gateway, so even a completed run could never apply its
+ * result to the task — it would only burn tokens and then die on SIGPIPE anyway. The
+ * budgeted heal (which runs after this) decides whether to retry. Warm chats are different:
+ * they keep their honest "running" status — output still streams from the transcript and
+ * Stop/Kill/terminal-takeover work by pid.
  * Returns the number of sessions reconciled.
  */
 export function reconcileOrphans(db: Db, hub: WsHub, probe: LivenessProbe = REAL_PROBE): number {
@@ -121,8 +126,18 @@ export function reconcileOrphans(db: Db, hub: WsHub, probe: LivenessProbe = REAL
   for (const s of listSessions(db)) {
     if (!RUNNING.has(s.status)) continue;
     if (s.pid != null && isSessionRowAlive(s, probe)) {
-      if (s.taskId) aliveTasks.add(s.taskId);
-      continue; // survived the restart — still genuinely running (honestly verified)
+      if (s.kind !== "oneshot") {
+        if (s.taskId) aliveTasks.add(s.taskId);
+        continue; // a warm chat survived the restart — still genuinely (and usefully) running
+      }
+      killProcessTree(s.pid, { probe });
+      endSession(db, s.id, "killed");
+      hub.broadcast({ type: "event", name: "session:updated", payload: s.id });
+      ended += 1;
+      if (s.taskId) {
+        recoverStrandedTask(db, hub, s.taskId, `the ${s.role} run from before a restart was stopped (its result could no longer be used)`);
+      }
+      continue;
     }
     endSession(db, s.id, "failed");
     hub.broadcast({ type: "event", name: "session:updated", payload: s.id });

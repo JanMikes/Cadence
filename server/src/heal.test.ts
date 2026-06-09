@@ -10,6 +10,7 @@ import { sessions } from "./db/schema";
 import { healStuckTasks } from "./heal";
 import { bootstrap } from "./store/store";
 import { createTask, getTask, updateTask } from "./tasks";
+import { reconcileOrphans } from "./watchdog";
 import { WsHub } from "./ws";
 
 let db: Db;
@@ -124,6 +125,51 @@ test("circuit breaker: attempts older than the 24h window don't count", async ()
 
   expect(healed).toBe(1);
   expect(getTask(db, t.id)?.status).toBe("ready");
+});
+
+test("boot sequence (§6.1.e): reconcile kills the live orphan, then heal retries exactly once", async () => {
+  // Simulates boot #2 of the runaway incident: a task stuck in refining with a still-alive
+  // discovery orphan from the previous gateway life. Correct boot = kill the orphan
+  // (its result can't reach the task), then heal respawns ONE budgeted attempt.
+  const orphan = Bun.spawn(["sleep", "30"]);
+  try {
+    const t = createTask(db, { title: "restart mid-discovery" });
+    updateTask(db, t.id, { status: "refining" });
+    db.insert(sessions)
+      .values({
+        id: crypto.randomUUID(),
+        taskId: t.id,
+        role: "discovery",
+        kind: "oneshot",
+        status: "running",
+        cwd: "/tmp",
+        costUsd: 0,
+        startedAt: Date.now(),
+        pid: orphan.pid,
+      })
+      .run();
+
+    const ended = reconcileOrphans(db, new WsHub()); // boot step 1: adopt-or-kill
+    expect(ended).toBe(1);
+    expect(getTask(db, t.id)?.status).toBe("refining"); // refining is heal's job, not reconcile's
+
+    let spawns = 0;
+    const healed = await healStuckTasks({
+      db,
+      runAgent: async (opts) => {
+        spawns += 1;
+        return runnerFor({ discovery: { sufficiency: "ok", spec: "S", unknowns: [] } })(opts);
+      },
+      activity: new ActivityTracker(() => {}),
+      hub: new WsHub(),
+    }); // boot step 2: budgeted heal
+
+    expect(spawns).toBe(1); // exactly one retry — never an accumulation
+    expect(healed).toBe(1);
+    expect(getTask(db, t.id)?.status).toBe("ready");
+  } finally {
+    orphan.kill(9);
+  }
 });
 
 test("circuit breaker: under budget (2 recent attempts) still heals", async () => {

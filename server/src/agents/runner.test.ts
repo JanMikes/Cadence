@@ -66,3 +66,25 @@ test("runAgent streams events live (onEvent) and reports the child pid (onSpawn)
     delete process.env.CADENCE_MOCK_AGENT_STREAM;
   }
 });
+
+test("runAgent spawns the child as its own process-group leader (§6.1.e) so kill(-pid) reaps the tree", async () => {
+  const { execFileSync } = await import("node:child_process");
+  let pid: number | null = null;
+  const done = runAgent({
+    cwd: tmpdir(),
+    role: "implementer",
+    prompt: "x",
+    // a stand-in long-running child; extra claude args land in $0/$@ and are ignored
+    command: ["bash", "-c", "sleep 30"],
+    onSpawn: (p) => {
+      pid = p;
+    },
+  });
+  await new Promise((r) => setTimeout(r, 150)); // let it spawn
+  expect(pid).not.toBeNull();
+  const pgid = Number(execFileSync("ps", ["-p", String(pid), "-o", "pgid="], { encoding: "utf8" }).trim());
+  expect(pgid).toBe(pid as unknown as number); // group leader == its own pid
+  process.kill(-(pid as unknown as number), "SIGKILL"); // group kill must work
+  const res = await done; // close fires; an empty run resolves (no output) rather than hanging
+  expect(res.text).toBe("");
+});
