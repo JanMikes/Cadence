@@ -1,6 +1,7 @@
 import type {
   AnalyticsSummary,
   ApprovalRequest,
+  AttentionResponse,
   CommitDigestInput,
   ContextChannel,
   CreateFleetInput,
@@ -208,6 +209,11 @@ export function revertLearned(index: number): Promise<{ reverted: boolean }> {
 
 export function getApprovals(): Promise<ApprovalRequest[]> {
   return fetch("/api/approvals").then(json<ApprovalRequest[]>);
+}
+
+/** The unified "needs you" feed (tasks awaiting input/approval/merge + tool approvals). */
+export function getAttention(): Promise<AttentionResponse> {
+  return fetch("/api/attention").then(json<AttentionResponse>);
 }
 
 export function resolveApproval(id: string, allow: boolean): Promise<{ resolved: boolean }> {

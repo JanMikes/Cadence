@@ -19,6 +19,7 @@ const ACTIVE: ReadonlySet<string> = new Set([
   "refining",
   "needs_feedback",
   "ready",
+  "plan_review",
   "implementing",
   "verifying",
   "review",

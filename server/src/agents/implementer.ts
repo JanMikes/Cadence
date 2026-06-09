@@ -44,11 +44,14 @@ export function buildImplementerPrompt(
 
 /**
  * Run the Implementer for a task (spec §7.5): require an approved plan, provision
- * the isolated worktree (3.3), run a one-shot Opus agent THERE under the task's
- * resolved permission mode (Auto→acceptEdits / Manual→default / Dangerous→
- * bypassPermissions), then advance implementing → verifying. `run` is injectable
- * so tests use the mock (no real model, no real edits). Bails gracefully (never
- * throws) when the plan isn't approved or a worktree can't be provisioned.
+ * the isolated worktree (3.3), run a one-shot Opus agent THERE, then advance
+ * implementing → verifying. Inside the disposable worktree the agent gets full tool
+ * access (bypassPermissions) so it can edit + commit + build + test without stalling
+ * on a permission-gated command — a one-shot has no interactive approval channel, and
+ * the sandbox plus the plan-approval and review/merge gates are the safety boundary.
+ * apply_in_place keeps the safer resolved mode (never bypass the main tree). `run` is
+ * injectable so tests use the mock. Bails gracefully (never throws) when the plan
+ * isn't approved or a worktree can't be provisioned.
  */
 export async function runImplementer(
   db: Db,
@@ -68,12 +71,17 @@ export async function runImplementer(
     return { ran: false, reason: (err as Error).message };
   }
 
-  const claudeMode = claudePermissionMode(resolvePermissionMode(db, taskId));
+  let claudeMode = claudePermissionMode(resolvePermissionMode(db, taskId));
   // Dangerous-mode guardrail (§9): bypassPermissions is only allowed inside an
   // isolated worktree, never in-place on the main tree — a runaway can't escape.
   if (claudeMode === "bypassPermissions" && !target.worktreePath) {
     return { ran: false, reason: "Dangerous mode requires an isolated worktree (not apply_in_place)" };
   }
+  // In the isolated, disposable worktree, grant the one-shot Implementer full tool access so it can
+  // edit + commit + build + test without stalling on a permission-gated `git` (acceptEdits gates
+  // Bash, and a one-shot agent has nobody to ask). The sandbox + the plan-approval and review/merge
+  // gates are the safety boundary. apply_in_place (no worktree) keeps the safer resolved mode.
+  if (target.worktreePath) claudeMode = "bypassPermissions";
   const result = await run({
     cwd: target.cwd,
     taskId,

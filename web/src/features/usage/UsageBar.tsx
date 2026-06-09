@@ -17,7 +17,7 @@ export function UsageBar() {
   const rl = usage.data?.rateLimit as Record<string, unknown> | null;
 
   return (
-    <div className="flex items-center gap-4 border-b border-border bg-card/30 px-4 py-1.5 text-[11px] text-muted-foreground">
+    <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
       <span className="flex items-center gap-1 font-medium">
         <Activity className="size-3.5" /> Usage
       </span>

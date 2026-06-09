@@ -7,13 +7,18 @@ import { approvePlan, getPlan } from "../../lib/api";
  * The Planner's output (§7.4): an ordered, approvable implementation plan shown
  * once a task is executing. The Implementer (3.4) runs only after approval.
  */
-export function PlanView({ taskId }: { taskId: string }) {
+export function PlanView({ taskId, onResolved }: { taskId: string; onResolved?: () => void }) {
   const qc = useQueryClient();
   const plan = useQuery({ queryKey: ["task", taskId, "plan"], queryFn: () => getPlan(taskId) });
 
   const approve = useMutation({
     mutationFn: () => approvePlan(taskId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["task", taskId, "plan"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["task", taskId, "plan"] });
+      void qc.invalidateQueries({ queryKey: ["task", taskId] });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+      onResolved?.();
+    },
   });
 
   const steps = plan.data?.steps ?? [];

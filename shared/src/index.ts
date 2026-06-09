@@ -38,10 +38,43 @@ export type ClientMessage = { type: "ping" } | { type: "subscribe"; topic?: stri
 
 /** Payload of a `notify` ServerMessage — drives in-app badges + OS notifications. */
 export interface NotifyPayload {
-  kind: "needs_feedback" | "delivered" | "info";
+  kind: "needs_feedback" | "plan_review" | "review" | "delivered" | "stalled" | "info";
   title: string;
   message: string;
   taskId?: string;
+}
+
+/**
+ * The unified "needs you" feed (§10) — everything blocking on the user, derived from
+ * persistent state so it survives reloads. Backs the top-bar pill + Attention Center.
+ */
+export type AttentionKind =
+  | "needs_input"
+  | "plan_approval"
+  | "review_merge"
+  | "tool_approval"
+  | "stalled";
+
+export interface AttentionItem {
+  /** Stable id: `${kind}:${taskId|approvalId}` — used as the React key + flow cursor. */
+  id: string;
+  kind: AttentionKind;
+  taskId?: string;
+  approvalId?: string;
+  /** Task title, or the tool name for a tool approval. */
+  title: string;
+  /** Plain-language one-liner, e.g. "3 questions" / "Plan ready · 5 steps". */
+  summary: string;
+  /** Verb for the resolve button, e.g. "Answer" / "Approve plan". */
+  actionLabel: string;
+  /** Sort key (urgency = f(deadline, priority); tool approvals rank highest). */
+  urgency: number;
+  createdAt: number;
+}
+
+export interface AttentionResponse {
+  items: AttentionItem[];
+  count: number;
 }
 
 /** A proactive, propose-don't-impose nudge (§8.1) from the sweep + self-monitor. */
@@ -64,6 +97,7 @@ export const TASK_STATUSES = [
   "refining",
   "needs_feedback",
   "ready",
+  "plan_review",
   "implementing",
   "verifying",
   "review",

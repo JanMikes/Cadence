@@ -5,6 +5,7 @@ import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cade
 import { ActivityTracker } from "./activity";
 import { makeRecordingRunner } from "./agents/recording-runner";
 import { healStuckTasks } from "./heal";
+import { reconcileOrphans, startSessionWatchdog } from "./watchdog";
 import { ApprovalRegistry } from "./approvals";
 import { emitProposals } from "./proposals";
 import { startSweep } from "./sweep";
@@ -95,6 +96,14 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       ? { close() {} }
       : startSweep(db, hub, { onTick: () => emitProposals(db, hub, emittedProposals) });
 
+  // Reconcile orphaned runs from a previous process — always, even with autonomy off (a
+  // correctness concern, not autonomy): end sessions whose process died with the old gateway,
+  // and rescue any task stranded mid-execution so nothing lingers in a silent "In progress".
+  if (opts.startWatcher !== false) {
+    const orphans = reconcileOrphans(db, hub);
+    if (orphans) console.log(`[cadence] reconciled ${orphans} orphaned session(s) from a previous run`);
+  }
+
   // Self-heal tasks left in "refining" by a previous run (crash/restart). Background, autonomy-only,
   // skipped in tests (startWatcher === false). Discovery/Questioner are now never-strand.
   if (opts.startWatcher !== false && readSettings().global.autonomy) {
@@ -102,6 +111,11 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       if (n) console.log(`[cadence] self-healed ${n} task(s) stuck in refining`);
     });
   }
+
+  // Proactive session watchdog: detect dead/stuck runs at runtime so a conversation is never
+  // silently dead — dead sessions are ended + their task rescued, idle ones surface a nudge.
+  const watchdog =
+    opts.startWatcher === false ? { close() {} } : startSessionWatchdog(db, hub);
 
   const server = Bun.serve<WsData>({
     port,
@@ -168,6 +182,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     stop: async () => {
       watcher?.close();
       sweep.close();
+      watchdog.close();
       for (const id of spawnManager.liveIds()) spawnManager.kill(id);
       rmSync(runtimePath, { force: true }); // remove the runtime descriptor on graceful stop
       await server.stop(true);

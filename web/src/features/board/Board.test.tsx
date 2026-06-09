@@ -14,6 +14,7 @@ test("Board renders lifecycle columns with plain-language labels", () => {
   expect(html).toContain("Inbox");
   expect(html).toContain("Ready");
   expect(html).toContain("Needs input"); // plain language for needs_feedback
+  expect(html).toContain("Plan review"); // waiting-for-you ≠ actively working (plan_review)
   expect(html).toContain("In progress"); // plain language for implementing
   expect(html).toContain("Done");
 });

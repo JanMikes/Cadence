@@ -1,6 +1,8 @@
 import {
   APP_NAME,
   type AppendContextInput,
+  type AttentionItem,
+  type AttentionResponse,
   type CommitDigestInput,
   type CreateFleetInput,
   type CreateProjectInput,
@@ -202,10 +204,18 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     notifyOnTransition(ctx.hub, "ready", updated);
     // Kick off the Planner (read-only, plan mode) in the background; it writes an
-    // approvable plan.md. The Implementer (3.4) runs only after approval.
-    void runPlanner(ctx.db, taskId, ctx.runAgent)
+    // approvable plan.md, then the task parks in Plan review — a distinct, visible
+    // "waiting on you" state rather than sitting silently in "In progress".
+    // Activity-tracked so the card spins while the Planner drafts. The Implementer
+    // (3.4) runs only after approval.
+    void ctx.activity
+      .track(taskId, "planner", () => runPlanner(ctx.db, taskId, ctx.runAgent))
       .then((p) => {
-        if (p.ran) ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+        if (!p.ran) return;
+        const planned = updateTask(ctx.db, taskId, { status: "plan_review" });
+        ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+        if (planned) notifyOnTransition(ctx.hub, "implementing", planned);
       })
       .catch((err) => console.error(`[cadence] planner failed for ${taskId}:`, err));
     return Response.json(updated);
@@ -284,23 +294,36 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (!task) return notFound(pathname);
     const plan = approvePlan(taskId);
     ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
-    // Approving the plan starts implementation (only while executing). The
-    // Implementer runs in the isolated worktree; it bails gracefully if it can't.
-    if (task.status === "implementing") {
-      void runImplementer(ctx.db, taskId, ctx.runAgent)
+    // Approving the plan starts implementation. From Plan review (or implementing,
+    // for back-compat) we move into In progress and run the execution chain. Each
+    // stage is activity-tracked so the board card spins while Cadence works; the
+    // Implementer runs in the isolated worktree and bails gracefully if it can't.
+    if (task.status === "plan_review" || task.status === "implementing") {
+      if (task.status !== "implementing") {
+        updateTask(ctx.db, taskId, { status: "implementing" });
+        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      }
+      void ctx.activity
+        .track(taskId, "implementer", () => runImplementer(ctx.db, taskId, ctx.runAgent))
         .then(async (r) => {
           if (!r.ran) return;
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
           ctx.hub.broadcast({ type: "event", name: "task:implemented", payload: taskId });
           // Implemented → Verifier (tests/build/lint + diverse reviewers) → pass/fail.
-          const v = await runVerifier(ctx.db, taskId, ctx.runAgent);
+          const v = await ctx.activity.track(taskId, "verifier", () =>
+            runVerifier(ctx.db, taskId, ctx.runAgent),
+          );
           if (v.ran) {
             ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
             ctx.hub.broadcast({ type: "event", name: "task:verified", payload: taskId });
-            // Passed → Delivery produces the summary + branch/PR (task stays in
-            // review for the human to merge in 3.7).
+            // Passed → the task lands in Review for the human to merge (3.7); notify
+            // so it surfaces in the "needs you" feed. Delivery then writes the summary.
             if (v.passed) {
-              const d = await runDelivery(ctx.db, taskId, ctx.runAgent);
+              const reviewing = getTask(ctx.db, taskId);
+              if (reviewing) notifyOnTransition(ctx.hub, "verifying", reviewing);
+              const d = await ctx.activity.track(taskId, "delivery", () =>
+                runDelivery(ctx.db, taskId, ctx.runAgent),
+              );
               if (d.ran) ctx.hub.broadcast({ type: "event", name: "task:delivered", payload: taskId });
             }
           }
@@ -313,6 +336,93 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   // In-flight autonomy work (drives the board/task spinner); hydrates on a fresh page load.
   if (pathname === "/api/activity" && method === "GET") {
     return Response.json(ctx.activity.list());
+  }
+
+  // The unified "needs you" feed (§10): everything blocking on the user, built from
+  // persistent state so the count survives reloads. Backs the top-bar pill + Attention
+  // Center. Resolve one → it drops out → the next surfaces ("keep it flowing").
+  if (pathname === "/api/attention" && method === "GET") {
+    const items: AttentionItem[] = [];
+
+    for (const t of listTasks(ctx.db, { status: "needs_feedback", sort: "urgency" })) {
+      const qa = readQa(t.id);
+      const open = qa.questions.filter((q) => !isAnswered(qa.answers[q.id])).length;
+      items.push({
+        id: `needs_input:${t.id}`,
+        kind: "needs_input",
+        taskId: t.id,
+        title: t.title,
+        summary: open === 1 ? "1 question" : `${open} questions`,
+        actionLabel: "Answer",
+        urgency: t.urgency ?? 0,
+        createdAt: t.updatedAt,
+      });
+    }
+
+    for (const t of listTasks(ctx.db, { status: "plan_review", sort: "urgency" })) {
+      const steps = readPlan(t.id).steps.length;
+      items.push({
+        id: `plan_approval:${t.id}`,
+        kind: "plan_approval",
+        taskId: t.id,
+        title: t.title,
+        summary: `Plan ready · ${steps} step${steps === 1 ? "" : "s"}`,
+        actionLabel: "Approve plan",
+        urgency: t.urgency ?? 0,
+        createdAt: t.updatedAt,
+      });
+    }
+
+    for (const t of listTasks(ctx.db, { status: "review", sort: "urgency" })) {
+      items.push({
+        id: `review_merge:${t.id}`,
+        kind: "review_merge",
+        taskId: t.id,
+        title: t.title,
+        summary: "Verified — ready to merge",
+        actionLabel: "Review & merge",
+        urgency: t.urgency ?? 0,
+        createdAt: t.updatedAt,
+      });
+    }
+
+    for (const a of ctx.approvals.list()) {
+      items.push({
+        id: `tool_approval:${a.id}`,
+        kind: "tool_approval",
+        taskId: a.taskId ?? undefined,
+        approvalId: a.id,
+        title: a.toolName,
+        summary: "Tool action awaiting approval (Manual mode)",
+        actionLabel: "Review action",
+        urgency: Number.MAX_SAFE_INTEGER, // a live agent is blocked — top priority
+        createdAt: a.createdAt,
+      });
+    }
+
+    // Stalled: a task in an active-work state with no live run (and not just dispatched). The
+    // safety net for a run that died or hung between watchdog ticks — "In progress" must never
+    // silently lie. Floated to the top: a stuck run is the most urgent thing to see.
+    const activeIds = new Set(ctx.activity.list().map((a) => a.taskId));
+    const nowMs = Date.now();
+    for (const status of ["implementing", "verifying"] as const) {
+      for (const t of listTasks(ctx.db, { status, sort: "urgency" })) {
+        if (activeIds.has(t.id) || nowMs - t.updatedAt < 60_000) continue;
+        items.push({
+          id: `stalled:${t.id}`,
+          kind: "stalled",
+          taskId: t.id,
+          title: t.title,
+          summary: `Stalled — no active run (${status === "verifying" ? "Verifying" : "In progress"})`,
+          actionLabel: "Inspect",
+          urgency: (t.urgency ?? 0) + 1_000_000,
+          createdAt: t.updatedAt,
+        });
+      }
+    }
+
+    items.sort((x, y) => y.urgency - x.urgency || x.createdAt - y.createdAt);
+    return Response.json({ items, count: items.length } satisfies AttentionResponse);
   }
 
   const refineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/refine$/);
@@ -985,6 +1095,12 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
       }
     })
     .catch((err) => console.error(`[cadence] autonomy pipeline failed for ${taskId}:`, err));
+}
+
+/** A Q&A answer counts as given if it's a non-empty string or a non-empty selection. */
+function isAnswered(a: string | string[] | undefined): boolean {
+  if (a == null) return false;
+  return Array.isArray(a) ? a.length > 0 : a.trim().length > 0;
 }
 
 function badRequest(message: string): Response {

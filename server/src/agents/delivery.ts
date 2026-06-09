@@ -87,15 +87,26 @@ export async function runDelivery(
   let prUrl: string | null = null;
   if (mode !== "apply_in_place") {
     branch = branchName({ id: task.id, title: task.title });
-    if (mode === "auto_pr" && target.worktreePath) {
-      const pushed = git(["push", "-u", "origin", branch], target.worktreePath);
-      if (pushed.ok) {
-        const pr = Bun.spawnSync(["gh", "pr", "create", "--fill", "--head", branch], {
-          cwd: target.worktreePath,
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        if (pr.exitCode === 0) prUrl = pr.stdout.toString().trim();
+    if (target.worktreePath) {
+      // Ensure the Implementer's changes are committed to the task branch. Deterministic — a direct
+      // subprocess, so it never stalls on a permission gate the way an agent tool call can — and a
+      // no-op when the Implementer already made its own commits (clean tree). This is what makes a
+      // branch_summary delivery a real, reviewable branch even if a run was interrupted.
+      const dirty = git(["status", "--porcelain"], target.worktreePath);
+      if (dirty.ok && dirty.stdout) {
+        git(["add", "-A"], target.worktreePath);
+        git(["commit", "-m", `cadence: ${task.title}`], target.worktreePath);
+      }
+      if (mode === "auto_pr") {
+        const pushed = git(["push", "-u", "origin", branch], target.worktreePath);
+        if (pushed.ok) {
+          const pr = Bun.spawnSync(["gh", "pr", "create", "--fill", "--head", branch], {
+            cwd: target.worktreePath,
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+          if (pr.exitCode === 0) prUrl = pr.stdout.toString().trim();
+        }
       }
     }
   }

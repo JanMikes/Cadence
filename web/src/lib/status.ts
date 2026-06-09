@@ -11,6 +11,7 @@ export const BOARD_COLUMNS: StatusColumn[] = [
   { id: "refining", label: "Refining" },
   { id: "needs_feedback", label: "Needs input" },
   { id: "ready", label: "Ready" },
+  { id: "plan_review", label: "Plan review" },
   { id: "implementing", label: "In progress" },
   { id: "verifying", label: "Verifying" },
   { id: "review", label: "Review" },

@@ -1088,3 +1088,13 @@ review and revert a memory entry.
   `bun run build` + `typecheck`, `bun x tauri build` → `Cadence.app` + `.dmg`. Docs: [`tauri-wrap.md`](tauri-wrap.md).
   macOS-irreducible visual checks (no WKWebView WebDriver) deferred to the one-time § Visual checklist.
   → **Phase 4 is now 7/7; the optional wrap is delivered. Web-first stands; the shell is additive.**
+
+- **2026-06-09 · Daily-use hardening (attention + execution flow).** From real use, two gaps:
+  (a) tasks waiting on me (plan approval / Q&A / merge) were invisible — added a global **Attention
+  Center** (top-bar "needs you" pill → list + focused flow that auto-advances), a real **Plan review**
+  state so the Board stops conflating "waiting on you" with "working", broadened notifications, and a
+  live spinner during execution; (b) a task sat **silently in "In progress"** with no active Claude.
+  Root-caused to an orphaned run (gateway restart) **and** the Implementer stalling on a permission-
+  gated `git` under `acceptEdits`. Fixed both — see **[execution-flow-hardening.md](execution-flow-hardening.md)**
+  (orphan reconcile + session watchdog + stalled surfacing; Implementer runs with full access inside
+  its sandboxed worktree; Delivery commits deterministically). Invariant: a run is never silently dead.

@@ -72,7 +72,7 @@ test("runImplementer bails when the plan isn't approved", async () => {
   expect(await runImplementer(db, task.id, ok)).toMatchObject({ ran: false, reason: "plan not approved" });
 });
 
-test("runImplementer runs in the worktree under the resolved permission mode, → verifying", async () => {
+test("runImplementer runs in the worktree with full sandboxed access, → verifying", async () => {
   const task = readyTask();
   applyPlan(task.id, { steps: [{ title: "Do the thing" }] });
   approvePlan(task.id);
@@ -89,10 +89,11 @@ test("runImplementer runs in the worktree under the resolved permission mode, �
   expect(getTask(db, task.id)?.status).toBe("verifying");
   const seen = calls[0];
   expect(seen).toBeDefined();
-  // ran in the provisioned worktree, not the main repo, with Auto → acceptEdits
+  // ran in the provisioned worktree, not the main repo, with full tool access (bypassPermissions)
+  // so it can edit + commit + build without stalling on a gated command — the sandbox is the boundary
   expect(seen?.cwd.startsWith(worktrees)).toBe(true);
   expect(seen?.cwd).toBe(outcome.worktreePath);
-  expect(seen?.permissionMode).toBe("acceptEdits");
+  expect(seen?.permissionMode).toBe("bypassPermissions");
   expect(seen?.role).toBe("implementer");
 });
 

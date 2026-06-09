@@ -18,6 +18,9 @@ export interface HealDeps {
  * Discovery + the Questioner are now robust (they never strand a task), so each one moves to Ready or
  * Needs-Feedback. Sequential to avoid a thundering herd of agent spawns; activity-tracked so the board
  * shows a spinner while it heals. Skips tasks already being worked.
+ *
+ * Execution-side strands (tasks left in "implementing"/"verifying" by a dead run) and orphaned
+ * sessions are handled separately by reconcileOrphans/the session watchdog (see watchdog.ts).
  */
 export async function healStuckTasks(deps: HealDeps): Promise<number> {
   const { db, runAgent, activity, hub } = deps;

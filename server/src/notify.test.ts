@@ -32,3 +32,11 @@ test("notifies delivered on entering done", () => {
   expect(notifyOnTransition(hub, "done", task("done"))).toBeNull();
   expect(notifyOnTransition(hub, "inbox", task("ready"))).toBeNull(); // no notify for plain moves
 });
+
+test("notifies on entering plan_review (plan ready) and review (ready to merge)", () => {
+  const { hub } = stubHub();
+  expect(notifyOnTransition(hub, "implementing", task("plan_review"))?.kind).toBe("plan_review");
+  expect(notifyOnTransition(hub, "plan_review", task("plan_review"))).toBeNull();
+  expect(notifyOnTransition(hub, "verifying", task("review"))?.kind).toBe("review");
+  expect(notifyOnTransition(hub, "review", task("review"))).toBeNull();
+});

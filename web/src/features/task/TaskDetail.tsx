@@ -8,6 +8,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   manual: "Manual",
   dangerous: "Dangerous",
 };
+import { type FlowControls, FlowStrip } from "../../components/FlowStrip";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import {
   appendContext,
@@ -34,6 +35,8 @@ export function TaskDetail({
   onOpenSession,
   onOpenSessionDetail,
   onOpenTask,
+  flow,
+  onResolved,
 }: {
   taskId: string;
   onClose: () => void;
@@ -42,6 +45,10 @@ export function TaskDetail({
   /** Open the rich session detail drawer (used when clicking an existing session). */
   onOpenSessionDetail?: (sessionId: string) => void;
   onOpenTask?: (taskId: string) => void;
+  /** When opened as a step in the Attention flow: shows the flow strip + enables auto-advance. */
+  flow?: FlowControls;
+  /** Called after a resolve action here (answer/approve/merge) — drives the flow's advance. */
+  onResolved?: () => void;
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
@@ -58,6 +65,13 @@ export function TaskDetail({
   const invalidateTask = () => {
     void qc.invalidateQueries({ queryKey: ["task", taskId] });
     void qc.invalidateQueries({ queryKey: ["tasks"] });
+  };
+
+  // In the Attention flow, a successful resolve here (answered Q&A / approved plan / merged)
+  // advances to the next item; standalone it's just a refresh.
+  const resolved = () => {
+    invalidateTask();
+    onResolved?.();
   };
 
   const setStatus = useMutation({
@@ -124,12 +138,17 @@ export function TaskDetail({
 
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop dismiss; Close button is the keyboard path
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <aside
-        className="flex h-full w-[440px] max-w-full flex-col overflow-auto border-l border-border bg-background p-6"
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <div
+        className="my-auto flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3">
+        {flow ? <FlowStrip flow={flow} /> : null}
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
+          <div className="flex items-start justify-between gap-3">
           <h2 className="text-lg font-semibold tracking-tight">
             {task?.title ?? (detail.isLoading ? "Loading…" : "Task")}
           </h2>
@@ -138,7 +157,7 @@ export function TaskDetail({
 
         {task ? (
           <>
-            <QACards taskId={taskId} onResolved={invalidateTask} />
+            <QACards taskId={taskId} onResolved={resolved} />
 
             {task.status === "ready" ? (
               <button
@@ -264,12 +283,12 @@ export function TaskDetail({
               <p className="mt-5 whitespace-pre-wrap text-sm text-foreground/90">{task.body}</p>
             ) : null}
 
-            {["implementing", "verifying", "review", "done"].includes(task.status) ? (
-              <PlanView taskId={taskId} />
+            {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
+              <PlanView taskId={taskId} onResolved={resolved} />
             ) : null}
 
             {task.status === "review" ? (
-              <ReviewPanel taskId={taskId} onChanged={invalidateTask} />
+              <ReviewPanel taskId={taskId} onChanged={resolved} />
             ) : null}
 
             <SuggestionList entityType="task" entityId={taskId} />
@@ -393,7 +412,8 @@ export function TaskDetail({
             </div>
           </div>
         ) : null}
-      </aside>
+        </div>
+      </div>
     </div>
   );
 }

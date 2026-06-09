@@ -60,7 +60,7 @@ export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   body: text("body").notNull().default(""),
-  // §6 state machine: inbox|triaged|refining|needs_feedback|ready|
+  // §6 state machine: inbox|triaged|refining|needs_feedback|ready|plan_review|
   //                    implementing|verifying|review|done|blocked|cancelled
   status: text("status").notNull().default("inbox"),
   // Priority scale is intentionally not fixed yet (decided with the UI in 1.2);

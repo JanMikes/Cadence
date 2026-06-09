@@ -3,7 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
 import { Analytics } from "./features/analytics/Analytics";
-import { ApprovalsBar } from "./features/approvals/ApprovalsBar";
+import { AttentionCenter } from "./features/attention/AttentionCenter";
+import { AttentionPill } from "./features/attention/AttentionPill";
 import { Board } from "./features/board/Board";
 import { Calendar } from "./features/calendar/Calendar";
 import { Today } from "./features/digest/Today";
@@ -27,12 +28,29 @@ import { useServerMessages } from "./lib/ws";
 
 type Conn = "connecting" | "online" | "offline";
 
+// Server events that change what's waiting on the user → refresh the "needs you" feed
+// (and the board). Keeps the top-bar pill and the Attention Center live.
+const ATTENTION_EVENTS = new Set([
+  "task:updated",
+  "task:play",
+  "task:plan",
+  "task:ready",
+  "task:triaged",
+  "task:implemented",
+  "task:verified",
+  "task:delivered",
+  "approval:requested",
+  "approval:resolved",
+  "notify",
+]);
+
 export function App() {
   const [view, setView] = useState<ViewId>("today");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionDetailId, setSessionDetailId] = useState<string | null>(null);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [conn, setConn] = useState<Conn>("connecting");
   const notifications = useNotifications();
@@ -52,6 +70,10 @@ export function App() {
       void qc.invalidateQueries({ queryKey: ["sessions", "all"] });
       void qc.invalidateQueries({ queryKey: ["task"] });
       void qc.invalidateQueries({ queryKey: ["session"] });
+    }
+    if (msg.type === "event" && ATTENTION_EVENTS.has(msg.name)) {
+      void qc.invalidateQueries({ queryKey: ["attention"] });
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
     }
   });
 
@@ -89,7 +111,14 @@ export function App() {
           setView(v);
           setSelectedId(null);
         }}
-        topBar={<UsageBar />}
+        topBar={
+          <div className="flex items-center gap-3 border-b border-border bg-card/30 px-4 py-1.5">
+            <div className="min-w-0 flex-1">
+              <UsageBar />
+            </div>
+            <AttentionPill onOpen={() => setAttentionOpen(true)} />
+          </div>
+        }
         navBadges={{ notifications: unread }}
         primaryAction={<AddTaskButton onClick={() => setAddTaskOpen(true)} />}
         status={
@@ -148,11 +177,22 @@ export function App() {
           setSelectedId(null);
         }}
         onAddTask={() => setAddTaskOpen(true)}
+        onOpenAttention={() => setAttentionOpen(true)}
       />
 
       <AddTaskModal open={addTaskOpen} onOpenChange={setAddTaskOpen} />
 
-      <ApprovalsBar />
+      {attentionOpen ? (
+        <AttentionCenter
+          onClose={() => setAttentionOpen(false)}
+          onOpenSession={setActiveSessionId}
+          onOpenSessionDetail={setSessionDetailId}
+          onOpenTask={(id) => {
+            setAttentionOpen(false);
+            setSelectedId(id);
+          }}
+        />
+      ) : null}
     </>
   );
 }

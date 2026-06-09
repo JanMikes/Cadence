@@ -286,6 +286,35 @@ test("PLAY runs the Planner (mock) → an approvable plan that POST approve conf
   expect(approved.steps.length).toBe(2); // steps preserved through approval
 });
 
+test("PLAY parks the task in Plan review, and /api/attention surfaces it", async () => {
+  const task = await createViaApi("Awaiting plan approval");
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "ready" }),
+  });
+  await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+
+  // the planner runs in the background, then the task parks in plan_review (a distinct,
+  // visible "waiting on you" state — not silently stuck in "In progress")
+  let status = "";
+  for (let i = 0; i < 80 && status !== "plan_review"; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
+  }
+  expect(status).toBe("plan_review");
+
+  // the unified "needs you" feed surfaces it as a plan_approval item
+  const attention = (await fetch(`${gw.url}/api/attention`).then((r) => r.json())) as {
+    count: number;
+    items: Array<{ kind: string; taskId?: string; summary: string; actionLabel: string }>;
+  };
+  const item = attention.items.find((x) => x.taskId === task.id);
+  expect(item?.kind).toBe("plan_approval");
+  expect(item?.actionLabel).toBe("Approve plan");
+  expect(item?.summary).toContain("2 step");
+});
+
 test("execution slice: PLAY → plan → approve → Implementer → Verifier → review", async () => {
   // a real git repo + an isolated worktree base for this task
   const repo = mkdtempSync(join(tmpdir(), "cadence-gw-repo-"));

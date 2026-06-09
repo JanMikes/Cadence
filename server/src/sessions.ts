@@ -59,6 +59,18 @@ export function updateSession(db: Db, id: string, patch: UpdateSessionInput): Se
   return getSession(db, id);
 }
 
+/** Mark a session ended with a terminal status — used by the watchdog to clear dead/stuck runs
+ *  whose process died (e.g. with a previous gateway) so they never linger as "running" forever. */
+export function endSession(
+  db: Db,
+  id: string,
+  status: "done" | "failed" | "killed",
+  now = Date.now(),
+): Session | null {
+  db.update(sessions).set({ status, endedAt: now }).where(eq(sessions.id, id)).run();
+  return getSession(db, id);
+}
+
 /** Drop a session row (its events cascade). Returns whether a row existed. */
 export function deleteSession(db: Db, id: string): boolean {
   const existed = getSession(db, id) != null;

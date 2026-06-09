@@ -95,6 +95,14 @@ const URGENCY_BADGE: Record<string, { label: string; className: string }> = {
   due_soon: { label: "Due soon", className: "bg-amber-500/15 text-amber-400" },
 };
 
+// A loud, labeled chip for cards that are waiting on the user — so "needs you" is
+// obvious even when scanning a column (it also reinforces the Plan review column).
+const ATTENTION_BADGE: Record<string, { label: string; className: string }> = {
+  needs_feedback: { label: "Needs input", className: "bg-amber-500/20 text-amber-300" },
+  plan_review: { label: "Approve plan", className: "bg-violet-500/20 text-violet-300" },
+  review: { label: "Review & merge", className: "bg-green-500/20 text-green-300" },
+};
+
 /** A small inline spinner shown while an autonomy stage is working a task. */
 export function WorkingSpinner({ stage, className }: { stage: string; className?: string }) {
   return (
@@ -111,7 +119,14 @@ export function WorkingSpinner({ stage, className }: { stage: string; className?
 function BoardCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void }) {
   const onDragStart = (e: DragEvent) => e.dataTransfer.setData("text/plain", task.id);
   const badge = task.urgencyTier ? URGENCY_BADGE[task.urgencyTier] : undefined;
+  const attention = ATTENTION_BADGE[task.status];
   const stage = useActivity(task.id);
+  // An active-work card with no live run (and not just dispatched) is stalled — show it loudly
+  // rather than letting it masquerade as "in progress" with nothing happening.
+  const stalled =
+    !stage &&
+    (task.status === "implementing" || task.status === "verifying") &&
+    Date.now() - task.updatedAt > 60_000;
   return (
     <button
       type="button"
@@ -121,11 +136,20 @@ function BoardCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void 
       className={cn(
         "cursor-grab rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50 active:cursor-grabbing",
         stage && "border-primary/40",
+        stalled && "border-red-500/50",
       )}
     >
       <div className="text-sm font-medium">{task.title}</div>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
         {stage ? <WorkingSpinner stage={stage} /> : null}
+        {stalled ? (
+          <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-medium text-red-300">⚠ Stalled</span>
+        ) : null}
+        {!stage && attention ? (
+          <span className={cn("rounded px-1.5 py-0.5 font-medium", attention.className)}>
+            {attention.label}
+          </span>
+        ) : null}
         {badge ? (
           <span className={cn("rounded px-1.5 py-0.5 font-medium", badge.className)}>{badge.label}</span>
         ) : null}
