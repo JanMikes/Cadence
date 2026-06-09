@@ -13,8 +13,10 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use tauri::menu::{Menu, MenuBuilder, MenuItemBuilder};
 use tauri::path::BaseDirectory;
-use tauri::{Manager, RunEvent};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
@@ -116,6 +118,76 @@ fn resolve_login_path() -> String {
     })
 }
 
+/// Tray menu item ids — shared by the builder and the click handler so they can't drift.
+const TRAY_ITEMS: [(&str, &str); 5] = [
+    ("open", "Open Cadence"),
+    ("quick_capture", "Quick capture"),
+    ("today", "Today"),
+    ("inbox", "Inbox"),
+    ("quit", "Quit Cadence"),
+];
+
+/// Build the tray menu (Open · Quick capture · Today · Inbox · — · Quit) with a separator before Quit.
+/// Factored out so a mock-runtime test can assert the items without constructing a real tray icon.
+fn build_tray_menu<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<Menu<R>> {
+    let mut items = Vec::new();
+    for (id, label) in TRAY_ITEMS {
+        items.push(MenuItemBuilder::with_id(id, label).build(app)?);
+    }
+    let (quit, rest) = items.split_last().expect("TRAY_ITEMS is non-empty");
+    let mut builder = MenuBuilder::new(app);
+    for item in rest {
+        builder = builder.item(item);
+    }
+    builder.separator().item(quit).build()
+}
+
+/// Show, unminimize, and focus the main window (tray click / "Open Cadence").
+fn show_main<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+/// Build the menubar/tray icon and wire menu + left-click behaviour. Non-fatal: a failure here logs
+/// and leaves the rest of the app working.
+fn setup_tray(app: &AppHandle<impl Runtime>) -> tauri::Result<()> {
+    let menu = build_tray_menu(app)?;
+    let mut builder = TrayIconBuilder::with_id("main")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => show_main(app),
+            "today" | "inbox" => {
+                show_main(app);
+                let _ = app.emit("tray-navigate", event.id().as_ref().to_string());
+            }
+            "quick_capture" => {
+                show_main(app);
+                let _ = app.emit("quick-capture", ());
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -127,6 +199,12 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            // Menubar/tray icon (Open · Quick capture · Today · Inbox · — · Quit). Non-fatal so a tray
+            // failure never blocks the app from starting.
+            if let Err(e) = setup_tray(app.handle()) {
+                log::warn!("tray setup failed: {e}");
             }
 
             // The main window is created hidden (visible:false in tauri.conf.json) so the user never
@@ -241,7 +319,7 @@ pub fn run() {
 mod tests {
     use super::{
         extract_marked_path, fallback_path, parse_gateway_url, resolve_login_path, resolve_path_with,
-        sidecar_env, start_url,
+        sidecar_env, start_url, TRAY_ITEMS,
     };
 
     #[test]
@@ -345,5 +423,14 @@ mod tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .expect("the mock app should build");
         let _ = app.handle();
+    }
+
+    #[test]
+    fn tray_items_are_the_expected_set() {
+        // build_tray_menu() feeds these ids straight into the menu; the actual muda::Menu can only be
+        // constructed on the macOS main thread (which the test harness can't guarantee), so the menu
+        // *structure* is the deterministic check and the live tray is a §Visual confirmation.
+        let ids: Vec<&str> = TRAY_ITEMS.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, ["open", "quick_capture", "today", "inbox", "quit"]);
     }
 }

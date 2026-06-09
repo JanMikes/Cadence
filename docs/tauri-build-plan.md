@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 4 — complete. Next: Stage 5 (native shell — full pass).
-- **Last completed step:** 4.2 ("Claude binary path" setting).
-- **Next step:** 5.1 (tray / menubar).
+- **Current stage:** Stage 5 — in progress (native shell — full pass).
+- **Last completed step:** 5.1 (tray / menubar).
+- **Next step:** 5.2 (global hotkey → quick-capture).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (Stage 4 done — 237 tests; claudeBinPath → CADENCE_CLAUDE_BIN).
+- **Last updated:** 2026-06-09 (5.1 done — tray menu + cargo test 9 pass).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -182,7 +182,7 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 **Stage 4 acceptance:** PATH resolver tested; explicit binary path overrides PATH. **§Visual:** Finder-launched app spawns `claude`.
 
 ## Stage 5 — Native shell (full pass)
-- [ ] **5.1 Tray / menubar.** `[visual]` `TrayIconBuilder` + menu: Open Cadence · Quick capture · Today · Inbox · — · Quit. Left-click → show+focus+unminimize main window. Icon in `icons/`.
+- [x] **5.1 Tray / menubar.** `[visual]` `TrayIconBuilder` + menu: Open Cadence · Quick capture · Today · Inbox · — · Quit. Left-click → show+focus+unminimize main window. Icon in `icons/`.
   - Verify `[auto]`: `cargo build`; `cargo test` asserts the menu builds + has the expected item ids. §Visual: tray icon shows; items act; Quit ends app + sidecar.
 - [ ] **5.2 Global hotkey → quick-capture.** `[visual]` `tauri-plugin-global-shortcut`; register `CmdOrCtrl+Shift+Space`;
   handler shows+focuses the window + `emit`s `quick-capture`. Web (feature-detected): `useTauriBridge()` listens for
@@ -219,7 +219,8 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
 > WebDriver), so they're confirmed by eye after the build is otherwise complete + machine-verified.
 - [ ] (3.x) The window renders the Cadence UI (Today/Inbox visible), not a blank page.
 - [ ] (4.x) Spawning a session on a task from the Finder-launched `.app` finds `claude` and streams.
-- [ ] (5.1) Tray icon visible in the menubar; menu items work; Quit leaves no process.
+- [ ] (5.1) Tray icon in the menubar; left-click shows/focuses the window; menu = Open Cadence ·
+  Quick capture · Today · Inbox · — · Quit; "Quit Cadence" ends the app and leaves no `cadence-server`.
 - [ ] (5.2) Global hotkey from another app focuses Cadence + opens quick-capture; the task appears in Inbox.
 - [ ] (5.3) A `needs_feedback`/`delivered` event shows a native macOS notification banner.
 - [ ] (5.4) Launching a 2nd time focuses the running window (no duplicate).
@@ -407,3 +408,18 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   field renders; `bun test` 237 pass (+1); `bun run build` + `bun run typecheck` green. Stage 4
   complete — the sidecar inherits a real PATH and an explicit `claude` path can override it. *Next:*
   5.1 — tray / menubar (`TrayIconBuilder` + menu; first Stage 5 native-shell step).
+
+- **2026-06-09 · 5.1 (tray / menubar).** Added a menubar/tray icon in `lib.rs`: `build_tray_menu`
+  (factored out, driven by a `TRAY_ITEMS` const) → Open Cadence · Quick capture · Today · Inbox · —
+  · Quit; `setup_tray` wires `on_menu_event` (open/today/inbox → show+focus +`emit("tray-navigate")`;
+  quick_capture → show + `emit("quick-capture")`; quit → `app.exit(0)` → RunEvent::Exit → kill_sidecar)
+  and `on_tray_icon_event` (left-click → show+unminimize+focus via `show_main`). Built non-fatally in
+  `setup()` (logs on failure). Enabled the tauri **`tray-icon`** feature; added `Emitter` import.
+  **Deviation (recorded):** the planned "cargo test asserts the menu builds" can't run as written —
+  `muda::Menu` must be constructed on the macOS **main thread**, which the cargo-test harness can't
+  guarantee (it panicked off-thread). So the deterministic check asserts the menu's item-id set
+  (`TRAY_ITEMS`, which `build_tray_menu` consumes verbatim); the live menu construction + behaviour is
+  the §Visual confirmation — same OS-bound-defer philosophy as the WKWebView limitation. **Verified:**
+  `cargo build` clean; `cargo test` 9 pass (incl. `tray_items_are_the_expected_set`); `bun test`
+  237 pass; `bun run build` green. §Visual (5.1) refined in the checklist. *Next:* 5.2 — global hotkey
+  `CmdOrCtrl+Shift+Space` → quick-capture (Rust shortcut + feature-detected web `useTauriBridge`).
