@@ -22,6 +22,21 @@ export function modelForRole(role?: string): string | undefined {
   }
 }
 
+/**
+ * Hard per-run ceiling (§6.1.g) so no one-shot can burn tokens forever: read stages
+ * 15 min; implementer/verifier (real builds + tests) 60 min. Callers may override via
+ * opts.timeoutMs; an explicit 0 disables the ceiling. Becomes a Settings knob in 6.3.e.
+ */
+export function defaultStageTimeoutMs(role?: string): number {
+  switch (role) {
+    case "implementer":
+    case "verifier":
+      return 60 * 60_000;
+    default:
+      return 15 * 60_000;
+  }
+}
+
 export interface AgentRunOptions {
   cwd: string;
   prompt: string;
@@ -138,13 +153,15 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
       }
     };
 
-    const timer = opts.timeoutMs
+    const timeoutMs = opts.timeoutMs ?? defaultStageTimeoutMs(opts.role);
+    const timer = timeoutMs
       ? setTimeout(() => {
           if (child.pid != null) killGroup(child.pid, "SIGKILL");
           else child.kill("SIGKILL");
           reject(new Error("agent timed out"));
-        }, opts.timeoutMs)
+        }, timeoutMs)
       : null;
+    if (timer && typeof timer.unref === "function") timer.unref();
     child.stdout?.on("data", (c: Buffer) => {
       buf += c.toString();
       for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {

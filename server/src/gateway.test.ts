@@ -3,7 +3,9 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ServerMessage, Task } from "@cadence/shared";
+import { eq } from "drizzle-orm";
 import { migrateDb, openDb, type Db } from "./db/client";
+import { sessions, tasks as tasksTable } from "./db/schema";
 import { startGateway, type Gateway } from "./gateway";
 import { bootstrap } from "./store/store";
 
@@ -1233,4 +1235,63 @@ test("WS connect receives hello, then a broadcast", async () => {
   ws.close();
   expect(received[0]).toMatchObject({ type: "hello", app: "Cadence" });
   expect(received[1]).toEqual({ type: "event", name: "test", payload: 42 });
+});
+
+test("POST /api/sessions/clear-finished drops finished agent rows, keeps live + warm (§6.1.g)", async () => {
+  const seed = (over: Partial<typeof sessions.$inferInsert> = {}): string => {
+    const id = crypto.randomUUID();
+    db.insert(sessions)
+      .values({
+        id,
+        role: "discovery",
+        kind: "oneshot",
+        status: "done",
+        cwd: "/tmp",
+        costUsd: 0,
+        startedAt: Date.now(),
+        ...over,
+      })
+      .run();
+    return id;
+  };
+  const done = seed({ status: "done" });
+  const failed = seed({ status: "failed" });
+  const killed = seed({ status: "killed" });
+  const liveOneshot = seed({ status: "running" });
+  const warmDone = seed({ kind: "warm", role: "chat", status: "done" });
+
+  const r = (await fetch(`${gw.url}/api/sessions/clear-finished`, { method: "POST" }).then((x) =>
+    x.json(),
+  )) as { cleared: number };
+  expect(r.cleared).toBeGreaterThanOrEqual(3); // ours + whatever earlier tests left behind
+
+  const left = (await fetch(`${gw.url}/api/sessions`).then((x) => x.json())) as Array<{ id: string }>;
+  const ids = new Set(left.map((s) => s.id));
+  expect(ids.has(done)).toBe(false);
+  expect(ids.has(failed)).toBe(false);
+  expect(ids.has(killed)).toBe(false);
+  expect(ids.has(liveOneshot)).toBe(true); // a live run is never cleared
+  expect(ids.has(warmDone)).toBe(true); // warm chat history is never cleared
+});
+
+test("/api/attention surfaces a refining task with no live run as stalled (§6.1.g)", async () => {
+  const task = await createViaApi("interrupted refinement");
+  const moved = await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "refining" }),
+  });
+  expect(moved.status).toBe(200);
+  // age it past the 60s "just dispatched" grace so the feed treats it as interrupted
+  db.update(tasksTable)
+    .set({ updatedAt: Date.now() - 120_000 })
+    .where(eq(tasksTable.id, task.id))
+    .run();
+
+  const att = (await fetch(`${gw.url}/api/attention`).then((r) => r.json())) as {
+    items: Array<{ kind: string; taskId?: string; summary: string }>;
+  };
+  const item = att.items.find((i) => i.kind === "stalled" && i.taskId === task.id);
+  expect(item).toBeDefined();
+  expect(item?.summary).toContain("Refinement interrupted");
 });

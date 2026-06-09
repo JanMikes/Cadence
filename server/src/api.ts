@@ -82,6 +82,7 @@ import {
   writeSettings,
 } from "./store/store";
 import {
+  clearFinishedOneshots,
   deleteSession,
   endSession,
   getSession,
@@ -433,6 +434,24 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       }
     }
 
+    // Refinement interrupted (§6.1.g): a task sitting in "refining" with no live run used
+    // to be invisible until the next gateway boot (heal) — surface it as actionable.
+    // findLiveStage also finalizes any lying zombie row it meets along the way.
+    for (const t of listTasks(ctx.db, { status: "refining", sort: "urgency" })) {
+      if (activeIds.has(t.id) || nowMs - t.updatedAt < 60_000) continue;
+      if (findLiveStage(ctx.db, t.id, "discovery")) continue;
+      items.push({
+        id: `stalled:${t.id}`,
+        kind: "stalled",
+        taskId: t.id,
+        title: t.title,
+        summary: "Refinement interrupted — no active run",
+        actionLabel: "Inspect",
+        urgency: (t.urgency ?? 0) + 1_000_000,
+        createdAt: t.updatedAt,
+      });
+    }
+
     items.sort((x, y) => y.urgency - x.urgency || x.createdAt - y.createdAt);
     return Response.json({ items, count: items.length } satisfies AttentionResponse);
   }
@@ -575,6 +594,13 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
   if (pathname === "/api/sessions" && method === "GET") {
     return Response.json(listSessions(ctx.db));
+  }
+
+  // Bulk tidy-up (§6.1.g): drop finished agent-stage rows; transcripts stay on disk.
+  if (pathname === "/api/sessions/clear-finished" && method === "POST") {
+    const cleared = clearFinishedOneshots(ctx.db);
+    if (cleared > 0) ctx.hub.broadcast({ type: "event", name: "session:deleted", payload: "" });
+    return Response.json({ cleared });
   }
 
   if (pathname === "/api/live-sessions" && method === "GET") {

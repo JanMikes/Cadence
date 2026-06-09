@@ -369,6 +369,18 @@ export function killSession(id: string): Promise<{ ok: boolean; action: string }
   );
 }
 
+/** Bulk-clear finished agent-stage rows (§6.1.g); transcripts stay on disk. */
+export function clearFinishedSessions(): Promise<{ cleared: number }> {
+  return fetch("/api/sessions/clear-finished", { method: "POST" }).then(json<{ cleared: number }>);
+}
+
+/** Manually re-run Discovery (refinement) on a task — 409s if one is already active. */
+export function refineTask(id: string): Promise<{ ran: boolean; status?: string }> {
+  return fetch(`/api/tasks/${id}/refine`, { method: "POST" }).then(
+    json<{ ran: boolean; status?: string }>,
+  );
+}
+
 export function getLiveSessions(): Promise<LiveSession[]> {
   return fetch("/api/live-sessions").then(json<LiveSession[]>);
 }

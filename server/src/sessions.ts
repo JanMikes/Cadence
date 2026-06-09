@@ -1,5 +1,5 @@
 import type { ClaudeEvent, Session, UpdateSessionInput } from "@cadence/shared";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
 import { isRunPidAlive, killGroup } from "./liveness";
@@ -76,6 +76,22 @@ export function recordTranscriptPath(db: Db, id: string, path: string): void {
 
 export function listSessions(db: Db): Session[] {
   return db.select().from(sessions).orderBy(desc(sessions.startedAt)).all();
+}
+
+const FINISHED_ONESHOT = and(
+  eq(sessions.kind, "oneshot"),
+  inArray(sessions.status, ["done", "failed", "killed"]),
+);
+
+/**
+ * Bulk-clear finished agent-stage rows (§6.1.g) — after an incident the Sessions list
+ * drowns in dead rows; one action tidies it. Transcripts stay on disk (History/search
+ * still find them); live runs and warm chats are never touched.
+ */
+export function clearFinishedOneshots(db: Db): number {
+  const rows = db.select({ id: sessions.id }).from(sessions).where(FINISHED_ONESHOT).all();
+  if (rows.length > 0) db.delete(sessions).where(FINISHED_ONESHOT).run();
+  return rows.length;
 }
 
 export function listTaskSessions(db: Db, taskId: string): Session[] {

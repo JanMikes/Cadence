@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { modelForRole, parseAgentJson, runAgent } from "./runner";
+import { defaultStageTimeoutMs, modelForRole, parseAgentJson, runAgent } from "./runner";
 
 const MOCK_CMD = [process.execPath, join(import.meta.dir, "..", "testing", "mock-agent.ts")];
 
@@ -87,4 +87,12 @@ test("runAgent spawns the child as its own process-group leader (§6.1.e) so kil
   process.kill(-(pid as unknown as number), "SIGKILL"); // group kill must work
   const res = await done; // close fires; an empty run resolves (no output) rather than hanging
   expect(res.text).toBe("");
+});
+
+test("defaultStageTimeoutMs: write-stages get 60m, read-stages 15m (§6.1.g)", () => {
+  expect(defaultStageTimeoutMs("implementer")).toBe(60 * 60_000);
+  expect(defaultStageTimeoutMs("verifier")).toBe(60 * 60_000);
+  expect(defaultStageTimeoutMs("discovery")).toBe(15 * 60_000);
+  expect(defaultStageTimeoutMs("triage")).toBe(15 * 60_000);
+  expect(defaultStageTimeoutMs(undefined)).toBe(15 * 60_000);
 });
