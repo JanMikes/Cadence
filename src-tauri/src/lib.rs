@@ -18,8 +18,18 @@ use tauri::{Manager, RunEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-/// Holds the supervised gateway child so the app can terminate it on exit (no orphaned cadence-server).
-struct SidecarChild(Mutex<Option<CommandChild>>);
+/// The supervised gateway child, in a process-global so both the in-app quit path (`RunEvent::Exit`)
+/// and the POSIX signal handler can terminate it — never orphan a cadence-server.
+static SIDECAR: Mutex<Option<CommandChild>> = Mutex::new(None);
+
+/// Kill the supervised gateway sidecar if it's still running (idempotent).
+fn kill_sidecar() {
+    if let Ok(mut guard) = SIDECAR.lock() {
+        if let Some(child) = guard.take() {
+            let _ = child.kill();
+        }
+    }
+}
 
 /// Extract the gateway origin (`http://localhost:<port>`) from a sidecar stdout line.
 fn parse_gateway_url(line: &str) -> Option<String> {
@@ -109,7 +119,7 @@ pub fn run() {
                 );
 
                 let (mut rx, child) = app.shell().sidecar("cadence-server")?.envs(env).spawn()?;
-                app.manage(SidecarChild(Mutex::new(Some(child))));
+                *SIDECAR.lock().expect("sidecar lock") = Some(child);
 
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
@@ -152,15 +162,26 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building the Cadence application");
 
-    // Ensure the supervised gateway never outlives the app (no orphaned cadence-server). The gateway
-    // also self-stops on SIGTERM as a backup.
-    app.run(|handle, event| {
-        if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
-            if let Some(state) = handle.try_state::<SidecarChild>() {
-                if let Some(child) = state.0.lock().unwrap().take() {
-                    let _ = child.kill();
-                }
+    // POSIX termination (SIGTERM/SIGINT from a supervisor, `kill`, or Ctrl-C) bypasses Tauri's
+    // RunEvent, so handle it explicitly: kill the sidecar, then exit. signal-hook delivers on a
+    // dedicated thread, so kill()+exit() here run in normal context (not an async-signal handler).
+    #[cfg(unix)]
+    std::thread::spawn(|| {
+        if let Ok(mut signals) = signal_hook::iterator::Signals::new([
+            signal_hook::consts::SIGTERM,
+            signal_hook::consts::SIGINT,
+        ]) {
+            if signals.forever().next().is_some() {
+                kill_sidecar();
+                std::process::exit(0);
             }
+        }
+    });
+
+    // The in-app quit path (Cmd-Q / window close → terminate) also cleans up the sidecar.
+    app.run(|_handle, event| {
+        if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
+            kill_sidecar();
         }
     });
 }

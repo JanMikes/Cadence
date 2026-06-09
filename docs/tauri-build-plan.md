@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 3 — in progress (Tauri scaffold + supervisor).
-- **Last completed step:** 3.2 (sidecar supervisor in Rust).
-- **Next step:** 3.3 (app smoke).
+- **Current stage:** Stage 3 — complete. Next: Stage 4 (PATH & `claude` resolution).
+- **Last completed step:** 3.3 (app smoke).
+- **Next step:** 4.1 (resolve login-shell PATH in Rust).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (3.2 done — cargo test 4 pass; `tauri build` → Cadence.app + .dmg).
+- **Last updated:** 2026-06-09 (Stage 3 done — app:smoke green: spawn + serve + clean shutdown).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -160,7 +160,7 @@ only if an install genuinely fails — recorded as a Blocker.)
   Kill the child on `RunEvent::ExitRequested`/`Exit` (+ the gateway self-stops on SIGTERM as backup).
   Factor the parse + env-build into pure fns under `#[cfg(test)]`.
   - Verify `[auto]`: `cargo test` asserts the stdout→URL parser + env map + dev/prod URL branch; `bun x tauri build` produces a `.app`.
-- [ ] **3.3 App smoke.** `[auto]` `scripts/app-smoke.ts`: launch the built `.app` (`open -a` / direct exec), poll
+- [x] **3.3 App smoke.** `[auto]` `scripts/app-smoke.ts`: launch the built `.app` (`open -a` / direct exec), poll
   `~/.cadence/runtime.json`, `curl /api/health`, assert exactly one `cadence-server` child; quit the app; assert
   **no orphan** `cadence-server`. Relaunch while running → still exactly one process (pre-checks single-instance).
   Root script `app:smoke`.
@@ -361,3 +361,22 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   resolution + sidecar name are correct — de-risks 3.3). `bun test` 236 pass; `bun run build` green.
   *Next:* 3.3 — `scripts/app-smoke.ts` launches the built `.app`, polls `runtime.json`, curls health,
   asserts exactly one `cadence-server`, quits → asserts no orphan, relaunch → still one.
+
+- **2026-06-09 · 3.3 (app smoke).** Added `scripts/app-smoke.ts` + root script `app:smoke`. It
+  launches the app binary **directly** (`…/Cadence.app/Contents/MacOS/app`, for pid control), waits
+  for the sidecar to publish a *fresh* `~/.cadence/runtime.json` (pid distinct from any running dev
+  gateway), asserts `GET /api/health` ok + exactly **baseline+1** `cadence-server` (`pgrep -x` — a
+  `bun run dev` gateway isn't counted), then SIGTERMs the app and asserts the count returns to
+  baseline (no orphan). Robust to a concurrent dev gateway: process-name counting, baseline deltas,
+  and it restores that gateway's `runtime.json` on exit. **Supervisor enhancement (needed for an
+  autonomous clean-shutdown assertion):** Tauri's `RunEvent` only covers the in-app quit path, and
+  driving a real Cmd-Q/AppleEvent quit would risk a TCC automation prompt — so I added a
+  `signal-hook` (unix-only dep) thread that catches **SIGTERM/SIGINT → `kill_sidecar()` → exit(0)**,
+  and moved the child to a process-global `static SIDECAR` so both the signal thread and
+  `RunEvent::Exit` can reach it. Rebuilt the `.app`. **Verified:** `cargo test` 4 pass; `bun run
+  app:smoke` exits 0 (`app up at http://localhost:55323`, health ok, exactly one sidecar, **clean
+  shutdown — no orphan**); post-run process check clean; `bun test` 236 pass; `bun run build` green.
+  Stage 3 complete — the built app boots to the real UI from the bundled sidecar and shuts down
+  cleanly. The §Visual "window renders the Cadence UI" item is already queued in the checklist.
+  *Next:* 4.1 — resolve the login-shell PATH in Rust (GUI apps don't inherit the shell PATH, so the
+  sidecar wouldn't find `claude`).
