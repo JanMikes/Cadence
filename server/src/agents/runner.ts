@@ -95,11 +95,13 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
   if (opts.agentsJson) args.push("--agents", opts.agentsJson);
 
   const stdout = await new Promise<string>((resolve, reject) => {
+    // Capture stderr too (don't discard it) so a failing agent run is diagnosable instead of silent.
     const child = spawn(base[0] as string, [...base.slice(1), ...args], {
       cwd: opts.cwd,
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
+    let err = "";
     const timer = opts.timeoutMs
       ? setTimeout(() => {
           child.kill("SIGKILL");
@@ -109,12 +111,20 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
     child.stdout?.on("data", (c: Buffer) => {
       out += c.toString();
     });
-    child.on("error", (err) => {
-      if (timer) clearTimeout(timer);
-      reject(err);
+    child.stderr?.on("data", (c: Buffer) => {
+      err += c.toString();
     });
-    child.on("close", () => {
+    child.on("error", (e) => {
       if (timer) clearTimeout(timer);
+      reject(e);
+    });
+    child.on("close", (code) => {
+      if (timer) clearTimeout(timer);
+      // Surface a failed/empty run instead of swallowing it (the caller turns this into a visible note).
+      if ((code && code !== 0) || out.trim() === "") {
+        const detail = err.trim() || `exit ${code ?? "?"}`;
+        console.warn(`[cadence] agent (${opts.role ?? "?"}) produced no output: ${detail.slice(0, 500)}`);
+      }
       resolve(out);
     });
   });
