@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.1.a remainder (containment for code work) → 6.1.b (DB-level dedupe).
+- **Current step:** 6.1.c (attempt budget + circuit breaker).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -114,12 +114,12 @@ zombies. Implications the fix MUST honor:
     `failed`, stranded task reset to `ready`, **no tasks left in `refining`** (heal-bait cleared, so
     restarts currently spawn nothing). Items 1–3 (stop gateway, sweep, `autonomy: false`) still
     apply **for the duration of the 6.1 code work**; re-verify the SQL/ps checks then.
-- [ ] **6.1.b DB-level in-flight dedupe.** Central guard (e.g. `canSpawnStage(db, taskId, role)` next
+- [x] **6.1.b DB-level in-flight dedupe.** Central guard (e.g. `canSpawnStage(db, taskId, role)` next
   to the recording-runner): refuse to spawn when a live one-shot session row exists for the same
   `(taskId, role)` with a **verified-alive** pid (see 6.1.d). Apply at every spawn site: capture
   pipeline (`api.ts:1199-1240`), `/refine`, heal, execution chain, fleet.
   - Verify: unit test — two concurrent discovery starts → one spawn; `/refine` during an active
-    discovery → 409 with a plain-language error.
+    discovery → 409 with a plain-language error. ✓ 2026-06-10 (`de021e7`, 10 new tests, 315 total).
 - [ ] **6.1.c Attempt budget + circuit breaker.** Cap automatic attempts per `(task, role)`:
   default **3 per 24h** (constant now; becomes a setting in 6.3.e). On breach: task →
   `needs_feedback` + auto context note “Automatic refinement halted after N failed attempts — needs
@@ -474,3 +474,12 @@ yourself.
   children of the user's interactive terminal claude sessions — not ours, not actionable. The repo
   is now safe to edit freely. NOTE for 6.1.h: restart dev gateway + restore `autonomy: true` when
   6.1 code work is done; user's web UI is DOWN until then.
+- **2026-06-10 — 6.1.b done** (`de021e7`). New `agents/stage-guard.ts`: `assertStageIdle` /
+  `findLiveStage` with honest pid liveness (`ps stat=` Z-state check; injectable `PidProbe` for
+  tests). **Decision:** single choke point = the recording runner (every task-linked one-shot flows
+  through it) instead of per-call-site guards; fleet fan-out needs no exemption because it passes no
+  `taskId` (fleet.ts:72) and is never recorded. **Decision:** pid-less rows get a 30s grace
+  (insert→onSpawn window) so a starting sibling isn't finalized mid-launch. Stale rows are finalized
+  *by the check itself* → zombie rows now retire on contact. heal pre-skips live discoveries;
+  `/refine` pre-checks → 409 (before `runDiscovery` mutates status — it flips to `refining` at
+  discovery.ts:149). 10 tests incl. the concurrent-race and zombie-retry cases.
