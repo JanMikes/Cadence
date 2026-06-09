@@ -81,11 +81,11 @@ only if an install genuinely fails — recorded as a Blocker.)
   `cargo build` + `cargo test` green before commit.
 
 ## Status snapshot ← the loop keeps this current
-- **Current stage:** Stage 1 — complete. Next: Stage 2 (self-contained sidecar).
-- **Last completed step:** 1.3 (runtime port file).
-- **Next step:** 2.1 (sidecar build script).
+- **Current stage:** Stage 2 — in progress (self-contained sidecar).
+- **Last completed step:** 2.1 (sidecar build script).
+- **Next step:** 2.2 (sidecar smoke).
 - **Blockers:** none.
-- **Last updated:** 2026-06-09 (Stage 1 done — 236 tests).
+- **Last updated:** 2026-06-09 (2.1 done — sidecar compiles to a Mach-O arm64 binary).
 
 ## Rules for the loop (idempotent)
 1. **Orient** — read `CLAUDE.md`, `docs/platform-definition.md`, `docs/build-plan.md`, and this file.
@@ -128,7 +128,7 @@ only if an install genuinely fails — recorded as a Blocker.)
 **Stage 1 acceptance:** three overrides/features land with tests; `bun test` count rises; build green. No toolchain used.
 
 ## Stage 2 — Self-contained sidecar (auto-verifiable smoke)
-- [ ] **2.1 Sidecar build script.** `[auto]` `scripts/build-sidecar.ts` (run via `bun`): compute the Rust host
+- [x] **2.1 Sidecar build script.** `[auto]` `scripts/build-sidecar.ts` (run via `bun`): compute the Rust host
   triple (`rustc --print host-tuple`, fallback parse `rustc -vV | grep host`), map to the `bun build --compile`
   target (`aarch64-apple-darwin→bun-darwin-arm64`, `x86_64-apple-darwin→bun-darwin-x64`, `*linux*→bun-linux-…`),
   compile `server/src/index.ts --compile --minify --sourcemap --outfile src-tauri/binaries/cadence-server-<triple>`,
@@ -291,3 +291,18 @@ macOS apps launched from Finder don't inherit the shell `PATH`, so the sidecar w
   Stage 1 complete (3 relocation overrides land, test count 233→236). *Next:* 2.1 — `scripts/build-sidecar.ts`.
   NOTE for next iter: a live dev gateway may be running on **4477** (watch mode); tests use temp homes
   + port 0, so they're isolated from it.
+
+- **2026-06-09 · 2.1 (sidecar build script).** Added `scripts/build-sidecar.ts` + root script
+  `sidecar:build`. It resolves the Rust host triple (`rustc --print host-tuple`, falling back to
+  `~/.cargo/bin/rustc` and to parsing `rustc -vV` — robust when rustc isn't on a `bun run` PATH),
+  maps it to a Bun compile target (`aarch64-apple-darwin → bun-darwin-arm64`, x64/linux/windows
+  handled), then `bun build server/src/index.ts --compile --minify --sourcemap --target=<t> --outfile
+  src-tauri/binaries/cadence-server-<triple>` and stages `web/dist → resources/web` +
+  `server/drizzle → resources/drizzle` (rm+cp, fails loudly if `web/dist` is missing). The triple
+  suffix matches Tauri's `externalBin` sidecar resolution. Verified: `bun run --filter @cadence/web
+  build` then `bun run sidecar:build` → `cadence-server-aarch64-apple-darwin` is a **Mach-O 64-bit
+  arm64 executable**, `resources/web/index.html` + all 5 drizzle migrations present; `git status`
+  shows only `package.json` + `scripts/` (artifacts git-ignored, confirmed via `git check-ignore`);
+  `bun test` 236 pass; `bun run build` green. *Next:* 2.2 — `scripts/sidecar-smoke.ts` runs the
+  compiled binary on a clean tmp home (port 0) and curls `/api/health`, retiring the
+  `bun:sqlite`/static-serving packaging risk.
