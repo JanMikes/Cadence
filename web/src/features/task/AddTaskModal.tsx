@@ -1,9 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import type { ReviewDirection, ReviewInspectResult } from "@cadence/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { GitPullRequest, Plus, X } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { createTask } from "../../lib/api";
+import { createTask, getProjects, inspectReviewUrl } from "../../lib/api";
 import { isTauri } from "../../lib/tauri";
+
+/** First PR/MR-looking URL in the text (cheap client check; the server parses properly). */
+export function firstPrUrl(text: string): string | null {
+  return text.match(/https?:\/\/\S+\/(?:pull|-\/merge_requests)\/\d+/)?.[0] ?? null;
+}
 
 /** True when focus is in a text field, so a bare-key shortcut shouldn't hijack it. */
 function isTypingTarget(el: EventTarget | null): boolean {
@@ -49,6 +55,23 @@ export function AddTaskModal({
   const qc = useQueryClient();
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");
+  // Review detection (§6.5.a, propose-don't-impose): a pasted PR/MR URL proposes a
+  // code-review task with inferred direction + matched project — all editable chips.
+  const [reviewEnabled, setReviewEnabled] = useState(true);
+  const [direction, setDirection] = useState<ReviewDirection>("perform");
+  const detectedUrl = firstPrUrl(`${body}\n${title}`);
+  const inspect = useQuery({
+    queryKey: ["review-inspect", detectedUrl],
+    queryFn: () => inspectReviewUrl(detectedUrl as string),
+    enabled: open && detectedUrl != null,
+    staleTime: 60_000,
+  });
+  const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects, enabled: open });
+  const review: ReviewInspectResult | null = detectedUrl ? (inspect.data ?? null) : null;
+  // Adopt the server's inferred direction whenever a new inspection lands.
+  useEffect(() => {
+    if (review?.ref) setDirection(review.direction);
+  }, [review?.ref?.url, review?.direction]);
 
   // Global shortcut: press "c" to open (when not typing in a field); Esc to close.
   useEffect(() => {
@@ -72,6 +95,8 @@ export function AddTaskModal({
     if (open) {
       setBody("");
       setTitle("");
+      setReviewEnabled(true);
+      setDirection("perform");
     }
   }, [open]);
 
@@ -79,7 +104,18 @@ export function AddTaskModal({
   // refinement agent names the task automatically.
   const create = useMutation({
     mutationFn: () =>
-      createTask({ title: title.trim() || undefined, body: body.trim() || undefined }),
+      createTask({
+        title: title.trim() || undefined,
+        body: body.trim() || undefined,
+        ...(review?.ref && reviewEnabled
+          ? {
+              taskType: "code_review" as const,
+              reviewDirection: direction,
+              reviewRef: review.ref.url,
+              ...(review.projectSlug ? { project: review.projectSlug } : {}),
+            }
+          : {}),
+      }),
     onSuccess: (task) => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       onOpenChange(false);
@@ -145,6 +181,52 @@ export function AddTaskModal({
               rows={4}
               className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
+            {review?.ref ? (
+              <div className="flex flex-col gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <GitPullRequest className="size-3.5 shrink-0 text-primary" />
+                  <span className="font-medium">
+                    Looks like a code review — {review.ref.owner}/{review.ref.repo}
+                    {review.ref.kind === "pr" ? " PR " : " MR "}#{review.ref.number}
+                  </span>
+                  <label className="ml-auto flex items-center gap-1 text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={reviewEnabled}
+                      onChange={(e) => setReviewEnabled(e.target.checked)}
+                    />
+                    Create as review
+                  </label>
+                </div>
+                {reviewEnabled ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={direction}
+                      onChange={(e) => setDirection(e.target.value as ReviewDirection)}
+                      aria-label="Review direction"
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    >
+                      <option value="perform">Review their PR/MR</option>
+                      <option value="address">Address feedback on my PR/MR</option>
+                    </select>
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                      {review.projectSlug
+                        ? `Project: ${
+                            projects.data?.find((p) => p.slug === review.projectSlug)?.name ??
+                            review.projectSlug
+                          }`
+                        : "No matching project"}
+                    </span>
+                    {review.author ? (
+                      <span className="text-muted-foreground">
+                        author @{review.author}
+                        {review.account ? ` · you @${review.account}` : ""}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}

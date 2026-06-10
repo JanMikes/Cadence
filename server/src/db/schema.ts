@@ -79,6 +79,10 @@ export const tasks = sqliteTable("tasks", {
   estimate: integer("estimate"), // minutes
   deliveryMode: text("delivery_mode"), // per-task override of project/global
   prUrl: text("pr_url"), // PR/MR opened by an auto_pr delivery (6.4.d; server-managed)
+  // standard | code_review (6.5) — reviews flow the same board with a type badge
+  taskType: text("task_type").notNull().default("standard"),
+  reviewDirection: text("review_direction"), // perform | address (when code_review)
+  reviewRef: text("review_ref"), // the PR/MR URL under review (when code_review)
   // auto|manual|dangerous override; null = inherit project ?? global (§9.1)
   permissionMode: text("permission_mode"),
   parentTaskId: text("parent_task_id"),

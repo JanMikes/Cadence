@@ -12,8 +12,10 @@ import {
   type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
+  type PrRef,
   type ProjectForgeStatus,
   type RecapDigestInput,
+  type ReviewInspectResult,
   type ResolveSuggestionInput,
   type ReviewActionInput,
   SCHEMA_VERSION,
@@ -33,7 +35,7 @@ import { approvePlan, runPlanner } from "./agents/planner";
 import { runReflector } from "./agents/reflector";
 import { AGENT_PROMPTS } from "./agents/prompts";
 import { findLiveStage } from "./agents/stage-guard";
-import { projectForgeStatus } from "./forge";
+import { inferDirection, lookupPrAuthor, parsePrUrl, parseRemote, probeCli, projectForgeStatus } from "./forge";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
@@ -128,6 +130,8 @@ export interface ApiContext {
   runAgent: AgentRunner;
   /** In-app tool-approval registry (Manual mode, §9.1). */
   approvals: ApprovalRegistry;
+  /** PR/MR author lookup for review-direction inference (injectable; default = CLI, 6.5.a). */
+  prAuthor?: (ref: PrRef) => string | null;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -158,7 +162,20 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       const body = typeof input?.body === "string" ? input.body.trim() : "";
       if (!title && !body) return badRequest("a description (or title) is required");
 
-      const task = createTask(ctx.db, { title: title || undefined, body: body || undefined });
+      const reviewCapture =
+        input.taskType === "code_review"
+          ? {
+              taskType: "code_review" as const,
+              reviewDirection: input.reviewDirection === "address" ? "address" : "perform",
+              reviewRef: typeof input.reviewRef === "string" ? input.reviewRef : undefined,
+            }
+          : {};
+      const task = createTask(ctx.db, {
+        title: title || undefined,
+        body: body || undefined,
+        ...reviewCapture,
+        ...(typeof input.project === "string" && input.project ? { project: input.project } : {}),
+      });
       ctx.hub.broadcast({ type: "event", name: "task:created", payload: task.id });
       maybeTriageOnCapture(ctx, task.id); // background; no-op unless autonomy is on
       return Response.json(task, { status: 201 });
@@ -847,6 +864,43 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const created = importProjects(ctx.db, selections);
     if (created.length) ctx.hub.broadcast({ type: "event", name: "projects:imported" });
     return Response.json(created, { status: 201 });
+  }
+
+  // Capture-time review detection (§6.5.a, propose-don't-impose): parse a pasted PR/MR
+  // URL, match it to a known project by remote, and infer the review direction by
+  // comparing the PR author with the authenticated CLI account. Everything best-effort —
+  // the capture chips stay editable.
+  if (pathname === "/api/review/inspect" && method === "POST") {
+    let body: { url?: string };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    const ref = parsePrUrl(body?.url ?? "");
+    if (!ref) {
+      return Response.json({
+        ref: null,
+        projectSlug: null,
+        author: null,
+        account: null,
+        direction: "perform",
+      } satisfies ReviewInspectResult);
+    }
+    let projectSlug: string | null = null;
+    let account: string | null = null;
+    for (const project of listProjects(ctx.db)) {
+      const remote = parseRemote(project.gitRemote, project.forgeOverride);
+      if (remote && remote.host === ref.host && remote.owner === ref.owner && remote.repo === ref.repo) {
+        projectSlug = project.slug;
+        account = projectForgeStatus(project.gitRemote, project.forgeOverride).cli?.account ?? null;
+        break;
+      }
+    }
+    if (account == null) account = probeCli(ref.forge === "github" ? "gh" : "glab").account;
+    const author = ctx.prAuthor ? ctx.prAuthor(ref) : lookupPrAuthor(ref);
+    const direction = inferDirection(author, account);
+    return Response.json({ ref, projectSlug, author, account, direction } satisfies ReviewInspectResult);
   }
 
   // The agent prompt registry + current overrides — powers Settings → Agents & Prompts (6.3.c).

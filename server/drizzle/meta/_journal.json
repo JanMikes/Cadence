@@ -57,6 +57,13 @@
       "when": 1781053113629,
       "tag": "0007_graceful_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1781053624102,
+      "tag": "0008_dazzling_ma_gnuci",
+      "breakpoints": true
     }
   ]
 }

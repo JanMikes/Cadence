@@ -20,6 +20,12 @@ export interface CreateTaskArgs {
    *  (first line, trimmed) and the refinement pipeline names the task properly. */
   title?: string;
   body?: string;
+  /** Capture-time review classification (6.5.a). */
+  taskType?: string;
+  reviewDirection?: string;
+  reviewRef?: string;
+  /** Project slug proposed at capture (e.g. matched from the PR/MR repo). */
+  project?: string;
 }
 
 /** Derive a provisional title from a description: its first line, squashed and
@@ -45,7 +51,21 @@ export function createTask(db: Db, args: CreateTaskArgs): Task {
   if (!title) throw new Error("createTask: a title or description is required");
   const id = crypto.randomUUID();
   writeTask(
-    { id, title, status: "inbox", ...(explicit ? {} : { titleGenerated: true }) },
+    {
+      id,
+      title,
+      status: "inbox",
+      ...(explicit ? {} : { titleGenerated: true }),
+      // Capture-time review classification (6.5.a) — proposed by the capture chips.
+      ...(args.taskType === "code_review"
+        ? {
+            taskType: "code_review",
+            reviewDirection: args.reviewDirection ?? "perform",
+            ...(args.reviewRef ? { reviewRef: args.reviewRef } : {}),
+          }
+        : {}),
+      ...(args.project ? { project: args.project } : {}),
+    },
     args.body ?? "",
   );
   reindexTask(db, id);
@@ -141,6 +161,9 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   if (patch.estimate !== undefined) next.estimate = patch.estimate;
   if (patch.labels !== undefined) next.labels = patch.labels;
   if (patch.deliveryMode !== undefined) next.deliveryMode = patch.deliveryMode;
+  if (patch.taskType !== undefined) next.taskType = patch.taskType;
+  if (patch.reviewDirection !== undefined) next.reviewDirection = patch.reviewDirection;
+  if (patch.reviewRef !== undefined) next.reviewRef = patch.reviewRef;
   if (patch.permissionMode !== undefined) next.permissionMode = patch.permissionMode;
   if (patch.project !== undefined) next.project = patch.project; // slug; reindex → projectId
   if (patch.fleet !== undefined) next.fleet = patch.fleet;
@@ -199,6 +222,9 @@ function toTask(row: typeof tasks.$inferSelect): Task {
     estimate: row.estimate,
     deliveryMode: row.deliveryMode,
     prUrl: row.prUrl,
+    taskType: row.taskType,
+    reviewDirection: row.reviewDirection,
+    reviewRef: row.reviewRef,
     permissionMode: row.permissionMode,
     parentTaskId: row.parentTaskId,
     createdAt: row.createdAt,

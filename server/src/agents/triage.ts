@@ -22,6 +22,10 @@ export interface TriageJson {
   priority?: string;
   deadline?: string | null;
   labels?: string[];
+  /** Review classification (6.5.a) — adopted only when capture didn't already decide. */
+  taskType?: string;
+  reviewDirection?: string;
+  reviewRef?: string | null;
 }
 
 export interface TriageOutcome {
@@ -65,6 +69,13 @@ export function applyTriage(db: Db, taskId: string, j: TriageJson): TriageOutcom
 
   const patch: Parameters<typeof updateTask>[2] = { status: "triaged" };
   if (agentTitle) patch.title = agentTitle;
+  // Review classification (6.5.a): triage may recognize a review task captured as plain
+  // text — but a capture-time decision (the chips) always wins, never overwrite it.
+  if (j.taskType === "code_review" && getTaskDetail(db, taskId)?.taskType !== "code_review") {
+    patch.taskType = "code_review";
+    patch.reviewDirection = j.reviewDirection === "address" ? "address" : "perform";
+    if (j.reviewRef?.trim()) patch.reviewRef = j.reviewRef.trim();
+  }
   if (j.projectSlug) patch.project = j.projectSlug;
   if (j.priority) patch.priority = j.priority;
   if (Array.isArray(j.labels) && j.labels.length) patch.labels = j.labels;

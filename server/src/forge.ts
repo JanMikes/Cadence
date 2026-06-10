@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import type { ForgeCliStatus, ForgeInfo, ForgeKind } from "@cadence/shared";
+import type { ForgeCliStatus, ForgeInfo, ForgeKind, PrRef } from "@cadence/shared";
 
 /**
  * Forge detection (plan §6.4) — understand whether a project lives on GitHub or
@@ -46,6 +46,87 @@ export function parseRemote(
   const forge: ForgeKind | null =
     override ?? (h.includes("github") ? "github" : h.includes("gitlab") ? "gitlab" : null);
   return { forge, host, owner, repo, webUrl: `https://${host}/${owner}/${repo}` };
+}
+
+/**
+ * Find the first PR/MR URL inside arbitrary text (6.5.a — capture pastes a URL in
+ * prose). GitLab's `/-/merge_requests/` shape is matched first (it's unambiguous);
+ * then the GitHub-shaped `/owner/repo/pull/N`.
+ */
+export function parsePrUrl(text: string | null | undefined): PrRef | null {
+  if (!text) return null;
+  const mr = text.match(/https?:\/\/([\w.-]+)\/((?:[\w.-]+\/)+[\w.-]+)\/-\/merge_requests\/(\d+)/i);
+  if (mr) {
+    const segments = (mr[2] as string).split("/").filter(Boolean);
+    const repo = segments[segments.length - 1] as string;
+    const owner = segments.slice(0, -1).join("/");
+    if (!owner) return null;
+    return {
+      forge: "gitlab",
+      host: mr[1] as string,
+      owner,
+      repo,
+      number: Number(mr[3]),
+      kind: "mr",
+      url: mr[0],
+    };
+  }
+  const pr = text.match(/https?:\/\/([\w.-]+)\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/i);
+  if (pr) {
+    return {
+      forge: "github",
+      host: pr[1] as string,
+      owner: pr[2] as string,
+      repo: pr[3] as string,
+      number: Number(pr[4]),
+      kind: "pr",
+      url: pr[0],
+    };
+  }
+  return null;
+}
+
+/**
+ * Best-effort PR/MR author lookup via the matching CLI (6.5.a — drives the
+ * perform/address direction inference). Null when the CLI is missing, slow or the
+ * output shape drifts — inference then defaults to "perform" and the user can flip
+ * the chip. ⚠ glab JSON output verified against docs, not live.
+ */
+export function lookupPrAuthor(ref: PrRef, exec: CliExec = realExec): string | null {
+  try {
+    if (ref.forge === "github") {
+      const out = exec("gh", [
+        "pr",
+        "view",
+        String(ref.number),
+        "--repo",
+        `${ref.owner}/${ref.repo}`,
+        "--json",
+        "author",
+        "--jq",
+        ".author.login",
+      ]);
+      return out.trim().split("\n")[0]?.trim() || null;
+    }
+    const out = exec("glab", [
+      "mr",
+      "view",
+      String(ref.number),
+      "--repo",
+      `${ref.owner}/${ref.repo}`,
+      "--output",
+      "json",
+    ]);
+    const j = JSON.parse(out) as { author?: { username?: string } };
+    return j.author?.username?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Direction inference (6.5.a): my own PR → I'm addressing feedback; otherwise I review. */
+export function inferDirection(author: string | null, account: string | null): "perform" | "address" {
+  return author && account && author.toLowerCase() === account.toLowerCase() ? "address" : "perform";
 }
 
 // ---------------------------------------------------------------- CLI probing

@@ -21,6 +21,7 @@ import type {
   OpenTerminalResult,
   Project,
   ProjectForgeStatus,
+  ReviewInspectResult,
   Proposal,
   QAChannel,
   SavedSearch,
@@ -487,6 +488,15 @@ export function updateSettings(
 /** The agent prompt registry + current overrides (Settings → Agents & Prompts, §6.3.c). */
 export function getAgentPrompts(): Promise<AgentPromptInfo[]> {
   return fetch("/api/agents/prompts").then(json<AgentPromptInfo[]>);
+}
+
+/** Capture-time review detection for a pasted PR/MR URL (§6.5.a). */
+export function inspectReviewUrl(url: string): Promise<ReviewInspectResult> {
+  return fetch("/api/review/inspect", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ url }),
+  }).then(json<ReviewInspectResult>);
 }
 
 /** A project's forge status: parsed remote + matching CLI capability (§6.4). */

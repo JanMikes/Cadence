@@ -34,6 +34,8 @@ export interface GatewayOptions {
   openTerminal?: (app: string, command: string) => void;
   /** Override the import enricher (tests pass a mock to avoid a real claude call). */
   enrich?: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
+  /** Override the PR/MR author lookup (tests avoid real gh/glab calls, 6.5.a). */
+  prAuthor?: (ref: import("@cadence/shared").PrRef) => string | null;
   /** Override the one-shot agent runner (tests pass a mock; default real claude). */
   runAgent?: AgentRunner;
 }
@@ -136,6 +138,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
           activity,
           openTerminal: opts.openTerminal ?? openInTerminal,
           enrich: opts.enrich ?? claudeEnrich,
+          prAuthor: opts.prAuthor,
           runAgent: runAgentImpl,
           approvals,
         });

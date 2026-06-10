@@ -34,6 +34,7 @@ beforeAll(() => {
     startWatcher: false,
     openTerminal: (app, command) => terminalLaunches.push({ app, command }),
     enrich: async (cwd) => ({ description: `mock description for ${cwd}`, stack: "bun" }),
+    prAuthor: () => "octocat", // deterministic review-direction input (no real gh/glab)
     // Role-aware mock so the autonomy pipeline runs a realistic refinement loop.
     runAgent: async (opts) => {
       let json: object;
@@ -1429,4 +1430,59 @@ test("GET /api/projects/:slug/forge detects the forge from the remote (§6.4.a/b
     r.json(),
   )) as typeof status;
   expect(overridden.remote?.forge).toBe("gitlab");
+});
+
+test("review capture (§6.5.a): POST /api/tasks with review fields round-trips", async () => {
+  const created = (await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      body: "review https://github.com/acme/widget/pull/9",
+      taskType: "code_review",
+      reviewDirection: "address",
+      reviewRef: "https://github.com/acme/widget/pull/9",
+    }),
+  }).then((r) => r.json())) as Task & { taskType: string; reviewDirection: string; reviewRef: string };
+  expect(created.taskType).toBe("code_review");
+  expect(created.reviewDirection).toBe("address");
+  expect(created.reviewRef).toBe("https://github.com/acme/widget/pull/9");
+
+  // persisted through markdown ⇄ index
+  const fetched = (await fetch(`${gw.url}/api/tasks/${created.id}`).then((r) => r.json())) as typeof created;
+  expect(fetched.taskType).toBe("code_review");
+  expect(fetched.reviewDirection).toBe("address");
+});
+
+test("POST /api/review/inspect parses the URL, matches the project, infers direction (§6.5.a)", async () => {
+  await fetch(`${gw.url}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Inspect Repo", gitRemote: "git@github.com:acme/inspect.git" }),
+  });
+
+  const r = (await fetch(`${gw.url}/api/review/inspect`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "see https://github.com/acme/inspect/pull/12 plz" }),
+  }).then((x) => x.json())) as {
+    ref: { owner: string; repo: string; number: number } | null;
+    projectSlug: string | null;
+    author: string | null;
+    direction: string;
+  };
+  expect(r.ref?.owner).toBe("acme");
+  expect(r.ref?.repo).toBe("inspect");
+  expect(r.ref?.number).toBe(12);
+  expect(r.projectSlug).toBe("inspect-repo");
+  expect(r.author).toBe("octocat"); // injected by the harness — no real gh call
+  expect(["perform", "address"]).toContain(r.direction);
+
+  // a non-review URL inspects to ref:null with a safe default direction
+  const none = (await fetch(`${gw.url}/api/review/inspect`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/nothing" }),
+  }).then((x) => x.json())) as { ref: null; direction: string };
+  expect(none.ref).toBeNull();
+  expect(none.direction).toBe("perform");
 });

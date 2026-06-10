@@ -110,6 +110,12 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 /** Deadline-driven urgency banding (Principle 12) — drives board order + badges. */
 export type UrgencyTier = "overdue" | "due_soon" | "upcoming" | "none";
 
+export const REVIEW_DIRECTIONS = ["perform", "address"] as const;
+/** "perform" = I review someone's PR/MR · "address" = fix feedback on my own PR/MR (6.5). */
+export type ReviewDirection = (typeof REVIEW_DIRECTIONS)[number];
+/** Task flavors (6.5): standard work item vs a code review flowing the same board. */
+export type TaskType = "standard" | "code_review";
+
 export interface Task {
   id: string;
   title: string;
@@ -124,6 +130,12 @@ export interface Task {
   permissionMode: string | null; // explicit override (null = inherit project ?? global)
   /** The PR/MR opened by an auto_pr delivery (6.4.d). Server-managed. */
   prUrl: string | null;
+  /** Task flavor (6.5): "standard" (default) or "code_review". */
+  taskType: string;
+  /** Review direction when taskType is code_review (6.5). */
+  reviewDirection: string | null;
+  /** The PR/MR under review (URL), when taskType is code_review (6.5). */
+  reviewRef: string | null;
   parentTaskId: string | null;
   createdAt: number;
   updatedAt: number;
@@ -138,6 +150,13 @@ export interface CreateTaskInput {
   title?: string;
   /** The description — the primary capture field. At least one of title/body is required. */
   body?: string;
+  /** Capture-time review classification (6.5.a) — set by the capture chips. */
+  taskType?: TaskType;
+  reviewDirection?: ReviewDirection;
+  /** The PR/MR URL under review. */
+  reviewRef?: string;
+  /** Project slug proposed at capture (e.g. matched from the PR/MR repo). */
+  project?: string;
 }
 
 /** A ranked search result (FTS5 over task text). */
@@ -227,6 +246,9 @@ export interface TaskDetail extends Task {
 export interface UpdateTaskInput {
   title?: string;
   body?: string;
+  taskType?: TaskType;
+  reviewDirection?: ReviewDirection | null;
+  reviewRef?: string | null;
   status?: string;
   priority?: string | null;
   deadline?: number | null; // epoch ms
@@ -557,6 +579,30 @@ export interface AgentPromptInfo {
   variables: Array<{ name: string; doc: string }>;
   defaultTemplate: string;
   override: AgentOverride | null;
+}
+
+/** A PR/MR reference parsed from a URL (6.5.a). */
+export interface PrRef {
+  forge: ForgeKind;
+  host: string;
+  owner: string;
+  repo: string;
+  number: number;
+  kind: "pr" | "mr";
+  url: string;
+}
+
+/** POST /api/review/inspect — capture-time review detection (6.5.a, propose-don't-impose). */
+export interface ReviewInspectResult {
+  ref: PrRef | null;
+  /** Slug of the project whose remote matches the PR/MR repo, if any. */
+  projectSlug: string | null;
+  /** PR/MR author login (best-effort CLI lookup; null when unavailable). */
+  author: string | null;
+  /** The authenticated CLI account (from the forge probe; null when unavailable). */
+  account: string | null;
+  /** Inferred: author === account → "address" (it's my PR), else "perform". */
+  direction: ReviewDirection;
 }
 
 /** Git forge kinds Cadence understands (6.4). */

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { _clearForgeCache, type CliExec, parseRemote, probeCli, projectForgeStatus } from "./forge";
+import { _clearForgeCache, type CliExec, inferDirection, parsePrUrl, parseRemote, probeCli, projectForgeStatus } from "./forge";
 
 afterEach(() => _clearForgeCache());
 
@@ -120,4 +120,34 @@ test("projectForgeStatus: probes the matching CLI, caches, and refresh busts the
   const none = projectForgeStatus("git@code.acme.dev:x/y.git", null, { exec: () => "never" });
   expect(none.remote?.forge).toBeNull();
   expect(none.cli).toBeNull();
+});
+
+// --- parsePrUrl + direction inference (§6.5.a) -------------------------------
+
+test("parsePrUrl: github PRs, gitlab MRs (incl. subgroups), URLs inside prose", () => {
+  expect(parsePrUrl("https://github.com/acme/widget/pull/42")).toEqual({
+    forge: "github",
+    host: "github.com",
+    owner: "acme",
+    repo: "widget",
+    number: 42,
+    kind: "pr",
+    url: "https://github.com/acme/widget/pull/42",
+  });
+  const mr = parsePrUrl("please review https://gitlab.com/grp/sub/app/-/merge_requests/7 today");
+  expect(mr?.forge).toBe("gitlab");
+  expect(mr?.owner).toBe("grp/sub");
+  expect(mr?.repo).toBe("app");
+  expect(mr?.number).toBe(7);
+  expect(mr?.kind).toBe("mr");
+  expect(parsePrUrl("no links here")).toBeNull();
+  expect(parsePrUrl("https://github.com/acme/widget/issues/3")).toBeNull(); // issues ≠ reviews
+});
+
+test("inferDirection: my own PR → address; anything uncertain → perform", () => {
+  expect(inferDirection("janmikes", "janmikes")).toBe("address");
+  expect(inferDirection("JanMikes", "janmikes")).toBe("address"); // case-insensitive
+  expect(inferDirection("someone", "janmikes")).toBe("perform");
+  expect(inferDirection(null, "janmikes")).toBe("perform");
+  expect(inferDirection("someone", null)).toBe("perform");
 });
