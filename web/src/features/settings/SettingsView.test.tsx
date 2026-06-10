@@ -13,8 +13,8 @@ test("SettingsView renders the preferred-terminal + global default controls", ()
   );
   expect(html).toContain("Settings");
   expect(html).toContain("Preferred terminal");
-  expect(html).toContain("Terminal");
-  expect(html).toContain("iTerm");
+  expect(html).toContain("Terminal"); // the selected value shows in the combobox control
+  expect(html).toContain('role="combobox"'); // selects are type-to-filter comboboxes now
   expect(html).toContain("Claude binary path");
   expect(html).toContain("Save settings");
 });

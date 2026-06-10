@@ -22,6 +22,7 @@ import {
 import { type FormEvent, type KeyboardEvent, useState } from "react";
 import { ChipSelect } from "../../components/ChipSelect";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { SelectBox } from "../../components/SelectBox";
 import { Modal } from "../../components/Modal";
 import { toast } from "../../components/Toaster";
 import {
@@ -136,6 +137,20 @@ export function RecurringView({ onOpenTask }: { onOpenTask: (taskId: string) => 
 
       {recurring.isLoading ? (
         <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
+      ) : recurring.isError ? (
+        // No silent dead end: a failing endpoint says so and offers a retry,
+        // instead of hiding behind a long "Loading…" or a fake empty state.
+        <div className="mt-8 flex flex-col items-start gap-2 rounded-lg border border-red-400/40 bg-red-400/5 p-4">
+          <p className="text-sm font-medium text-red-400">Couldn't load recurring tasks</p>
+          <p className="text-sm text-muted-foreground">{(recurring.error as Error).message}</p>
+          <LabeledIconButton
+            icon={<Repeat />}
+            label="Try again"
+            size="sm"
+            variant="secondary"
+            onClick={() => void recurring.refetch()}
+          />
+        </div>
       ) : items.length === 0 ? (
         <div className="mt-8 flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-10 text-center">
           <Repeat className="size-8 text-muted-foreground" />
@@ -461,22 +476,21 @@ export function RecurringEditor({
 
           {cadence === "monthly" ? (
             <div className="flex flex-col gap-1">
-              <label className="flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 text-sm">
                 <span className="text-xs font-medium text-muted-foreground">On the</span>
-                <select
-                  value={dayOfMonth}
-                  onChange={(e) => setDayOfMonth(Number(e.target.value))}
-                  aria-label="Day of month"
-                  className="rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={d}>
-                      {ordinal(d)}
-                    </option>
-                  ))}
-                </select>
+                <SelectBox
+                  label="Day of month"
+                  size="sm"
+                  className="w-24"
+                  value={String(dayOfMonth)}
+                  onChange={(v) => setDayOfMonth(Number(v))}
+                  options={Array.from({ length: 31 }, (_, i) => i + 1).map((d) => ({
+                    value: String(d),
+                    label: ordinal(d),
+                  }))}
+                />
                 <span className="text-xs font-medium text-muted-foreground">of every month</span>
-              </label>
+              </div>
               {dayOfMonth >= 29 ? (
                 <p className="text-xs text-muted-foreground">
                   Months with fewer days run on their last day instead — February included.

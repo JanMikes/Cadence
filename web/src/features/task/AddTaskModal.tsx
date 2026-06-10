@@ -12,6 +12,7 @@ import {
 } from "react";
 import { ChipSelect } from "../../components/ChipSelect";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { SelectBox } from "../../components/SelectBox";
 import { toast } from "../../components/Toaster";
 import { createTask, getFleets, getProjects, getTasks, inspectReviewUrl, uploadAttachments } from "../../lib/api";
 import { isTauri } from "../../lib/tauri";
@@ -554,15 +555,17 @@ export function AddTaskModal({
                 </div>
                 {reviewEnabled ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <select
+                    <SelectBox
+                      label="Review direction"
+                      size="sm"
+                      className="w-60"
                       value={direction}
-                      onChange={(e) => setDirection(e.target.value as ReviewDirection)}
-                      aria-label="Review direction"
-                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                    >
-                      <option value="perform">Review their PR/MR</option>
-                      <option value="address">Address feedback on my PR/MR</option>
-                    </select>
+                      onChange={(v) => setDirection(v as ReviewDirection)}
+                      options={[
+                        { value: "perform", label: "Review their PR/MR" },
+                        { value: "address", label: "Address feedback on my PR/MR" },
+                      ]}
+                    />
                     {!review.projectSlug ? (
                       <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
                         No matching project

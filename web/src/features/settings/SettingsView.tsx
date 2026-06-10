@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, CalendarClock, Check, Gauge, GitPullRequest, Save, Settings2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { SelectBox } from "../../components/SelectBox";
 import { getAgentPrompts, getSettings, updateSettings } from "../../lib/api";
 import { DEFAULT_FORMATS, formatTimestamp, SYSTEM_FORMAT } from "../../lib/datetime";
 import { getAutostart, isTauri, setAutostart } from "../../lib/tauri";
@@ -143,41 +144,42 @@ function GeneralSection() {
         />
       ) : null}
 
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Preferred terminal (for one-click handoff)
-        <select value={terminal} onChange={(e) => setTerminal(e.target.value)} className={FIELD}>
-          {TERMINAL_APPS.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-      </label>
+        <SelectBox
+          label="Preferred terminal"
+          value={terminal}
+          onChange={setTerminal}
+          options={TERMINAL_APPS.map((t) => ({ value: t, label: t }))}
+        />
+      </div>
 
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Default permission mode
-        <select value={perm} onChange={(e) => setPerm(e.target.value)} className={FIELD}>
-          {PERMISSION_MODES.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </label>
+        <SelectBox
+          label="Default permission mode"
+          value={perm}
+          onChange={setPerm}
+          options={PERMISSION_MODES.map((m) => ({ value: m, label: m }))}
+        />
+      </div>
 
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Default delivery mode
-        <select value={delivery} onChange={(e) => setDelivery(e.target.value)} className={FIELD}>
-          {DELIVERY_MODES.map((m) => (
-            <option key={m} value={m} title={DELIVERY_MODE_INFO[m].description}>
-              {DELIVERY_MODE_INFO[m].label}
-            </option>
-          ))}
-        </select>
+        <SelectBox
+          label="Default delivery mode"
+          value={delivery}
+          onChange={setDelivery}
+          options={DELIVERY_MODES.map((m) => ({
+            value: m,
+            label: DELIVERY_MODE_INFO[m].label,
+            hint: DELIVERY_MODE_INFO[m].description,
+          }))}
+        />
         <span className="text-[11px] leading-snug text-muted-foreground/80">
           {DELIVERY_MODE_INFO[delivery as keyof typeof DELIVERY_MODE_INFO]?.description}
         </span>
-      </label>
+      </div>
 
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
         Default model (blank = claude default)
@@ -729,18 +731,19 @@ function AgentEditor({
         />
       </label>
 
-      <label className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
         Model for this agent
-        <select value={model} onChange={(e) => setModel(e.target.value)} className={FIELD}>
-          <option value="">Default ({def.defaultModel ?? "claude default"})</option>
-          {MODEL_OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-          {model && !MODEL_OPTIONS.includes(model) ? <option value={model}>{model}</option> : null}
-        </select>
-      </label>
+        <SelectBox
+          label="Model for this agent"
+          value={model}
+          onChange={setModel}
+          options={[
+            { value: "", label: `Default (${def.defaultModel ?? "claude default"})` },
+            ...MODEL_OPTIONS.map((m) => ({ value: m, label: m })),
+            ...(model && !MODEL_OPTIONS.includes(model) ? [{ value: model, label: model }] : []),
+          ]}
+        />
+      </div>
 
       <div className="mt-4 flex items-center justify-between">
         <button

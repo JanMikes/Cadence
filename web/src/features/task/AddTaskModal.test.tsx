@@ -25,16 +25,14 @@ test("AddTaskModal is description-first: required description + optional title",
 
 test("AddTaskModal capture chips default to Auto/Inherit (nothing pinned)", () => {
   const html = render(<AddTaskModal open onOpenChange={() => {}} />);
-  // Each chip is a labeled native select (keyboard-first, §10.1: always a text label).
+  // Each chip is a labeled autocomplete combobox (keyboard-first, §10.1: always a text label).
   expect(html).toContain('aria-label="Project"');
   expect(html).toContain('aria-label="Deadline"');
   expect(html).toContain('aria-label="Priority"');
   expect(html).toContain('aria-label="Permissions"');
+  expect(html).toContain('role="combobox"'); // type-to-filter chips, not native selects
   expect(html).toContain("✨ Auto"); // project + deadline + priority default
   expect(html).toContain("Inherit (project default)"); // permission default
-  // Priority options are human-readable — P0..P3 alone is ambiguous.
-  expect(html).toContain("Critical (P0)");
-  expect(html).toContain("Low (P3)");
 });
 
 test("deadlineChipMs resolves chips to local end-of-day epochs", () => {

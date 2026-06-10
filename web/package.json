@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@cadence/shared": "workspace:*",
+    "@headlessui/react": "^2.2.10",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-query": "^5.101.0",
     "class-variance-authority": "^0.7.1",

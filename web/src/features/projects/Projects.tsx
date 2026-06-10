@@ -21,6 +21,7 @@ import {
 import { type FormEvent, type ReactNode, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { Modal } from "../../components/Modal";
+import { SelectBox } from "../../components/SelectBox";
 import {
   checkWorktreeReadiness,
   createProject,
@@ -383,18 +384,20 @@ function RepositoryCard({ project }: { project: Project }) {
         />
       </label>
 
-      <label className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
         Forge (for self-hosted instances the host heuristic can’t classify)
-        <select
+        <SelectBox
+          label="Forge"
+          size="sm"
           value={override}
-          onChange={(e) => setOverride(e.target.value)}
-          className="rounded-md border border-border bg-card px-3 py-2 text-xs outline-none"
-        >
-          <option value="">Auto-detect from host</option>
-          <option value="github">GitHub</option>
-          <option value="gitlab">GitLab</option>
-        </select>
-      </label>
+          onChange={setOverride}
+          options={[
+            { value: "", label: "Auto-detect from host" },
+            { value: "github", label: "GitHub" },
+            { value: "gitlab", label: "GitLab" },
+          ]}
+        />
+      </div>
 
       {dirty ? (
         <div className="mt-2 flex justify-end">
@@ -486,21 +489,19 @@ export function ProjectAgentPrompts({ project }: { project: Project }) {
         Agents &amp; Prompts whenever an agent runs on this project’s tasks.
       </p>
 
-      <label className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
         Stage
-        <select
+        <SelectBox
+          label="Stage"
+          size="sm"
           value={current}
-          onChange={(e) => setRole(e.target.value)}
-          className="rounded-md border border-border bg-card px-3 py-2 text-xs outline-none"
-        >
-          {stages.map((d) => (
-            <option key={d.role} value={d.role}>
-              {d.label}
-              {(drafts[d.role] ?? "").trim() ? " ●" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
+          onChange={setRole}
+          options={stages.map((d) => ({
+            value: d.role,
+            label: `${d.label}${(drafts[d.role] ?? "").trim() ? " ●" : ""}`,
+          }))}
+        />
+      </div>
 
       <label className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
         Additional instructions (blank = none for this stage)
@@ -696,42 +697,41 @@ function ProjectFields({
           className={`${field} flex-1`}
         />
       </div>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Default permission mode
-        <select
+        <SelectBox
+          label="Default permission mode"
           value={v.defaultPermissionMode}
-          onChange={(e) => set("defaultPermissionMode", e.target.value)}
-          className={field}
-        >
-          {PERMISSION_MODES.map((m) => (
-            <option key={m} value={m}>
-              {PERMISSION_LABELS[m]}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          onChange={(val) => set("defaultPermissionMode", val)}
+          options={PERMISSION_MODES.map((m) => ({ value: m, label: PERMISSION_LABELS[m] ?? m }))}
+        />
+      </div>
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Default delivery mode
-        <select
+        <SelectBox
+          label="Default delivery mode"
           value={v.defaultDeliveryMode}
-          onChange={(e) => set("defaultDeliveryMode", e.target.value)}
-          className={field}
-        >
-          {DELIVERY_MODES.map((m) => (
-            <option key={m} value={m} title={DELIVERY_MODE_INFO[m].description}>
-              {DELIVERY_MODE_INFO[m].label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          onChange={(val) => set("defaultDeliveryMode", val)}
+          options={DELIVERY_MODES.map((m) => ({
+            value: m,
+            label: DELIVERY_MODE_INFO[m].label,
+            hint: DELIVERY_MODE_INFO[m].description,
+          }))}
+        />
+      </div>
+      <div className="flex flex-col gap-1 text-xs text-muted-foreground">
         Autonomy (auto-triage &amp; refine tasks)
-        <select value={v.autonomy} onChange={(e) => set("autonomy", e.target.value)} className={field}>
-          <option value="inherit">Inherit global</option>
-          <option value="on">On</option>
-          <option value="off">Off</option>
-        </select>
-      </label>
+        <SelectBox
+          label="Autonomy"
+          value={v.autonomy}
+          onChange={(val) => set("autonomy", val)}
+          options={[
+            { value: "inherit", label: "Inherit global" },
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+      </div>
       <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-card px-3 py-2.5">
         <div>
           <div className="text-sm font-medium text-foreground">Git worktrees</div>

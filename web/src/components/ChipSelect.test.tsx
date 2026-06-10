@@ -13,14 +13,13 @@ const groups = [
   },
 ];
 
-test("ChipSelect renders a labeled pill backed by a real native select", () => {
+test("ChipSelect renders a labeled pill backed by the autocomplete combobox", () => {
   const html = renderToStaticMarkup(
     <ChipSelect label="Project" value="acme" groups={groups} onChange={() => {}} />,
   );
-  expect(html).toContain('aria-label="Project"'); // the select is the accessible control
-  expect(html).toContain("<select");
-  expect(html).toContain('<optgroup label="Recent">');
-  expect(html).toContain('<option value="acme" selected="">Acme App</option>');
+  expect(html).toContain('aria-label="Project"'); // the input is the accessible control
+  expect(html).toContain('role="combobox"'); // type-to-filter, not a native select
+  expect(html).toContain("Project:"); // pill prefix
   expect(html).toContain("Acme App"); // pill shows the selected option's label
 });
 

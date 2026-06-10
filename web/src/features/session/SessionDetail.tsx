@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, Ban, MessageSquare, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { SelectBox } from "../../components/SelectBox";
 import {
   deleteSession,
   getFleets,
@@ -237,19 +238,17 @@ export function SessionDetail({
               <dl className="mt-3 grid grid-cols-[5rem_1fr] items-center gap-y-3 text-sm">
                 <dt className="text-muted-foreground">Task</dt>
                 <dd className="flex items-center gap-2">
-                  <select
+                  <SelectBox
+                    label="Task"
+                    size="sm"
+                    className="min-w-0 flex-1"
                     value={s.taskId ?? ""}
-                    onChange={(e) => assign.mutate({ taskId: e.target.value || null })}
-                    aria-label="Task"
-                    className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="">— Unassigned —</option>
-                    {tasks.data?.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.title}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => assign.mutate({ taskId: v || null })}
+                    options={[
+                      { value: "", label: "— Unassigned —" },
+                      ...(tasks.data ?? []).map((t) => ({ value: t.id, label: t.title })),
+                    ]}
+                  />
                   {s.taskId ? (
                     <LabeledIconButton
                       icon={<ArrowUpRight />}
@@ -263,36 +262,30 @@ export function SessionDetail({
 
                 <dt className="text-muted-foreground">Project</dt>
                 <dd>
-                  <select
+                  <SelectBox
+                    label="Project"
+                    size="sm"
                     value={s.projectId ?? ""}
-                    onChange={(e) => assign.mutate({ projectId: e.target.value || null })}
-                    aria-label="Project"
-                    className="w-full rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="">— Unassigned —</option>
-                    {projects.data?.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => assign.mutate({ projectId: v || null })}
+                    options={[
+                      { value: "", label: "— Unassigned —" },
+                      ...(projects.data ?? []).map((p) => ({ value: p.id, label: p.name })),
+                    ]}
+                  />
                 </dd>
 
                 <dt className="text-muted-foreground">Fleet</dt>
                 <dd>
-                  <select
+                  <SelectBox
+                    label="Fleet"
+                    size="sm"
                     value={s.fleetId ?? ""}
-                    onChange={(e) => assign.mutate({ fleetId: e.target.value || null })}
-                    aria-label="Fleet"
-                    className="w-full rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <option value="">— None —</option>
-                    {fleets.data?.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => assign.mutate({ fleetId: v || null })}
+                    options={[
+                      { value: "", label: "— None —" },
+                      ...(fleets.data ?? []).map((f) => ({ value: f.id, label: f.name })),
+                    ]}
+                  />
                 </dd>
               </dl>
             </section>

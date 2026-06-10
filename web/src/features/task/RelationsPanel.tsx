@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GitFork, Link2, Plus, X } from "lucide-react";
-import { type ChangeEvent } from "react";
+import { SelectBox } from "../../components/SelectBox";
 import { addDep, getDeps, getSubtasks, getTasks, removeDep, updateTask } from "../../lib/api";
 import { statusLabel } from "../../lib/status";
 
@@ -61,19 +61,15 @@ export function RelationsPanel({
       <div className="mt-3 flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Blocked by</span>
-          <select
+          <SelectBox
+            label="Add blocker"
+            size="sm"
+            className="w-44"
+            placeholder="+ add blocker…"
             value=""
-            aria-label="Add blocker"
-            onChange={(e: ChangeEvent<HTMLSelectElement>) => e.target.value && add.mutate(e.target.value)}
-            className="rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-muted-foreground"
-          >
-            <option value="">+ add blocker…</option>
-            {others.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => v && add.mutate(v)}
+            options={others.map((t) => ({ value: t.id, label: t.title }))}
+          />
         </div>
         {blockedBy.length === 0 ? (
           <span className="text-xs text-muted-foreground">— none —</span>
@@ -108,19 +104,17 @@ export function RelationsPanel({
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <GitFork className="size-3.5" /> Parent
         </span>
-        <select
+        <SelectBox
+          label="Parent task"
+          size="sm"
+          className="max-w-[14rem]"
           value={parentTaskId ?? ""}
-          aria-label="Parent task"
-          onChange={(e) => setParent.mutate(e.target.value || null)}
-          className="max-w-[14rem] truncate rounded border border-border bg-card px-1.5 py-0.5 text-[11px]"
-        >
-          <option value="">— none —</option>
-          {others.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.title}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setParent.mutate(v || null)}
+          options={[
+            { value: "", label: "— none —" },
+            ...others.map((t) => ({ value: t.id, label: t.title })),
+          ]}
+        />
       </div>
 
       {children.length > 0 ? (

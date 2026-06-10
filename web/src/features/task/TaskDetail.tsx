@@ -10,6 +10,7 @@ const PERMISSION_LABELS: Record<string, string> = {
 };
 import { type FlowControls, FlowStrip } from "../../components/FlowStrip";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { SelectBox } from "../../components/SelectBox";
 import { toast } from "../../components/Toaster";
 import {
   appendContext,
@@ -284,69 +285,59 @@ export function TaskDetail({
             <dl className="mt-5 grid grid-cols-[6rem_1fr] items-center gap-y-3 text-sm">
               <dt className="text-muted-foreground">Status</dt>
               <dd>
-                <select
+                <SelectBox
+                  label="Status"
+                  size="sm"
+                  className="max-w-56"
                   value={task.status}
-                  onChange={(e) => setStatus.mutate(e.target.value)}
-                  aria-label="Status"
-                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {TASK_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {statusLabel(s)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setStatus.mutate(v)}
+                  options={TASK_STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))}
+                />
               </dd>
 
               <dt className="text-muted-foreground">Project</dt>
               <dd>
-                <select
+                <SelectBox
+                  label="Project"
+                  size="sm"
+                  className="max-w-56"
                   value={projects.data?.find((p) => p.id === task.projectId)?.slug ?? ""}
-                  onChange={(e) => setProject.mutate(e.target.value || null)}
-                  aria-label="Project"
-                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">— Unassigned —</option>
-                  {projects.data?.map((p) => (
-                    <option key={p.id} value={p.slug}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setProject.mutate(v || null)}
+                  options={[
+                    { value: "", label: "— Unassigned —" },
+                    ...(projects.data ?? []).map((p) => ({ value: p.slug, label: p.name })),
+                  ]}
+                />
               </dd>
 
               <dt className="text-muted-foreground">Fleet</dt>
               <dd>
-                <select
+                <SelectBox
+                  label="Fleet"
+                  size="sm"
+                  className="max-w-56"
                   value={fleets.data?.find((f) => f.id === task.fleetId)?.slug ?? ""}
-                  onChange={(e) => setFleet.mutate(e.target.value || null)}
-                  aria-label="Fleet"
-                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">— None —</option>
-                  {fleets.data?.map((f) => (
-                    <option key={f.id} value={f.slug}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setFleet.mutate(v || null)}
+                  options={[
+                    { value: "", label: "— None —" },
+                    ...(fleets.data ?? []).map((f) => ({ value: f.slug, label: f.name })),
+                  ]}
+                />
               </dd>
 
               <dt className="text-muted-foreground">Permission</dt>
               <dd className="flex items-center gap-2">
-                <select
+                <SelectBox
+                  label="Permission mode"
+                  size="sm"
+                  className="max-w-56"
                   value={task.permissionMode ?? ""}
-                  onChange={(e) => onPermissionChange(e.target.value)}
-                  aria-label="Permission mode"
-                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Inherit</option>
-                  {PERMISSION_MODES.map((m) => (
-                    <option key={m} value={m}>
-                      {PERMISSION_LABELS[m]}
-                    </option>
-                  ))}
-                </select>
+                  onChange={onPermissionChange}
+                  options={[
+                    { value: "", label: "Inherit" },
+                    ...PERMISSION_MODES.map((m) => ({ value: m, label: PERMISSION_LABELS[m] ?? m })),
+                  ]}
+                />
                 <span
                   className={
                     task.resolvedPermissionMode === "dangerous"
@@ -360,24 +351,26 @@ export function TaskDetail({
 
               <dt className="text-muted-foreground">Delivery</dt>
               <dd className="flex items-center gap-2">
-                <select
+                <SelectBox
+                  label="Delivery mode"
+                  size="sm"
+                  className="max-w-56"
                   value={task.deliveryMode ?? ""}
-                  onChange={(e) => setDelivery.mutate(e.target.value || null)}
-                  aria-label="Delivery mode"
+                  onChange={(v) => setDelivery.mutate(v || null)}
                   title={
                     DELIVERY_MODE_INFO[
                       (task.deliveryMode ?? task.resolvedDeliveryMode) as keyof typeof DELIVERY_MODE_INFO
                     ]?.description
                   }
-                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Inherit</option>
-                  {DELIVERY_MODES.map((m) => (
-                    <option key={m} value={m} title={DELIVERY_MODE_INFO[m].description}>
-                      {DELIVERY_MODE_INFO[m].label}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "Inherit" },
+                    ...DELIVERY_MODES.map((m) => ({
+                      value: m,
+                      label: DELIVERY_MODE_INFO[m].label,
+                      hint: DELIVERY_MODE_INFO[m].description,
+                    })),
+                  ]}
+                />
                 <span className="text-xs text-muted-foreground">
                   effective: {deliveryModeLabel(task.resolvedDeliveryMode)}
                 </span>

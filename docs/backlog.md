@@ -157,6 +157,14 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       live next-run countdown, last-created task link, two-step delete) + editor modal with a
       live "first/next task will be created …" preview; schedule math shared (`computeNextRun`
       in @cadence/shared) so server and UI preview can never disagree
+- [x] **6.9 Autocomplete selectboxes everywhere** — **DONE 2026-06-10**: every native `<select>`
+      (24 across Settings/Projects/TaskDetail/SessionDetail/Relations/Review/Capture/Recurring)
+      replaced with a shared type-to-filter combobox (`components/SelectBox.tsx`, Headless UI v2 —
+      Tailwind-native, a11y built-in, portalled + anchor-positioned panel so scrolling modals never
+      clip it); ChipSelect pills rebuilt on the same mechanism (same public API); groups, per-option
+      hint lines (e.g. delivery-mode descriptions), check on the current value, "No matches" state;
+      keyboard guards: Enter in a closed combobox never submits the form, Esc closes just the
+      dropdown (not the modal above it)
 
 ---
 

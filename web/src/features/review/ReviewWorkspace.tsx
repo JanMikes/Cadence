@@ -6,6 +6,7 @@ import type {
 } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { SelectBox } from "../../components/SelectBox";
 import {
   approvePlan,
   getReviewFindings,
@@ -249,18 +250,21 @@ function PerformPane({ task }: { task: TaskDetail }) {
         </div>
       ) : !data.published ? (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
-          <label className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
             Verdict
-            <select
+            <SelectBox
+              label="Verdict"
+              size="sm"
+              className="w-40"
               value={effectiveVerdict}
-              onChange={(e) => setVerdict(e.target.value)}
-              className="rounded-md border border-border bg-card px-2 py-1 text-xs"
-            >
-              <option value="comment">Comment</option>
-              <option value="approve">Approve</option>
-              <option value="request_changes">Request changes</option>
-            </select>
-          </label>
+              onChange={setVerdict}
+              options={[
+                { value: "comment", label: "Comment" },
+                { value: "approve", label: "Approve" },
+                { value: "request_changes", label: "Request changes" },
+              ]}
+            />
+          </div>
           <WorkspaceButton
             label={copied ? "✓ Copied" : "⧉ Copy as Markdown"}
             onClick={() => {
