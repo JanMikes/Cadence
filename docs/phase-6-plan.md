@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.3.a (prompt registry). §6.1 ✓ and §6.2 ✓ complete.
+- **Current step:** 6.3.b (override storage in settings).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -201,11 +201,12 @@ subagent library `agents/library.ts:16-59`. Per-role default models: `agents/run
 only into warm chat sessions — one-shot pipeline agents never receive the composed
 global→project→fleet→task context, violating the “compose into every agent run” locked decision.
 
-- [ ] **6.3.a Prompt registry.** New `server/src/agents/prompts.ts`: for every agent above —
+- [x] **6.3.a Prompt registry.** New `server/src/agents/prompts.ts`: for every agent above —
   `{role, label, description, defaultModel, defaultTemplate, variables[]}`. Refactor each builder to
   render `template + vars` via a tiny `renderTemplate()` (keep `{{var}}` placeholders; document each
   agent’s variables). Include the 6 library subagents as editable entries too.
   - Verify: snapshot tests prove **byte-identical prompts** vs. before when no override is set.
+    ✓ 2026-06-10 (`9532027`, 24/24 frozen fixtures match, 360 tests total).
 - [ ] **6.3.b Override storage.** `GlobalSettings.agents?: Record<role, {prompt?, model?}>` — only
   overrides persisted; PATCH deep-merges; `getAgentConfig(role)` = override ?? default. Runner uses
   it for model resolution (replacing direct `modelForRole` calls).
@@ -564,3 +565,14 @@ yourself.
   column)”. Two web tests asserted the removed copy/nav — updated (AppShell test now asserts Inbox
   is ABSENT). Found: the tray `tray-navigate` emit has no web listener (pre-existing dead wire) —
   left as-is, noted for a future wire-up. The `inbox` task status and Board column are untouched.
+- **2026-06-10 — 6.3.a done** (`9532027`). Byte-identity method: froze 24 builder outputs as
+  fixtures BEFORE refactoring (`server/scripts/capture-prompt-fixtures.ts`, kept for future
+  re-freezing after intentional template edits), then proved 24/24 matches. **Decisions:**
+  (1) renderTemplate drops var-bearing lines that render empty — reproduces the historical
+  `.filter(Boolean)` while letting users add literal blank lines later; conditional fragments are
+  whole-line composite vars (`bodyLine`, `specBlock`, …). (2) Implementer's `{{placement}}` stays
+  code-computed (in-place safety guardrails are branch-dependent and not user-editable per run).
+  (3) Subagent prompt TEXT lives in the registry under `subagent:<name>`; tools+model stay in
+  library.ts. ⚠ Note for 6.3.b: `AGENT_LIBRARY` resolves prompts at module load — override
+  resolution must make that lookup lazy (per `agentsJson()` call) or overrides won't reach
+  subagents.
