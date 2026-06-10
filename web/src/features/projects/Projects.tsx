@@ -7,18 +7,30 @@ import {
   type WorktreeCheck,
 } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, FolderGit2, Plus, Save, Sparkles, TriangleAlert, X } from "lucide-react";
+import {
+  CheckCircle2,
+  Download,
+  FolderGit2,
+  Plus,
+  Save,
+  Settings2,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { Modal } from "../../components/Modal";
 import {
   checkWorktreeReadiness,
   createProject,
   getAgentPrompts,
+  getImportCandidates,
   getProjectForge,
   getProjects,
   updateProject,
 } from "../../lib/api";
-import { formatDateTime, useDateFormats } from "../../lib/datetime";
+import { formatAgo, formatDateTime, useDateFormats } from "../../lib/datetime";
+import { cn } from "../../lib/utils";
 import { ImportProjects } from "./ImportProjects";
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -59,62 +71,54 @@ const autonomyToField = (b: boolean | null): string => (b == null ? "inherit" : 
 const fieldToAutonomy = (s: string): boolean | null => (s === "inherit" ? null : s === "on");
 
 export function Projects() {
-  const qc = useQueryClient();
   const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const candidates = useQuery({ queryKey: ["import-candidates"], queryFn: getImportCandidates });
   const [editing, setEditing] = useState<Project | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
-  const create = useMutation({
-    mutationFn: (v: FormValues) =>
-      createProject({
-        name: v.name.trim(),
-        rootPath: v.rootPath.trim() || undefined,
-        color: v.color.trim() || undefined,
-        defaultPermissionMode: v.defaultPermissionMode,
-        defaultDeliveryMode: v.defaultDeliveryMode,
-        autonomy: fieldToAutonomy(v.autonomy),
-        worktreesEnabled: v.worktreesEnabled,
-        systemPrompt: v.systemPrompt.trim() || undefined,
-      }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
-  });
+  const importable = (candidates.data ?? []).filter((c) => !c.alreadyImported).length;
+
+  // Most recently used first; a never-used project sorts by creation (new ones stay visible).
+  const sorted = [...(projects.data ?? [])].sort(
+    (a, b) => (b.lastUsedAt ?? b.createdAt) - (a.lastUsedAt ?? a.createdAt),
+  );
 
   return (
     <div className="mx-auto max-w-3xl p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        A project is usually a git repo + working directory. Tasks assigned to it run in its rootPath.
-      </p>
-
-      <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
-        <h2 className="text-sm font-medium">New project</h2>
-        <ProjectFields
-          key={create.isSuccess ? "reset" : "form"}
-          initial={EMPTY}
-          submitLabel="Create project"
-          submitIcon={<Plus />}
-          pending={create.isPending}
-          onSubmit={(v) => create.mutate(v)}
-        />
-        {create.isError ? (
-          <p className="mt-2 text-xs text-red-400">Couldn’t create — is the gateway running?</p>
-        ) : null}
-      </section>
-
-      <ImportProjects />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            A project is usually a git repo + working directory. Tasks assigned to it run in its
+            rootPath. Click a project to change its settings.
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <LabeledIconButton
+            icon={<Download />}
+            label={importable > 0 ? `Import from Claude Code (${importable})` : "Import from Claude Code"}
+            variant="outline"
+            onClick={() => setImporting(true)}
+          />
+          <LabeledIconButton icon={<Plus />} label="New project" onClick={() => setCreating(true)} />
+        </div>
+      </div>
 
       <ul className="mt-6 flex flex-col gap-2">
         {projects.isLoading ? <li className="text-sm text-muted-foreground">Loading…</li> : null}
         {projects.data?.length === 0 ? (
           <li className="rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-            No projects yet — create your first above.
+            No projects yet — use <span className="font-medium text-foreground">New project</span>,
+            or import the directories Claude Code has already seen.
           </li>
         ) : null}
-        {projects.data?.map((p) => (
+        {sorted.map((p) => (
           <li key={p.id}>
             <button
               type="button"
               onClick={() => setEditing(p)}
-              className="flex w-full items-center gap-3 rounded-md border border-border bg-card/50 px-4 py-3 text-left transition-colors hover:border-primary/50"
+              className="group flex w-full items-center gap-3 rounded-md border border-border bg-card/50 px-4 py-3 text-left transition-colors hover:border-primary/50"
             >
               <span
                 className="size-3 shrink-0 rounded-full border border-border"
@@ -127,20 +131,77 @@ export function Projects() {
                   {p.rootPath ?? "no rootPath"} · {PERMISSION_LABELS[p.defaultPermissionMode]}
                 </span>
               </span>
+              <span className="flex shrink-0 flex-col items-end gap-0.5">
+                <span className="text-xs text-muted-foreground">
+                  {p.lastUsedAt ? `Used ${formatAgo(p.lastUsedAt)}` : "Never used"}
+                </span>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground transition-colors group-hover:text-foreground">
+                  <Settings2 className="size-3.5" />
+                  Settings
+                </span>
+              </span>
             </button>
           </li>
         ))}
       </ul>
 
-      {editing ? (
-        <EditDrawer project={editing} onClose={() => setEditing(null)} />
+      {creating ? <NewProjectModal onClose={() => setCreating(false)} /> : null}
+      {importing ? (
+        <Modal title="Import from Claude Code" onClose={() => setImporting(false)}>
+          <ImportProjects onImported={() => setImporting(false)} />
+        </Modal>
       ) : null}
+      {editing ? <ProjectSettingsModal project={editing} onClose={() => setEditing(null)} /> : null}
     </div>
   );
 }
 
-function EditDrawer({ project, onClose }: { project: Project; onClose: () => void }) {
+export function NewProjectModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const create = useMutation({
+    mutationFn: (v: FormValues) =>
+      createProject({
+        name: v.name.trim(),
+        rootPath: v.rootPath.trim() || undefined,
+        color: v.color.trim() || undefined,
+        defaultPermissionMode: v.defaultPermissionMode,
+        defaultDeliveryMode: v.defaultDeliveryMode,
+        autonomy: fieldToAutonomy(v.autonomy),
+        worktreesEnabled: v.worktreesEnabled,
+        systemPrompt: v.systemPrompt.trim() || undefined,
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      onClose();
+    },
+  });
+
+  return (
+    <Modal title="New project" onClose={onClose}>
+      <ProjectFields
+        initial={EMPTY}
+        submitLabel="Create project"
+        submitIcon={<Plus />}
+        pending={create.isPending}
+        onSubmit={(v) => create.mutate(v)}
+      />
+      {create.isError ? (
+        <p className="mt-2 text-xs text-red-400">Couldn’t create — is the gateway running?</p>
+      ) : null}
+    </Modal>
+  );
+}
+
+const SETTINGS_TABS = [
+  { id: "general", label: "General" },
+  { id: "repository", label: "Repository" },
+  { id: "agents", label: "Agent prompts" },
+] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number]["id"];
+
+export function ProjectSettingsModal({ project, onClose }: { project: Project; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<SettingsTab>("general");
   const save = useMutation({
     mutationFn: (patch: UpdateProjectInput) => updateProject(project.slug, patch),
     onSuccess: () => {
@@ -150,18 +211,29 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
   });
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop dismiss; Close button is the keyboard path
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <aside
-        className="flex h-full w-[440px] max-w-full flex-col overflow-auto border-l border-border bg-background p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold tracking-tight">{project.name}</h2>
-          <LabeledIconButton icon={<X />} label="Close" variant="ghost" size="sm" onClick={onClose} />
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">{project.slug}</p>
+    <Modal title={project.name} subtitle={project.slug} onClose={onClose}>
+      <div className="flex gap-1 border-b border-border" role="tablist">
+        {SETTINGS_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-2 text-xs font-medium transition-colors",
+              tab === t.id
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
+      {/* Panels stay mounted (hidden, not unmounted) so unsaved edits survive tab switches. */}
+      <div className={cn(tab !== "general" && "hidden")}>
         <ProjectFields
           initial={{
             name: project.name,
@@ -190,12 +262,15 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
           }
         />
         {save.isError ? <p className="mt-2 text-xs text-red-400">Couldn’t save changes.</p> : null}
-
-        <RepositoryCard project={project} />
-        <ProjectAgentPrompts project={project} />
         <WorktreeReadiness project={project} />
-      </aside>
-    </div>
+      </div>
+      <div className={cn(tab !== "repository" && "hidden")}>
+        <RepositoryCard project={project} />
+      </div>
+      <div className={cn(tab !== "agents" && "hidden")}>
+        <ProjectAgentPrompts project={project} />
+      </div>
+    </Modal>
   );
 }
 

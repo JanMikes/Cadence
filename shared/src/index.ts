@@ -344,6 +344,9 @@ export interface Project {
   agentPrompts: Record<string, string> | null;
   notes: string | null;
   createdAt: number;
+  /** Most recent activity on the project — latest task update or session start
+   *  (null = never used). Server-computed; powers "last used" sorting/labels. */
+  lastUsedAt: number | null;
 }
 
 export interface CreateProjectInput {
@@ -786,10 +789,32 @@ export interface UsageStats {
   topModels: Array<{ model: string; tokens: number }>;
 }
 
+/** One subscription rate-limit window (the numbers Claude Code's /usage screen shows). */
+export interface UsageWindow {
+  /** Percent of the window consumed, 0–100. */
+  utilization: number;
+  /** ISO timestamp when the window resets. */
+  resetsAt: string;
+}
+
+/** Claude subscription windows from the local Claude Code sign-in (OAuth usage endpoint). */
+export interface ClaudeWindows {
+  /** The rolling 5-hour session window. */
+  fiveHour: UsageWindow | null;
+  /** The weekly (7-day, all models) window. */
+  sevenDay: UsageWindow | null;
+  /** Weekly Opus-only window, when the plan has one. */
+  sevenDayOpus: UsageWindow | null;
+  /** When the gateway fetched these numbers (epoch ms). */
+  fetchedAt: number;
+}
+
 export interface UsageResponse {
   stats: UsageStats;
   /** Latest rate_limit_info captured from a live session (5h/weekly windows), if any. */
   rateLimit: unknown | null;
+  /** Subscription windows (5h + weekly); null when Claude Code credentials are unavailable. */
+  windows: ClaudeWindows | null;
 }
 
 /** A discovered project directory (from ~/.claude/projects) proposed for import. */

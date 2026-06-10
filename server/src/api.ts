@@ -119,7 +119,7 @@ import {
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
 import { readLiveSessions, readTranscript, resolveTranscriptPath } from "./transcripts";
-import { readUsageStats } from "./usage";
+import { fetchClaudeWindows, readUsageStats } from "./usage";
 import {
   createTask,
   getTask,
@@ -942,7 +942,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   }
 
   if (pathname === "/api/usage" && method === "GET") {
-    return Response.json({ stats: readUsageStats(), rateLimit: ctx.spawn.latestRateLimit() });
+    return Response.json({
+      stats: readUsageStats(),
+      rateLimit: ctx.spawn.latestRateLimit(),
+      windows: await fetchClaudeWindows(),
+    });
   }
 
   if (pathname === "/api/analytics" && method === "GET") {

@@ -70,6 +70,7 @@ const PROJECTS = [
     agentPrompts: null,
     notes: null,
     createdAt: 0,
+    lastUsedAt: null,
   },
 ];
 

@@ -104,6 +104,18 @@ test("updateProject patches config + systemPrompt", () => {
   expect(updateProject(db, "nope", { name: "x" })).toBeNull();
 });
 
+test("lastUsedAt is null until a task touches the project, then tracks the latest activity", () => {
+  const p = createProject(db, { name: "Acme", rootPath: "/tmp/acme-root" });
+  expect(getProject(db, p.slug)?.lastUsedAt).toBeNull();
+
+  const task = createTask(db, { title: "Do a thing" });
+  updateTask(db, task.id, { project: p.slug });
+
+  const used = getProject(db, p.slug)?.lastUsedAt;
+  expect(used).toBeGreaterThan(0);
+  expect(listProjects(db).find((x) => x.slug === p.slug)?.lastUsedAt).toBe(used as number);
+});
+
 test("assign a task to a project; cwd resolves to the project rootPath", () => {
   createProject(db, { name: "Acme", rootPath: "/tmp/acme-root" });
   const task = createTask(db, { title: "Do a thing" });

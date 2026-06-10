@@ -82,6 +82,34 @@ export function formatDateTime(ts: number | Date | null | undefined, f: DateForm
   return formatTimestamp(ts, f.dateTime, "dateTime");
 }
 
+/** Coarse "time until" label for countdowns ("34 min", "2 h 05 min", "3 d 4 h"). */
+export function formatUntil(ts: number, now: number = Date.now()): string {
+  const min = Math.max(0, Math.round((ts - now) / 60_000));
+  if (min < 60) return `${min} min`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) {
+    const rest = min % 60;
+    return rest ? `${hours} h ${String(rest).padStart(2, "0")} min` : `${hours} h`;
+  }
+  const days = Math.floor(hours / 24);
+  const restH = hours % 24;
+  return restH ? `${days} d ${restH} h` : `${days} d`;
+}
+
+/** Coarse relative label ("just now", "5 min ago", "3 h ago", "2 d ago"); falls back to
+ *  the configured date format beyond two weeks, where relative counts stop being useful. */
+export function formatAgo(ts: number, now: number = Date.now(), f: DateFormats = current): string {
+  const diff = Math.max(0, now - ts);
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  if (days <= 14) return `${days} d ago`;
+  return formatDate(ts, f);
+}
+
 // ---------------------------------------------------------------- reactive store
 
 let current: DateFormats = { ...DEFAULT_FORMATS };

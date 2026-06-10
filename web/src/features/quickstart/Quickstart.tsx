@@ -357,7 +357,7 @@ export function Quickstart({
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             This guide won't open by itself again — reopen it anytime via{" "}
-            <span className="font-medium text-foreground">Quickstart</span> at the bottom of the
+            <span className="font-medium text-foreground">How it works</span> at the bottom of the
             sidebar.
           </p>
         </div>

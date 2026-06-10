@@ -6,7 +6,11 @@ import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { enrichCandidate, getImportCandidates, importProjects } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
-export function ImportProjects() {
+/**
+ * Project discovery: working directories Claude Code has seen, importable as projects.
+ * Plain content (no card chrome) — rendered inside the "Import from Claude Code" modal.
+ */
+export function ImportProjects({ onImported }: { onImported?: () => void }) {
   const qc = useQueryClient();
   const candidates = useQuery({ queryKey: ["import-candidates"], queryFn: getImportCandidates });
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -30,6 +34,7 @@ export function ImportProjects() {
       setSelected(new Set());
       void qc.invalidateQueries({ queryKey: ["projects"] });
       void qc.invalidateQueries({ queryKey: ["import-candidates"] });
+      onImported?.();
     },
   });
 
@@ -43,9 +48,11 @@ export function ImportProjects() {
   const importable = (candidates.data ?? []).filter((c) => !c.alreadyImported);
 
   return (
-    <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">Import from Claude Code</h2>
+    <section>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Working directories Claude Code has seen. Tick the ones to add as projects.
+        </p>
         <LabeledIconButton
           icon={<RefreshCw />}
           label="Rescan"
@@ -54,9 +61,6 @@ export function ImportProjects() {
           onClick={() => candidates.refetch()}
         />
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        Working directories Claude Code has seen. Tick the ones to add as projects.
-      </p>
 
       {candidates.isLoading ? <p className="mt-3 text-xs text-muted-foreground">Scanning…</p> : null}
       {candidates.data && importable.length === 0 ? (

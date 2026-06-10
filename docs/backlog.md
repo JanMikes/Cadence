@@ -41,7 +41,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done.
 - [ ] **Terminal handoff**: "Open in terminal" → show `cd <cwd> && claude --resume <id>`; reflect
       terminal-started sessions back into the app
 - [ ] Cost/usage shown per session (from `result` events)
-- [ ] **Ambient usage bar**: subscription windows (5h session + weekly) from `rate_limit_info` + `stats-cache.json`
+- [x] **Ambient usage bar**: subscription windows (5h session + weekly) as live meters with reset
+      countdowns, from the ✅ verified OAuth usage endpoint (control-surfaces §3.2a; 2026-06-10)
 - [ ] **Notifications**: in-app badges + OS notifications (Web Notifications API) for ❓ / delivered
 - [ ] **Suggestion pattern** primitive: Accept/Edit/Override control + per-field provenance (§10.2)
 

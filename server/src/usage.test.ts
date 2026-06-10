@@ -7,7 +7,7 @@ import { sessions } from "./db/schema";
 import { taskCostUsd } from "./sessions";
 import { bootstrap } from "./store/store";
 import { createTask, getTaskDetail } from "./tasks";
-import { readUsageStats } from "./usage";
+import { parseOauthUsage, readUsageStats } from "./usage";
 
 let claude: string;
 let home: string;
@@ -77,4 +77,29 @@ test("task cost is the sum of its session costs", () => {
   }
   expect(taskCostUsd(db, task.id)).toBeCloseTo(0.035, 4);
   expect(getTaskDetail(db, task.id)?.costUsd).toBeCloseTo(0.035, 4);
+});
+
+test("parseOauthUsage maps the verified OAuth payload into typed windows", () => {
+  const parsed = parseOauthUsage(
+    {
+      five_hour: { utilization: 40.0, resets_at: "2026-06-10T16:10:00+00:00" },
+      seven_day: { utilization: 32.0, resets_at: "2026-06-13T17:00:00+00:00" },
+      seven_day_opus: null,
+      seven_day_sonnet: { utilization: 3.0, resets_at: "2026-06-13T16:59:59+00:00" },
+    },
+    1000,
+  );
+  expect(parsed).toEqual({
+    fiveHour: { utilization: 40, resetsAt: "2026-06-10T16:10:00+00:00" },
+    sevenDay: { utilization: 32, resetsAt: "2026-06-13T17:00:00+00:00" },
+    sevenDayOpus: null,
+    fetchedAt: 1000,
+  });
+});
+
+test("parseOauthUsage rejects junk instead of inventing windows", () => {
+  expect(parseOauthUsage(null, 0)).toBeNull();
+  expect(parseOauthUsage("nope", 0)).toBeNull();
+  expect(parseOauthUsage({ error: "unauthorized" }, 0)).toBeNull();
+  expect(parseOauthUsage({ five_hour: { utilization: "40%" } }, 0)).toBeNull();
 });

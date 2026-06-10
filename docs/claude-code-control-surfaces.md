@@ -101,6 +101,22 @@ Per turn, in order:
   `total_cost_usd`, `usage` (input/output/cache tokens), `modelUsage`, `num_turns`,
   `stop_reason`, `duration_ms`, `ttft_ms`, `is_error`, `permission_denials`.
 
+### 3.2a Subscription usage windows (✅ verified 2026-06-10, the data behind `/usage`)
+`GET https://api.anthropic.com/api/oauth/usage` with headers
+`Authorization: Bearer <accessToken>` + `anthropic-beta: oauth-2025-04-20` returns:
+```json
+{ "five_hour":  { "utilization": 40.0, "resets_at": "2026-06-10T16:10:00+00:00" },
+  "seven_day":  { "utilization": 32.0, "resets_at": "2026-06-13T17:00:00+00:00" },
+  "seven_day_opus": null, "seven_day_sonnet": { "...": "same shape" },
+  "extra_usage": { "is_enabled": false, "...": null } }
+```
+`utilization` is percent of the window consumed. The access token comes from
+`~/.claude/.credentials.json` (`claudeAiOauth.accessToken`) or, on macOS, the keychain item
+`Claude Code-credentials` (`security find-generic-password -s "Claude Code-credentials" -w`).
+The token is local-only and must never leave the gateway — Cadence's `/api/usage` forwards only
+the derived numbers (server/src/usage.ts `fetchClaudeWindows`, cached 60s). ⚠️ The endpoint +
+beta header are unofficial (what the CLI itself uses) and may change without notice.
+
 ### 3.3 Minimal warm-process gateway (Node)
 ```js
 import { spawn } from "node:child_process";

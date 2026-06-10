@@ -37,7 +37,7 @@ test("Quickstart explains the product, the pipeline, and the review flagship", (
   expect(html).toContain("Permission modes");
   expect(html).toContain("Local-first");
   expect(html).toContain("at the bottom of the");
-  expect(html).toContain("Quickstart");
+  expect(html).toContain("How it works");
 });
 
 test("Quickstart feature cards link to the main views by label", () => {

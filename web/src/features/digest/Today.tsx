@@ -1,16 +1,57 @@
-import type { DigestPick } from "@cadence/shared";
+import type { DigestPick, Task } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, CalendarCheck, Check, Flame, Moon, Sparkles, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  CalendarCheck,
+  Check,
+  Flame,
+  ListChecks,
+  Moon,
+  Plus,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { commitDigest, getDigest, recapDigest } from "../../lib/api";
+import { commitDigest, getDigest, getTasks, recapDigest } from "../../lib/api";
 import { formatDayKey, useDateFormats } from "../../lib/datetime";
+import { cn } from "../../lib/utils";
 import { ProgressRing } from "./ProgressRing";
 import { SweepPanel } from "./SweepPanel";
 
 const TIER_BADGE: Record<string, { label: string; className: string }> = {
   overdue: { label: "Overdue", className: "bg-red-500/15 text-red-400" },
   due_soon: { label: "Due soon", className: "bg-amber-500/15 text-amber-400" },
+  upcoming: { label: "Upcoming", className: "bg-sky-500/15 text-sky-400" },
+};
+
+/** The three moments of the daily ritual — rendered as a stepper so the flow is legible. */
+const RITUAL_STEPS = [
+  {
+    id: "planning",
+    icon: ListChecks,
+    title: "1 · Plan",
+    text: "Cadence proposes a shortlist from your open tasks — most urgent first. Reorder, trim, or add.",
+  },
+  {
+    id: "committed",
+    icon: CalendarCheck,
+    title: "2 · Commit",
+    text: "Lock the plan in. Through the day, the ring fills as planned tasks reach Done.",
+  },
+  {
+    id: "recapped",
+    icon: Moon,
+    title: "3 · Recap",
+    text: "In the evening, close the day. Unfinished tasks roll into tomorrow's proposal automatically.",
+  },
+] as const;
+
+const SUBTITLE: Record<string, string> = {
+  planning: "Review the proposed shortlist below, make it yours, then commit today's plan.",
+  committed: "Plan committed — work the list. Come back this evening for the recap.",
+  recapped: "Day closed. Tomorrow's proposal will pick up anything that rolled over.",
 };
 
 /**
@@ -18,7 +59,7 @@ const TIER_BADGE: Record<string, { label: string; className: string }> = {
  * shortlist; I reorder / remove / add a goal, then commit it as today's plan.
  * Gamification (ring, streak) + the evening recap land in 2.9.
  */
-export function Today({ onOpen }: { onOpen: (id: string) => void }) {
+export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onAddTask?: () => void }) {
   const qc = useQueryClient();
   const fmts = useDateFormats();
   const digest = useQuery({ queryKey: ["digest", "today"], queryFn: () => getDigest() });
@@ -67,6 +108,25 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
   const progress = digest.data?.progress;
   const streak = digest.data?.streak ?? 0;
 
+  // Candidates for "Add to plan": open tasks not already picked, most urgent first.
+  const tasks = useQuery({ queryKey: ["tasks", "urgency"], queryFn: () => getTasks({ sort: "urgency" }) });
+  const pickedIds = new Set(picks.map((p) => p.taskId));
+  const addable = (tasks.data ?? [])
+    .filter((t) => !pickedIds.has(t.id) && t.status !== "done" && t.status !== "cancelled")
+    .slice(0, 6);
+  const addToPlan = (t: Task) =>
+    setPicks((prev) => [
+      ...prev,
+      {
+        taskId: t.id,
+        title: t.title,
+        status: t.status,
+        rationale: "Added by you",
+        order: prev.length,
+        urgencyTier: "none",
+      },
+    ]);
+
   return (
     <div className="flex h-full flex-col overflow-auto p-6">
       <div className="flex items-start gap-2">
@@ -92,24 +152,63 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
             )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            A deadline-first shortlist. Reorder, trim to what matters, then commit your plan.
+            {SUBTITLE[status ?? "planning"]}
           </p>
         </div>
 
         {committed && progress ? (
           <div className="ml-auto flex items-center gap-4 text-primary">
-            {streak > 0 ? (
-              <span
-                className="inline-flex items-center gap-1 text-sm font-medium text-amber-400"
-                title={`${streak}-day streak of meeting your plan`}
-              >
-                <Flame className="size-4" /> {streak}
-              </span>
-            ) : null}
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-sm font-medium",
+                streak > 0 ? "text-amber-400" : "text-muted-foreground",
+              )}
+              title={
+                streak > 0
+                  ? `${streak}-day streak of finishing every planned task`
+                  : "Streak: finish every task in a committed plan to start one"
+              }
+            >
+              <Flame className="size-4" /> {streak}
+            </span>
             <ProgressRing done={progress.done} total={progress.total} />
           </div>
         ) : null}
       </div>
+
+      {/* The ritual, made visible: where you are and what each step does. */}
+      <ol className="mt-5 grid gap-2 sm:grid-cols-3">
+        {RITUAL_STEPS.map((step) => {
+          const active = (status ?? "planning") === step.id;
+          const doneStep =
+            (step.id === "planning" && committed) || (step.id === "committed" && recapped);
+          return (
+            <li
+              key={step.id}
+              className={cn(
+                "rounded-lg border p-3",
+                active ? "border-primary/50 bg-primary/5" : "border-border bg-card/40",
+              )}
+            >
+              <div
+                className={cn(
+                  "flex items-center gap-2 text-xs font-medium",
+                  active ? "text-primary" : doneStep ? "text-emerald-400" : "text-muted-foreground",
+                )}
+              >
+                {doneStep ? <Check className="size-3.5" /> : <step.icon className="size-3.5" />}
+                {step.title}
+                {active ? (
+                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px]">
+                    you are here
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{step.text}</p>
+            </li>
+          );
+        })}
+      </ol>
 
       {recapped && digest.data?.recap ? (
         <div className="mt-4 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4">
@@ -156,10 +255,18 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
       <h2 className="mt-6 text-sm font-medium">
         Plan <span className="text-muted-foreground">({picks.length})</span>
       </h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Proposed automatically from your open tasks — deadlines first, then priority. Edits here
+        stay local until you commit.
+      </p>
       <ol className="mt-2 flex flex-col gap-2">
         {picks.length === 0 ? (
-          <li className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-            Nothing planned. Capture some tasks and they’ll surface here, deadline-first.
+          <li className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            Nothing planned yet. Capture a few tasks and the most urgent ones appear here as a
+            proposal.
+            {onAddTask ? (
+              <LabeledIconButton icon={<Plus />} label="Add a task" size="sm" onClick={onAddTask} />
+            ) : null}
           </li>
         ) : null}
         {picks.map((p, i) => {
@@ -218,6 +325,37 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
           );
         })}
       </ol>
+
+      {!recapped && addable.length > 0 ? (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            More open tasks ({addable.length}) — add to today’s plan
+          </summary>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {addable.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2 rounded-md border border-border bg-card/50 px-3 py-1.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpen(t.id)}
+                  className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
+                >
+                  {t.title}
+                </button>
+                <LabeledIconButton
+                  icon={<Plus />}
+                  label="Add to plan"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => addToPlan(t)}
+                />
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       <div className="mt-5 flex items-center gap-3">
         <LabeledIconButton

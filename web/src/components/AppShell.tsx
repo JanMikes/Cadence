@@ -50,7 +50,7 @@ const NAV: NavItem[] = [
 ];
 
 // Pinned to the bottom of the sidebar: the re-openable first-launch guide.
-const NAV_BOTTOM: NavItem[] = [{ id: "quickstart", label: "Quickstart", icon: Rocket }];
+const NAV_BOTTOM: NavItem[] = [{ id: "quickstart", label: "How it works", icon: Rocket }];
 
 export interface AppShellProps {
   children: ReactNode;

@@ -5,10 +5,10 @@ import type {
   WorktreeCheck,
   WorktreeCheckRun,
 } from "@cadence/shared";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, max } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
-import { projects } from "./db/schema";
+import { projects, sessions, tasks } from "./db/schema";
 import { paths } from "./store/paths";
 import { readProject, readSettings, reindexProject, writeProject } from "./store/store";
 import type { ProjectFrontmatter } from "./store/types";
@@ -59,23 +59,48 @@ export function createProject(db: Db, input: CreateProjectInput): Project {
   return project;
 }
 
+/** Most recent activity per project id: latest task update or session start. */
+function lastUsedByProject(db: Db): Map<string, number> {
+  const used = new Map<string, number>();
+  const taskRows = db
+    .select({ pid: tasks.projectId, ts: max(tasks.updatedAt) })
+    .from(tasks)
+    .groupBy(tasks.projectId)
+    .all();
+  const sessionRows = db
+    .select({ pid: sessions.projectId, ts: max(sessions.startedAt) })
+    .from(sessions)
+    .groupBy(sessions.projectId)
+    .all();
+  for (const { pid, ts } of [...taskRows, ...sessionRows]) {
+    if (pid && ts != null) used.set(pid, Math.max(used.get(pid) ?? 0, ts));
+  }
+  return used;
+}
+
 export function listProjects(db: Db): Project[] {
-  return db.select().from(projects).orderBy(asc(projects.name)).all().map(toProject);
+  const used = lastUsedByProject(db);
+  return db
+    .select()
+    .from(projects)
+    .orderBy(asc(projects.name))
+    .all()
+    .map((row) => toProject(row, used.get(row.id) ?? null));
 }
 
 export function getProject(db: Db, slug: string): Project | null {
   const row = db.select().from(projects).where(eq(projects.slug, slug)).get();
-  return row ? toProject(row) : null;
+  return row ? toProject(row, lastUsedByProject(db).get(row.id) ?? null) : null;
 }
 
 export function getProjectById(db: Db, id: string): Project | null {
   const row = db.select().from(projects).where(eq(projects.id, id)).get();
-  return row ? toProject(row) : null;
+  return row ? toProject(row, lastUsedByProject(db).get(row.id) ?? null) : null;
 }
 
 export function getProjectByRootPath(db: Db, rootPath: string): Project | null {
   const row = db.select().from(projects).where(eq(projects.rootPath, rootPath)).get();
-  return row ? toProject(row) : null;
+  return row ? toProject(row, lastUsedByProject(db).get(row.id) ?? null) : null;
 }
 
 /**
@@ -162,8 +187,9 @@ function sanitizeAgentPrompts(input: Record<string, string> | null | undefined):
   return Object.keys(out).length ? out : null;
 }
 
-function toProject(row: typeof projects.$inferSelect): Project {
+function toProject(row: typeof projects.$inferSelect, lastUsedAt: number | null): Project {
   return {
+    lastUsedAt,
     id: row.id,
     name: row.name,
     slug: row.slug,

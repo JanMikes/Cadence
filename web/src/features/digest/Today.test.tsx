@@ -15,3 +15,17 @@ test("Today renders the planning ritual heading + goal prompt", () => {
   // no digest data on first synchronous render -> the empty-plan hint shows
   expect(html).toContain("Nothing planned");
 });
+
+test("Today explains the ritual with a Plan → Commit → Recap stepper", () => {
+  const qc = new QueryClient();
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <Today onOpen={() => {}} />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("1 · Plan");
+  expect(html).toContain("2 · Commit");
+  expect(html).toContain("3 · Recap");
+  expect(html).toContain("you are here"); // active step is marked (planning by default)
+  expect(html).toContain("Proposed automatically from your open tasks");
+});

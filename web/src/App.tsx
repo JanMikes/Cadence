@@ -167,7 +167,9 @@ export function App() {
           </span>
         }
       >
-        {view === "today" ? <Today onOpen={setSelectedId} /> : null}
+        {view === "today" ? (
+          <Today onOpen={setSelectedId} onAddTask={() => setAddTaskOpen(true)} />
+        ) : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
         {view === "calendar" ? <Calendar onOpenTask={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}

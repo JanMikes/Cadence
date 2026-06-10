@@ -131,7 +131,7 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
         <p className="mt-4 text-sm text-red-400">Couldn’t load tasks (is the gateway running?)</p>
       ) : null}
 
-      <div className="mt-4 flex flex-1 gap-3 overflow-x-auto pb-4">
+      <div className="mt-4 flex min-h-0 flex-1 gap-3 overflow-x-auto">
         {BOARD_COLUMNS.map((col) => (
           <Column
             key={col.id}
@@ -322,7 +322,7 @@ function Column({
         </span>
         <span className="rounded bg-muted px-1.5 py-0.5">{tasks.length}</span>
       </div>
-      <div className="mt-1 flex flex-col gap-2">
+      <div className="mt-1 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
         {tasks.map((task) => (
           <BoardCard
             key={task.id}
