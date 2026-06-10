@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.4.d (forge-aware delivery + prUrl on task).
+- **Current step:** 6.4.e (surface the PR/MR link in the UI).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -274,12 +274,13 @@ assume.
   **Refresh** button.
   - Verify: a GitHub-remote project shows the GitHub card; a GitLab one shows glab status.
     ✓ 2026-06-10 (394 tests; verified via the exported forgeSummary presenter for both forges).
-- [ ] **6.4.d Forge-aware delivery.** `auto_pr` branches by forge: `gh pr create` vs
+- [x] **6.4.d Forge-aware delivery.** `auto_pr` branches by forge: `gh pr create` vs
   `glab mr create` (⚠ verify flags); parse the created PR/MR URL; persist on the task (new
   `tasks.prUrl` column + task.md frontmatter); include the link in `delivery.md` + the delivery
   summary. Graceful failure when CLI missing/unauthenticated → deliver falls back to
   `branch_summary` with a plain-language note (never hard-fail the whole delivery on a missing CLI).
   - Verify: mocked delivery tests per forge assert the right CLI + captured URL + fallback path.
+    ✓ 2026-06-10 (398 tests; honest degrade reports mode=branch_summary + context note).
 - [ ] **6.4.e Surface the link.** Task detail metadata row + board card chip: **Open PR/MR**
   (labeled, external-link icon).
   - Verify: a task with `prUrl` renders the link in both spots.
@@ -630,3 +631,10 @@ yourself.
   Status lines come from the exported pure `forgeSummary` presenter — unit-tested for GitHub,
   GitLab (subgroups), not-installed/not-signed-in hints and unrecognized hosts; the live-data
   render path is trivial plumbing over it.
+- **2026-06-10 — 6.4.d done.** `openPrForProject` is the single auto_pr finalizer for both
+  execution targets (worktree + in-place). **Decision:** on fallback the delivery RESULT reports
+  `mode: branch_summary` (what actually happened) while the context note carries the why — the
+  review screen never claims a PR exists that doesn't. `tasks.prUrl` is server-managed
+  (setTaskPrUrl, not in the PATCH API), migration 0007. ⚠ `glab mr create --fill --yes
+  --source-branch` flags are doc-verified, not live-run — the human acceptance (6.5.i) exercises
+  the real CLI.
