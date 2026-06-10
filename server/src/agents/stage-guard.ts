@@ -2,6 +2,7 @@ import { and, eq, gte, inArray } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
 import { isSessionRowAlive, type LivenessProbe, REAL_PROBE } from "../liveness";
+import { opsSettings } from "../ops";
 
 /**
  * DB-level in-flight dedupe for pipeline stage runs (plan §6.1.b) — the fix for the
@@ -77,11 +78,34 @@ export function assertStageIdle(db: Db, taskId: string, role: string, probe: Liv
   if (live) throw new StageConflictError(taskId, role, live.id);
 }
 
+/** Thrown when the global concurrent-agent cap is reached (§6.3.e — the money valve). */
+export class StageConcurrencyError extends Error {
+  readonly code = "stage_concurrency";
+  constructor(readonly limit: number) {
+    super(`the concurrent-agent cap (${limit}) is reached — waiting for a running agent to finish`);
+    this.name = "StageConcurrencyError";
+  }
+}
+
+/**
+ * Refuse a spawn when the number of honestly-alive one-shot agents has reached the
+ * global cap (Settings → Operations). Counts only verified-live rows, so stale
+ * zombies never eat capacity.
+ */
+export function assertConcurrencyCapacity(db: Db, probe: LivenessProbe = REAL_PROBE): void {
+  const limit = opsSettings().maxConcurrentAgents;
+  const rows = db
+    .select()
+    .from(sessions)
+    .where(and(eq(sessions.kind, "oneshot"), inArray(sessions.status, ["spawning", "running"])))
+    .all();
+  const live = rows.filter((r) => isSessionRowAlive(r, probe)).length;
+  if (live >= limit) throw new StageConcurrencyError(limit);
+}
+
 // --- attempt budget (§6.1.c) ------------------------------------------------
 
 export const STAGE_ATTEMPT_WINDOW_MS = 24 * 60 * 60 * 1000;
-/** Max *automatic* spawns of one stage per task per window (a Settings knob in 6.3.e). */
-export const DEFAULT_STAGE_ATTEMPT_BUDGET = 3;
 
 /**
  * How many runs of (taskId, role) started inside the window — every outcome counts

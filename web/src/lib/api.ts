@@ -472,6 +472,8 @@ export function updateSettings(
     agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
     /** Date/time patterns (§6.3.d); blank/null resets a key to the default. */
     formats?: { date?: string | null; dateTime?: string | null };
+    /** Operations knobs (§6.3.e); null resets a key to the built-in default. */
+    operations?: Record<string, number | null>;
   },
 ): Promise<GlobalSettings> {
   return fetch("/api/settings", {

@@ -188,3 +188,26 @@ test("circuit breaker: under budget (2 recent attempts) still heals", async () =
   expect(healed).toBe(1);
   expect(getTask(db, t.id)?.status).toBe("ready");
 });
+
+test("circuit-breaker budget is a live Settings knob (§6.3.e): max 1 → trips after one attempt", async () => {
+  const { readSettings, writeSettings } = await import("./store/store");
+  writeSettings({ ...readSettings(), operations: { maxStageAttemptsPer24h: 1 } });
+  const t = createTask(db, { title: "tight budget" });
+  updateTask(db, t.id, { status: "refining" });
+  seedAttempt(t.id, 60_000); // one prior attempt = at the cap
+
+  let spawns = 0;
+  const healed = await healStuckTasks({
+    db,
+    runAgent: async (opts) => {
+      spawns += 1;
+      return runnerFor({ discovery: { sufficiency: "ok", spec: "S", unknowns: [] } })(opts);
+    },
+    activity: new ActivityTracker(() => {}),
+    hub: new WsHub(),
+  });
+
+  expect(spawns).toBe(0);
+  expect(healed).toBe(0);
+  expect(getTask(db, t.id)?.status).toBe("needs_feedback");
+});

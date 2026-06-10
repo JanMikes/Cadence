@@ -1,7 +1,7 @@
 import type { AgentPromptInfo } from "@cadence/shared";
 import { DELIVERY_MODES, PERMISSION_MODES, TERMINAL_APPS } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CalendarClock, Check, Save, Settings2 } from "lucide-react";
+import { Bot, CalendarClock, Check, Gauge, Save, Settings2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { getAgentPrompts, getSettings, updateSettings } from "../../lib/api";
@@ -12,13 +12,13 @@ import { cn } from "../../lib/utils";
 const FIELD =
   "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-type SectionId = "general" | "agents" | "formats";
+type SectionId = "general" | "agents" | "formats" | "operations";
 
-// Sections grow with the phase: Operations (6.3.e) joins when it lands.
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Settings2 }> = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "agents", label: "Agents & Prompts", icon: Bot },
   { id: "formats", label: "Formats", icon: CalendarClock },
+  { id: "operations", label: "Operations", icon: Gauge },
 ];
 
 export function SettingsView() {
@@ -53,6 +53,7 @@ export function SettingsView() {
           {section === "general" ? <GeneralSection /> : null}
           {section === "agents" ? <AgentsPromptsSection /> : null}
           {section === "formats" ? <FormatsSection /> : null}
+          {section === "operations" ? <OperationsSection /> : null}
         </div>
       </div>
     </div>
@@ -348,6 +349,103 @@ function FormatsSection() {
         <LabeledIconButton
           icon={<Save />}
           label="Save formats"
+          disabled={save.isPending}
+          onClick={() => save.mutate()}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Operations (6.3.e)
+
+const OPS_FIELDS: Array<{ key: string; label: string; help: string; fallback: number }> = [
+  {
+    key: "stuckThresholdMinutes",
+    label: "“Looks stuck” after (minutes)",
+    help: "A running agent with no transcript activity for this long gets a stuck nudge.",
+    fallback: 10,
+  },
+  {
+    key: "readStageTimeoutMinutes",
+    label: "Read-stage timeout (minutes)",
+    help: "Hard stop for triage / discovery / questioner / planner / delivery runs.",
+    fallback: 15,
+  },
+  {
+    key: "implementStageTimeoutMinutes",
+    label: "Implement/verify timeout (minutes)",
+    help: "Hard stop for implementer and verifier runs (real builds + tests take longer).",
+    fallback: 60,
+  },
+  {
+    key: "maxStageAttemptsPer24h",
+    label: "Max automatic attempts per stage / 24 h",
+    help: "The circuit breaker: past this, the task flips to Needs input instead of spawning again.",
+    fallback: 3,
+  },
+  {
+    key: "maxConcurrentAgents",
+    label: "Max concurrent agents",
+    help: "Global cap on simultaneously-running background agents (the money valve).",
+    fallback: 4,
+  },
+];
+
+function OperationsSection() {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const ops = (settings.data?.operations ?? {}) as Record<string, number | undefined>;
+    setValues(Object.fromEntries(OPS_FIELDS.map((f) => [f.key, ops[f.key]?.toString() ?? ""])));
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateSettings({
+        operations: Object.fromEntries(
+          OPS_FIELDS.map((f) => {
+            const n = Number(values[f.key]);
+            // blank or the default → clear (keep only real customizations)
+            const customized = values[f.key]?.trim() && Number.isFinite(n) && n > 0 && n !== f.fallback;
+            return [f.key, customized ? n : null];
+          }),
+        ),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
+        Safety limits for background agents (§6.1). Blank = the built-in default; every limit guards
+        real money, so values must be positive.
+      </p>
+      {OPS_FIELDS.map((f) => (
+        <label key={f.key} className="flex flex-col gap-1 text-xs text-muted-foreground">
+          {f.label}
+          <input
+            type="number"
+            min={1}
+            value={values[f.key] ?? ""}
+            onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            placeholder={String(f.fallback)}
+            className={FIELD}
+          />
+          <span className="text-[11px]">{f.help}</span>
+        </label>
+      ))}
+      <div className="flex items-center justify-end gap-3">
+        {save.isSuccess ? (
+          <span className="inline-flex items-center gap-1 text-xs text-green-500">
+            <Check className="size-3.5" /> Saved
+          </span>
+        ) : null}
+        <LabeledIconButton
+          icon={<Save />}
+          label="Save limits"
           disabled={save.isPending}
           onClick={() => save.mutate()}
         />

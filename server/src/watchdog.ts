@@ -4,6 +4,7 @@ import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
 import { isSessionRowAlive, killProcessTree, type LivenessProbe, REAL_PROBE } from "./liveness";
 import { notifyOnTransition } from "./notify";
+import { stuckIdleMs } from "./ops";
 import { taskDiff } from "./review";
 import { endSession, listSessions } from "./sessions";
 import { appendContext, readPlan } from "./store/store";
@@ -33,8 +34,6 @@ import type { WsHub } from "./ws";
 const ACTIVE_WORK: ReadonlySet<string> = new Set(["implementing", "verifying"]);
 const RUNNING: ReadonlySet<string> = new Set(["spawning", "running"]);
 
-/** How long a still-"running" session may go without writing its transcript before we flag it. */
-export const STUCK_IDLE_MS = Number(process.env.CADENCE_SESSION_STUCK_MS) || 10 * 60_000;
 const DEFAULT_INTERVAL_MS = 60_000;
 
 // Re-exported so existing imports keep working; the implementation lives with the
@@ -199,7 +198,8 @@ export function checkSessions(
     }
 
     const lastActivity = lastActivityMs(db, s);
-    if (now - lastActivity > STUCK_IDLE_MS && !notified.has(s.id)) {
+    // Threshold is a live Settings knob (§6.3.e); the env var stays the strongest override.
+    if (now - lastActivity > stuckIdleMs() && !notified.has(s.id)) {
       notified.add(s.id);
       stuck += 1;
       const mins = Math.round((now - lastActivity) / 60_000);

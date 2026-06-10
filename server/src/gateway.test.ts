@@ -1383,3 +1383,22 @@ test("PATCH /api/settings stores date/time format patterns and clears them (§6.
   s = (await res.json()) as typeof s;
   expect(s.formats?.dateTime).toBeUndefined(); // cleared → Czech default applies client-side
 });
+
+test("PATCH /api/settings stores operations knobs and clears invalid/null values (§6.3.e)", async () => {
+  let res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operations: { maxConcurrentAgents: 8, stuckThresholdMinutes: -5 } }),
+  });
+  let s = (await res.json()) as { operations?: Record<string, number> };
+  expect(s.operations?.maxConcurrentAgents).toBe(8);
+  expect(s.operations?.stuckThresholdMinutes).toBeUndefined(); // invalid → ignored/cleared
+
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operations: { maxConcurrentAgents: null } }),
+  });
+  s = (await res.json()) as typeof s;
+  expect(s.operations?.maxConcurrentAgents).toBeUndefined(); // back to the built-in default
+});

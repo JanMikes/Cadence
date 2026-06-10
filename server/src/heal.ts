@@ -1,14 +1,11 @@
 import type { ActivityTracker } from "./activity";
 import { runDiscovery } from "./agents/discovery";
-import {
-  countRecentStageRuns,
-  DEFAULT_STAGE_ATTEMPT_BUDGET,
-  findLiveStage,
-} from "./agents/stage-guard";
+import { countRecentStageRuns, findLiveStage } from "./agents/stage-guard";
 import { runQuestioner } from "./agents/questioner";
 import type { AgentRunner } from "./agents/triage";
 import type { Db } from "./db/client";
 import { notifyOnTransition } from "./notify";
+import { opsSettings } from "./ops";
 import { appendContext } from "./store/store";
 import { listTasks, updateTask } from "./tasks";
 import type { WsHub } from "./ws";
@@ -41,12 +38,14 @@ export async function healStuckTasks(deps: HealDeps): Promise<number> {
     if (findLiveStage(db, task.id, "discovery")) continue;
     // Circuit breaker (§6.1.c): autonomy gets a bounded number of automatic attempts;
     // past that the task needs a human, not another agent — flip it to Needs-Feedback
-    // loudly (note + notification) instead of silently spawning money.
-    if (countRecentStageRuns(db, task.id, "discovery") >= DEFAULT_STAGE_ATTEMPT_BUDGET) {
+    // loudly (note + notification) instead of silently spawning money. The budget is a
+    // live Settings knob (§6.3.e).
+    const budget = opsSettings().maxStageAttemptsPer24h;
+    if (countRecentStageRuns(db, task.id, "discovery") >= budget) {
       const halted = updateTask(db, task.id, { status: "needs_feedback" });
       appendContext(
         task.id,
-        `Automatic refinement halted after ${DEFAULT_STAGE_ATTEMPT_BUDGET} attempts in 24h — ` +
+        `Automatic refinement halted after ${budget} attempts in 24h — ` +
           "Cadence won't spawn more agents for this task until you add input " +
           "(answer / add context, then run Refine).",
       );

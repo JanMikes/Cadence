@@ -169,3 +169,29 @@ test("a stale zombie row from a previous gateway life is finalized and the retry
   expect(rows.find((r) => r.id === zombie)?.status).toBe("failed");
   expect(rows.find((r) => r.id !== zombie)?.status).toBe("done");
 });
+
+test("global concurrency cap (§6.3.e): at the cap, a new stage spawn is refused", async () => {
+  const { readSettings, writeSettings } = await import("../store/store");
+  const { StageConcurrencyError } = await import("./stage-guard");
+  writeSettings({ ...readSettings(), operations: { maxConcurrentAgents: 1 } });
+
+  const busyTask = createTask(db, { title: "occupies the only slot" });
+  seedRun(busyTask.id, { pid: process.pid }); // honestly alive
+
+  const t = createTask(db, { title: "must wait" });
+  let called = false;
+  const run = makeRecordingRunner({
+    db,
+    hub: new WsHub(),
+    base: async () => {
+      called = true;
+      return { text: "{}", json: {}, costUsd: 0, sessionId: null, isError: false, raw: {} };
+    },
+  });
+
+  expect(run({ cwd: "/tmp/p", role: "triage", prompt: "p", taskId: t.id })).rejects.toThrow(
+    StageConcurrencyError,
+  );
+  expect(called).toBe(false);
+  expect(listTaskSessions(db, t.id)).toHaveLength(0); // no row inserted for the refused spawn
+});

@@ -1,6 +1,7 @@
 import type { AgentResult, ClaudeEvent } from "@cadence/shared";
 import { spawn } from "node:child_process";
 import { killGroup } from "../liveness";
+import { opsSettings } from "../ops";
 import { getAgentModel } from "./prompts";
 
 // modelForRole moved to prompts.ts (§6.3.b — it's a registry concern now); re-exported
@@ -9,16 +10,17 @@ export { modelForRole } from "./prompts";
 
 /**
  * Hard per-run ceiling (§6.1.g) so no one-shot can burn tokens forever: read stages
- * 15 min; implementer/verifier (real builds + tests) 60 min. Callers may override via
- * opts.timeoutMs; an explicit 0 disables the ceiling. Becomes a Settings knob in 6.3.e.
+ * 15 min; implementer/verifier (real builds + tests) 60 min — both live Settings
+ * knobs (§6.3.e). Callers may override via opts.timeoutMs; an explicit 0 disables it.
  */
 export function defaultStageTimeoutMs(role?: string): number {
+  const ops = opsSettings();
   switch (role) {
     case "implementer":
     case "verifier":
-      return 60 * 60_000;
+      return ops.implementStageTimeoutMinutes * 60_000;
     default:
-      return 15 * 60_000;
+      return ops.readStageTimeoutMinutes * 60_000;
   }
 }
 

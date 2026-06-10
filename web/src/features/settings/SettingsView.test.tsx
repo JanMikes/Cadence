@@ -47,3 +47,13 @@ test("SettingsView nav includes the Formats section (§6.3.d)", () => {
   );
   expect(html).toContain("Formats");
 });
+
+test("SettingsView nav includes the Operations section (§6.3.e)", () => {
+  const qc = new QueryClient();
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <SettingsView />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("Operations");
+});

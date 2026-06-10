@@ -7,7 +7,7 @@ import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
 import { getAgentModel } from "./prompts";
 import { type AgentRunOptions, runAgent } from "./runner";
-import { assertStageIdle } from "./stage-guard";
+import { assertConcurrencyCapacity, assertStageIdle } from "./stage-guard";
 import type { AgentRunner } from "./triage";
 
 export interface RecordingRunnerDeps {
@@ -43,6 +43,8 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
     // finalizes stale zombie rows as a side effect. Synchronous from check to insert below,
     // so in-process callers cannot interleave past it.
     assertStageIdle(db, opts.taskId, role);
+    // Global money valve (§6.3.e): never exceed the concurrent-agent cap.
+    assertConcurrencyCapacity(db);
 
     try {
       db.insert(sessions)

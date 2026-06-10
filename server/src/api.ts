@@ -874,6 +874,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
         /** Date/time patterns (6.3.d); blank/null resets a key to the default. */
         formats?: { date?: string | null; dateTime?: string | null };
+        /** Operations knobs (6.3.e); null/invalid resets a key to the built-in default. */
+        operations?: Record<string, number | null>;
       };
       try {
         patch = (await req.json()) as typeof patch;
@@ -910,6 +912,22 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
           else delete formats[key];
         }
       }
+      // Operations knobs (§6.3.e): per-key set; null/invalid clears back to the default.
+      const OPS_KEYS = [
+        "stuckThresholdMinutes",
+        "readStageTimeoutMinutes",
+        "implementStageTimeoutMinutes",
+        "maxStageAttemptsPer24h",
+        "maxConcurrentAgents",
+      ] as const;
+      const operations = { ...(current.operations ?? {}) } as Record<string, number>;
+      for (const key of OPS_KEYS) {
+        if (patch.operations && key in patch.operations) {
+          const v = patch.operations[key];
+          if (typeof v === "number" && Number.isFinite(v) && v > 0) operations[key] = v;
+          else delete operations[key];
+        }
+      }
       const next = {
         ...current,
         ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
@@ -919,6 +937,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         global: { ...current.global, ...(patch.global ?? {}) },
         ...(patch.agents || current.agents ? { agents } : {}),
         ...(patch.formats || current.formats ? { formats } : {}),
+        ...(patch.operations || current.operations ? { operations } : {}),
       };
       writeSettings(next);
       applyClaudeBinEnv(next); // export CADENCE_CLAUDE_BIN so agent spawns pick up the change

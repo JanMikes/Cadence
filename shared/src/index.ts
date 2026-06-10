@@ -531,6 +531,14 @@ export interface GlobalSettings {
   /** Date/time display patterns (PHP-style tokens, 6.3.d). Absent = the defaults
    *  (`d.m.Y` / `d.m.Y H:i:s`); the literal "SYSTEM" defers to the browser locale. */
   formats?: { date?: string; dateTime?: string };
+  /** Operations knobs (6.3.e) — §6.1 safety limits; absent keys use the built-in defaults. */
+  operations?: {
+    stuckThresholdMinutes?: number;
+    readStageTimeoutMinutes?: number;
+    implementStageTimeoutMinutes?: number;
+    maxStageAttemptsPer24h?: number;
+    maxConcurrentAgents?: number;
+  };
 }
 
 /** Wire shape of one agent's prompt definition + current override (GET /api/agents/prompts, 6.3.c). */
