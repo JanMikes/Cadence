@@ -4,6 +4,7 @@ import { claudePermissionMode } from "../sessions";
 import { readPlan, readSpec } from "../store/store";
 import { getTaskDetail, resolvePermissionMode, updateTask } from "../tasks";
 import { beginInPlaceExecution, type ExecutionTarget } from "../worktree";
+import { getAgentPrompt, renderTemplate } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -25,6 +26,8 @@ export function buildImplementerPrompt(
   const steps = plan.steps
     .map((s, i) => `${i + 1}. ${s.risky ? "⚠️ " : ""}${s.title}${s.detail ? ` — ${s.detail}` : ""}`)
     .join("\n");
+  // The placement preamble stays code-computed (it's the in-place safety guardrail,
+  // branch-dependent) — the editable template sequences it via {{placement}}.
   const placement = where.inPlace
     ? [
         `You are working DIRECTLY in the project's working copy${where.branch ? ` on the dedicated branch ${where.branch}` : ""} —`,
@@ -36,22 +39,14 @@ export function buildImplementerPrompt(
         "You are in an isolated git worktree/branch for this task — make focused commits with clear",
         "messages,",
       ].join("\n");
-  return [
-    "You are the Implementer. Execute the APPROVED plan below to satisfy every acceptance criterion.",
+  return renderTemplate(getAgentPrompt("implementer"), {
+    title: task.title,
+    detailsLine: task.body ? `DETAILS: ${task.body}` : "",
+    specBlock: spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
+    steps: steps || "(no steps)",
+    plannerNotesBlock: plan.notes ? `\nPLANNER NOTES: ${plan.notes}` : "",
     placement,
-    "follow the project's conventions and the composed context, and keep diffs reviewable.",
-    "If you hit a blocker that needs a decision, STOP and report it rather than guessing.",
-    "",
-    `TASK: ${task.title}`,
-    task.body ? `DETAILS: ${task.body}` : "",
-    spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
-    "",
-    "APPROVED PLAN:",
-    steps || "(no steps)",
-    plan.notes ? `\nPLANNER NOTES: ${plan.notes}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  });
 }
 
 /**

@@ -4,6 +4,7 @@ import { withReadAccess } from "../project-locks";
 import { listProjects } from "../projects";
 import { appendContext } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
+import { getAgentPrompt, renderTemplate, TITLE_NAMING_INSTRUCTION } from "./prompts";
 import { type AgentRunOptions, runAgent } from "./runner";
 
 export type AgentRunner = (opts: AgentRunOptions) => Promise<AgentResult>;
@@ -35,34 +36,17 @@ export function buildTriagePrompt(
   projectList: Array<{ slug: string; name: string }>,
   opts: { titleNeeded?: boolean } = {},
 ): string {
-  const projects = projectList.length
-    ? projectList.map((p) => `${p.slug} (${p.name})`).join(", ")
-    : "(none yet)";
-  return [
-    "You are the Triage agent for a personal task platform. Given a raw, possibly-messy task the user",
-    "dumped into their inbox, do a fast first pass. Do NOT explore code. Output JSON only.",
-    "",
-    "Decide: which known project this belongs to (or null); a priority (P0..P3); a deadline if one is",
-    "implied (YYYY-MM-DD or null); 2-4 labels; and a one-line restatement of the goal.",
-    'If too vague to even route or restate, set sufficiency:"insufficient" and say what you need.',
-    opts.titleNeeded
-      ? 'The task was captured without a title — also write a "title": a concise, specific name for the\n' +
-        "task (max 60 chars, imperative mood, no trailing period). Always include it, even if insufficient."
-      : "",
-    "",
-    `Known projects: ${projects}.`,
-    "",
-    "Respond with ONLY this JSON shape:",
-    `{"sufficiency":"ok|insufficient","needFromUser":"string|null","restatement":"string",${
-      opts.titleNeeded ? '"title":"string",' : ""
-    }`,
-    '"projectSlug":"string|null","priority":"P0|P1|P2|P3","deadline":"YYYY-MM-DD|null","labels":["string"]}',
-    "",
-    `TASK TITLE: ${raw.title}`,
-    raw.body ? `TASK BODY: ${raw.body}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // The instructions live in the editable prompt registry (§6.3.a); this builder only
+  // computes the variables. Conditional fragments are whole-line vars — empty → line drops.
+  return renderTemplate(getAgentPrompt("triage"), {
+    title: raw.title,
+    bodyLine: raw.body ? `TASK BODY: ${raw.body}` : "",
+    projects: projectList.length
+      ? projectList.map((p) => `${p.slug} (${p.name})`).join(", ")
+      : "(none yet)",
+    titleInstruction: opts.titleNeeded ? TITLE_NAMING_INSTRUCTION : "",
+    titleField: opts.titleNeeded ? '"title":"string",' : "",
+  });
 }
 
 /** Apply a parsed triage result to the task (deterministic; no model). */

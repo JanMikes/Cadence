@@ -3,6 +3,7 @@ import type { Db } from "../db/client";
 import { suggestions } from "../db/schema";
 import { appendMemoryNote, appendProjectMemoryNote } from "../memory";
 import { getProject } from "../projects";
+import { getAgentPrompt, renderTemplate } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -37,17 +38,9 @@ export function gatherSignals(db: Db, limit = 50): string[] {
 }
 
 export function buildReflectorPrompt(signals: string[]): string {
-  return [
-    "You are the Reflector. Below are recent decisions I made on Cadence's suggestions (what I",
-    "Accepted/Edited/Overrode/Dismissed). Distill only DURABLE, GENERAL lessons worth remembering —",
-    "recurring patterns, not one-offs. Each lesson is one concise sentence. If nothing is durable,",
-    "return an empty list. Output JSON only.",
-    "",
-    'Respond with ONLY: {"lessons":[{"scope":"global|<project-slug>","note":"string"}]}',
-    "",
-    "SIGNALS:",
-    ...signals.map((s) => `- ${s}`),
-  ].join("\n");
+  return renderTemplate(getAgentPrompt("reflector"), {
+    signalsList: signals.map((s) => `- ${s}`).join("\n"),
+  });
 }
 
 /** Append each lesson to the right memory file (global, or a project's). */

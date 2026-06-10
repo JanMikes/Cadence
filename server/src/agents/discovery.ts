@@ -3,6 +3,7 @@ import { withReadAccess } from "../project-locks";
 import { appendContext, writeSpec } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
 import { agentsJson } from "./library";
+import { getAgentPrompt, renderTemplate, TITLE_NAMING_INSTRUCTION } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -35,32 +36,12 @@ export function buildDiscoveryPrompt(
   task: { title: string; body: string },
   opts: { titleNeeded?: boolean } = {},
 ): string {
-  return [
-    "You are the Discovery agent. The task is assigned to a project whose working directory is your",
-    "cwd. Explore the relevant code (READ-ONLY — you may delegate to the `explorer` and",
-    "`dependency-mapper` subagents) and turn the task into an actionable spec. Produce: a crisp problem",
-    "statement, scope (in/out), the files/areas likely affected, 1-3 approach options with a",
-    "recommendation, risks, and CHECKABLE acceptance criteria. List any genuine unknowns that block a",
-    "confident implementation. If still too vague to implement responsibly, set",
-    'sufficiency:"insufficient" and state precisely what you need. Output JSON only.',
-    opts.titleNeeded
-      ? 'The task was captured without a title — also write a "title": a concise, specific name for the\n' +
-        "task (max 60 chars, imperative mood, no trailing period). Always include it, even if insufficient."
-      : "",
-    "",
-    "Respond with ONLY this JSON shape:",
-    `{"sufficiency":"ok|insufficient","needFromUser":"string|null",${
-      opts.titleNeeded ? '"title":"string",' : ""
-    }"spec":"markdown",`,
-    '"scope":{"in":["string"],"out":["string"]},"affectedFiles":["path"],',
-    '"approaches":[{"name":"string","summary":"string","recommended":true}],',
-    '"risks":["string"],"acceptanceCriteria":["string"],"unknowns":["string"]}',
-    "",
-    `TASK TITLE: ${task.title}`,
-    task.body ? `TASK BODY: ${task.body}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return renderTemplate(getAgentPrompt("discovery"), {
+    title: task.title,
+    bodyLine: task.body ? `TASK BODY: ${task.body}` : "",
+    titleInstruction: opts.titleNeeded ? TITLE_NAMING_INSTRUCTION : "",
+    titleField: opts.titleNeeded ? '"title":"string",' : "",
+  });
 }
 
 /** Coerce a model-returned value to text. Real models sometimes return `spec` as a structured

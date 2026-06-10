@@ -1,6 +1,7 @@
 import type { DeliveryResult, VerifyReport } from "@cadence/shared";
 import type { Db } from "../db/client";
 import { appendContext, readSpec, readVerify, writeDelivery } from "../store/store";
+import { getAgentPrompt, renderTemplate } from "./prompts";
 import { getTaskDetail, resolveDeliveryMode } from "../tasks";
 import {
   branchName,
@@ -50,19 +51,12 @@ export function buildDeliveryPrompt(
   verify: VerifyReport | null,
 ): string {
   const checks = (verify?.checks ?? []).map((c) => `${c.passed ? "✅" : "❌"} ${c.name}`).join(", ");
-  return [
-    "You are the Delivery agent. Produce a concise human summary of WHAT changed and WHY, referencing",
-    "the acceptance criteria and the verify results. Be specific and skimmable. Output JSON only.",
-    "",
-    'Respond with ONLY this JSON shape: {"summary":"markdown","branch":"string|null","prUrl":"string|null"}',
-    "",
-    `TASK: ${task.title}`,
-    task.body ? `DETAILS: ${task.body}` : "",
-    spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
-    checks ? `\nVERIFY CHECKS: ${checks}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return renderTemplate(getAgentPrompt("delivery"), {
+    title: task.title,
+    detailsLine: task.body ? `DETAILS: ${task.body}` : "",
+    specBlock: spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
+    checksLine: checks ? `\nVERIFY CHECKS: ${checks}` : "",
+  });
 }
 
 /**

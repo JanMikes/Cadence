@@ -3,6 +3,7 @@ import type { Db } from "../db/client";
 import { withReadAccess } from "../project-locks";
 import { readPlan, readSpec, writePlan } from "../store/store";
 import { getTaskDetail, resolveTaskCwd } from "../tasks";
+import { getAgentPrompt, renderTemplate } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -18,21 +19,11 @@ export interface PlannerOutcome {
 }
 
 export function buildPlannerPrompt(task: { title: string; body: string }, spec: string): string {
-  return [
-    "You are the Planner. Using the finalized spec, acceptance criteria, and all context layers,",
-    "produce a concrete, ordered implementation plan: the steps, the files each step touches, the",
-    "sequencing, and how each acceptance criterion will be satisfied. Surface any step that is risky",
-    "or irreversible (set risky:true). DO NOT WRITE CODE — you are read-only (plan mode). Output JSON only.",
-    "",
-    "Respond with ONLY this JSON shape:",
-    '{"steps":[{"title":"string","detail":"string","files":["path"],"risky":false}],"notes":"string|null"}',
-    "",
-    `TASK TITLE: ${task.title}`,
-    task.body ? `TASK BODY: ${task.body}` : "",
-    spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return renderTemplate(getAgentPrompt("planner"), {
+    title: task.title,
+    bodyLine: task.body ? `TASK BODY: ${task.body}` : "",
+    specBlock: spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
+  });
 }
 
 /**

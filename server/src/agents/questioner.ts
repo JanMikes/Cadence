@@ -3,6 +3,7 @@ import type { Db } from "../db/client";
 import { withReadAccess } from "../project-locks";
 import { appendContext, readQa, readSpec, writeQa } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
+import { getAgentPrompt, renderTemplate } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -24,21 +25,10 @@ export interface QuestionerOutcome {
 }
 
 export function buildQuestionerPrompt(spec: string, task: { title: string }): string {
-  return [
-    "You are the Questioner agent. Given the Discovery spec (incl. its unknowns) and the task,",
-    "write the SMALLEST set of high-leverage questions needed to unblock implementation — ranked,",
-    "each with a type (text | single_choice | multi_choice | boolean) and options where useful, and a",
-    "one-line 'why'. Never ask what the spec/context already answers. If one blocker overrides, ask",
-    "only that. Output JSON only.",
-    "",
-    "Respond with ONLY this JSON shape:",
-    '{"questions":[{"id":"q1","rank":1,"type":"single_choice","text":"string","options":["string"],"why":"string"}]}',
-    "",
-    `TASK: ${task.title}`,
-    "",
-    "SPEC:",
-    spec || "(no spec yet)",
-  ].join("\n");
+  return renderTemplate(getAgentPrompt("questioner"), {
+    title: task.title,
+    specText: spec || "(no spec yet)",
+  });
 }
 
 const VALID_TYPES = new Set(["text", "single_choice", "multi_choice", "boolean"]);

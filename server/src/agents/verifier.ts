@@ -4,6 +4,7 @@ import { readPlan, readSpec, writeVerify } from "../store/store";
 import { getTaskDetail, updateTask } from "../tasks";
 import { resolveExecutionCwd } from "../worktree";
 import { agentsJson } from "./library";
+import { getAgentPrompt, renderTemplate } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -31,25 +32,12 @@ export function buildVerifierPrompt(
   plan: TaskPlan,
 ): string {
   const steps = plan.steps.map((s, i) => `${i + 1}. ${s.title}`).join("\n");
-  return [
-    "You are the Verifier. Independently check the implementation in this worktree against the",
-    "acceptance criteria. Run the project's tests/build/lint (delegate to the `smoke-tester` subagent)",
-    "and review the diff for correctness and convention/security/test gaps (delegate to the",
-    "`security-reviewer`, `test-reviewer`, and `convention-reviewer` subagents). Confirm each acceptance",
-    "criterion is met. Report pass/fail with specifics — DO NOT FIX, only report. Output JSON only.",
-    "",
-    "Respond with ONLY this JSON shape:",
-    '{"passed":false,"criteria":[{"criterion":"string","met":true,"evidence":"string"}],',
-    '"checks":[{"name":"tests|build|lint","passed":true,"output":"string"}],',
-    '"issues":[{"severity":"high|med|low","detail":"string","file":"path"}]}',
-    "",
-    `TASK: ${task.title}`,
-    task.body ? `DETAILS: ${task.body}` : "",
-    spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
-    steps ? `\nPLAN:\n${steps}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return renderTemplate(getAgentPrompt("verifier"), {
+    title: task.title,
+    detailsLine: task.body ? `DETAILS: ${task.body}` : "",
+    specBlock: spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
+    planBlock: steps ? `\nPLAN:\n${steps}` : "",
+  });
 }
 
 /** Normalize the agent JSON into a clean report (omit undefined nested keys). */
