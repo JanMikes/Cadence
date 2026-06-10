@@ -108,17 +108,42 @@ function denialAsks(ev: Record<string, unknown>): InteractiveAsk[] {
   }));
 }
 
-/** Try to parse the agent's result text as JSON (tolerates ```json fences). */
+/**
+ * Try to parse the agent's result text as JSON. Tolerant by design — agents wrap
+ * their JSON in ```json fences, lead with prose, and (the 2026-06-11 incident)
+ * embed markdown code fences INSIDE JSON string values, so a lazy fence regex
+ * truncates a perfectly valid payload. Ladder: whole text → outer fence (greedy
+ * to the LAST ```) → first "{" to last "}".
+ */
 export function parseAgentJson(text: string): unknown | null {
   const t = text.trim();
   if (!t) return null;
-  const fenced = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const candidate = (fenced ? fenced[1] : t)?.trim() ?? "";
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    return null;
+  const tryParse = (s: string): unknown | null => {
+    try {
+      return JSON.parse(s) as unknown;
+    } catch {
+      return null;
+    }
+  };
+  // 1. The whole text is the JSON.
+  const whole = tryParse(t);
+  if (whole !== null) return whole;
+  // 2. Fenced: strip the OUTER fence — close at the LAST ``` so fences embedded
+  //    inside JSON strings (spec/code snippets) can't truncate the payload.
+  const open = t.match(/```(?:json)?\s*\n?/);
+  if (open?.index != null) {
+    const start = open.index + open[0].length;
+    const end = t.lastIndexOf("```");
+    if (end > start) {
+      const fenced = tryParse(t.slice(start, end).trim());
+      if (fenced !== null) return fenced;
+    }
   }
+  // 3. Last resort: the outermost object braces (prose-wrapped JSON).
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first >= 0 && last > first) return tryParse(t.slice(first, last + 1));
+  return null;
 }
 
 /** Build the final AgentResult from the run's `result` event (or last JSON object seen). */

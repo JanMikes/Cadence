@@ -152,3 +152,40 @@ test("unparseable discovery response → Needs-Feedback with a note (never stran
   expect(outcome).toMatchObject({ ran: true, status: "needs_feedback" });
   expect(getTask(db, task.id)?.status).toBe("needs_feedback");
 });
+
+// The 2026-06-11 stranding incident: a run can carry ASKS (e.g. a denied ExitPlanMode)
+// AND output whose JSON didn't parse. The recording wrapper only parks the task when the
+// run produced NOTHING — so stage code must key on askParked, never on asks alone, and
+// fall through to the visible needs_feedback note otherwise. Silent Refining is the bug.
+test("asks without askParked never strand the task — visible Needs-Feedback, not silent Refining", async () => {
+  const task = createTask(db, { title: "usage countdown" });
+  const run: AgentRunner = async () => ({
+    text: "long output whose JSON did not parse",
+    json: null,
+    costUsd: 0,
+    sessionId: "m",
+    isError: false,
+    raw: {},
+    asks: [{ tool: "ExitPlanMode", toolUseId: "t1", input: { plan: "..." } }],
+    // askParked deliberately absent: the wrapper did NOT park (the run produced output)
+  });
+  const outcome = await runDiscovery(db, task.id, run);
+  expect(outcome).toMatchObject({ ran: true, status: "needs_feedback" });
+  expect(getTask(db, task.id)?.status).toBe("needs_feedback"); // was: stuck in "refining"
+});
+
+test("askParked runs are reported as handled without piling on a failure note", async () => {
+  const task = createTask(db, { title: "asked and parked" });
+  const run: AgentRunner = async () => ({
+    text: "",
+    json: null,
+    costUsd: 0,
+    sessionId: "m",
+    isError: false,
+    raw: {},
+    asks: [{ tool: "AskUserQuestion", toolUseId: "t1", input: { questions: [] } }],
+    askParked: true, // the wrapper parked the task itself (it owns the status in prod)
+  });
+  const outcome = await runDiscovery(db, task.id, run);
+  expect(outcome).toMatchObject({ ran: true, status: "needs_feedback", askedUser: true });
+});

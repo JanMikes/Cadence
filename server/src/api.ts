@@ -866,6 +866,22 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         const t = getTask(ctx.db, taskId);
         if (t) notifyOnTransition(ctx.hub, before?.status, t);
       }
+      // Spec has unknowns → chain the Questioner, exactly like the capture pipeline
+      // (continueRefinement) — otherwise a manual refine dead-ends in Refining with
+      // nothing scheduled to move it.
+      if (outcome.status === "refining") {
+        const q = await ctx.activity.track(taskId, "questioner", () =>
+          runQuestioner(ctx.db, taskId, ctx.runAgent),
+        );
+        if (q.ran) {
+          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+          if (q.status === "needs_feedback" && !q.askedUser) {
+            const t = getTask(ctx.db, taskId);
+            if (t) notifyOnTransition(ctx.hub, "refining", t);
+          }
+          return Response.json(q);
+        }
+      }
     }
     return Response.json(outcome);
   }

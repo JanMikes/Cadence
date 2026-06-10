@@ -111,9 +111,9 @@ export async function runImplementer(
     permissionMode: claudeMode,
   });
 
-  // Stopped to ask for human input — already surfaced as Q&A + Needs-input by the
-  // recording wrapper. Hand back a marker, not a failure.
-  if (result.asks?.length) {
+  // Stopped to ask for human input AND the recording wrapper parked the task
+  // (Q&A + Needs-input). Hand back a marker, not a failure.
+  if (result.askParked) {
     return {
       ran: false,
       askedUser: true,

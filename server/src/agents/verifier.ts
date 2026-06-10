@@ -126,8 +126,8 @@ export async function runVerifier(
     agentsJson: agentsJson(VERIFY_SUBAGENTS),
   });
 
-  // Stopped to ask for human input — already surfaced as Q&A + Needs-input.
-  if (result.asks?.length) return { ran: false, askedUser: true };
+  // Stopped to ask for human input AND the wrapper parked the task as Needs-input.
+  if (result.askParked) return { ran: false, askedUser: true };
 
   const j = (result.json ?? null) as VerifierJson | null;
   if (!j || typeof j !== "object") {

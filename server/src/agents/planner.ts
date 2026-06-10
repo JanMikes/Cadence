@@ -91,10 +91,11 @@ export async function runPlanner(
 
   const j = (result.json ?? null) as PlannerJson | null;
   if (!j || typeof j !== "object") {
-    // No plan because the Planner stopped to ask (the recording wrapper already parked
-    // the task in Needs-input with Q&A cards). Answers land on the context channel and
-    // feed the next PLAY — report the handoff so the caller doesn't "recover" over it.
-    if (result.asks?.length) return { ran: false, askedUser: true };
+    // No plan because the Planner stopped to ask AND the recording wrapper parked the
+    // task in Needs-input with Q&A cards. Answers land on the context channel and feed
+    // the next PLAY — report the handoff so the caller doesn't "recover" over it.
+    // Keyed on askParked, never asks alone (a run can carry asks AND a plan).
+    if (result.askParked) return { ran: false, askedUser: true };
     return { ran: false };
   }
   return applyPlan(taskId, j);

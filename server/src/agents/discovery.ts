@@ -150,10 +150,11 @@ export async function runDiscovery(
   // The model didn't return usable JSON (or the run errored) — DON'T strand the task in Refining.
   // Surface it as Needs-Feedback with a visible note so it's recoverable, not silently stuck.
   if (!j || typeof j !== "object") {
-    // No output because the run stopped to ask for human input — the recording wrapper
-    // already turned the ask into Q&A cards + Needs-input + a note. Don't pile a
-    // misleading "no parseable JSON" failure on top of a perfectly explained handoff.
-    if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
+    // The run stopped to ask for human input and the recording wrapper ALREADY parked
+    // the task (Q&A cards + Needs-input + note) — don't pile a misleading "no parseable
+    // JSON" failure on top of a perfectly explained handoff. Keyed on askParked, never
+    // on asks alone: a run can carry asks AND output (the 2026-06-11 stranding bug).
+    if (result.askParked) return { ran: true, status: "needs_feedback", askedUser: true };
     updateTask(db, taskId, { status: "needs_feedback" });
     appendContext(
       taskId,

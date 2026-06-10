@@ -759,6 +759,10 @@ export interface AgentResult {
   raw: unknown;
   /** Interactive requests the run made that nobody could answer (headless). */
   asks?: InteractiveAsk[];
+  /** Set by the recording wrapper when it actually parked the task in Needs-input
+   *  over these asks (Q&A cards + notify). Stage code MUST key its ask handling on
+   *  this — never on `asks` alone (a run can carry asks AND usable output). */
+  askParked?: boolean;
   /** Diagnostic for a failed/empty run (stderr tail, exit code) — never silent. */
   errorDetail?: string | null;
 }

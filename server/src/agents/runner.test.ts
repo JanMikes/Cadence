@@ -24,6 +24,21 @@ test("parseAgentJson handles raw + fenced JSON, returns null for prose", () => {
   expect(parseAgentJson("just some prose")).toBeNull();
 });
 
+test("parseAgentJson survives code fences EMBEDDED in JSON strings (2026-06-11 incident)", () => {
+  // The discovery agent fenced its JSON, and the spec field itself contained
+  // ```tsx snippets — a lazy fence regex truncated the payload to unparseable.
+  const spec = "Change this:\\n```tsx\\n<span>{label}</span>\\n```\\nthen done.";
+  const text = `\`\`\`json\n{"sufficiency":"ok","spec":"${spec}","unknowns":[]}\n\`\`\``;
+  expect(parseAgentJson(text)).toMatchObject({ sufficiency: "ok", unknowns: [] });
+});
+
+test("parseAgentJson extracts prose-wrapped JSON (first { to last })", () => {
+  expect(parseAgentJson('Here is the result:\n{"ok":true,"n":1}\nHope that helps!')).toEqual({
+    ok: true,
+    n: 1,
+  });
+});
+
 test("runAgent runs the one-shot worker and parses result + cost + session", async () => {
   const res = await runAgent({ cwd: tmpdir(), role: "triage", prompt: "hello", command: MOCK_CMD });
   expect(res.text).toBe("echo: hello");

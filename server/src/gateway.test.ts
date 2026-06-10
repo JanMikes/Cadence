@@ -894,14 +894,15 @@ test("review/request-changes sends a task in review back to implementing with a 
   expect(ctx.content).toContain("please add tests");
 });
 
-test("POST /api/tasks/:id/refine runs discovery (mock) and produces an outcome", async () => {
+test("POST /api/tasks/:id/refine chains discovery → questioner (no Refining dead end)", async () => {
   const task = await createViaApi("Add a feature flag system");
   const outcome = (await fetch(`${gw.url}/api/tasks/${task.id}/refine`, { method: "POST" }).then((r) =>
     r.json(),
   )) as { ran: boolean; status: string };
   expect(outcome.ran).toBe(true);
-  // the role-aware mock's discovery returns unknowns → stays in Refining
-  expect(outcome.status).toBe("refining");
+  // the role-aware mock's discovery returns unknowns → the Questioner runs (same chain
+  // as capture) and parks the task with its questions — never silently left in Refining
+  expect(outcome.status).toBe("needs_feedback");
 });
 
 test("GET /api/tasks?sort=urgency orders overdue/due-soon ahead of far-off", async () => {

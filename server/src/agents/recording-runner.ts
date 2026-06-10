@@ -154,6 +154,9 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
       const askedUser = !produced && (result.asks?.length ?? 0) > 0;
       if (askedUser) {
         applyInteractiveAsks(db, hub, opts.taskId, role, result.asks ?? []);
+        // The contract stage code keys on (see AgentResult.askParked): only set when
+        // the park actually happened — `asks` alone never implies a status change.
+        result.askParked = true;
       } else if (produced && result.asks?.length) {
         // The run recovered after an unanswered ask — keep the record honest without
         // derailing the pipeline: the user can still weigh in at the next gate.

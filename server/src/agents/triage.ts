@@ -239,9 +239,9 @@ export async function runTriage(
 
   const j = (result.json ?? null) as TriageJson | null;
   if (!j || typeof j !== "object") {
-    // No output because the run stopped to ask for human input — the recording wrapper
-    // surfaced it (Q&A + Needs-input). Report it as handled so callers don't retry on top.
-    if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
+    // The run stopped to ask and the wrapper already parked the task (Q&A + Needs-input).
+    // Report it as handled so callers don't retry on top. Keyed on askParked, never asks alone.
+    if (result.askParked) return { ran: true, status: "needs_feedback", askedUser: true };
     return { ran: false }; // couldn't parse — leave in Inbox
   }
   return applyTriage(db, taskId, j);
