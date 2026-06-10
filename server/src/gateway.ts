@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
 import { ActivityTracker } from "./activity";
 import { makeRecordingRunner } from "./agents/recording-runner";
+import { startGitContextSweep } from "./git-context";
 import { healStuckTasks } from "./heal";
 import { failStaleWorktreeCheckRuns } from "./projects";
 import { reconcileOrphans, startSessionWatchdog } from "./watchdog";
@@ -125,6 +126,11 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   const watchdog =
     opts.startWatcher === false ? { close() {} } : startSessionWatchdog(db, hub);
 
+  // Git-context sweep: deterministic local-git checks that catch merges done outside
+  // Cadence (terminal merges, forge PR/MR merges) so review/done cards stay honest.
+  const gitSweep =
+    opts.startWatcher === false ? { close() {} } : startGitContextSweep(db, hub);
+
   const server = Bun.serve<WsData>({
     port,
     hostname: "127.0.0.1",
@@ -193,6 +199,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       watcher?.close();
       sweep.close();
       watchdog.close();
+      gitSweep.close();
       for (const id of spawnManager.liveIds()) spawnManager.kill(id);
       rmSync(runtimePath, { force: true }); // remove the runtime descriptor on graceful stop
       await server.stop(true);

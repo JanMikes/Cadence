@@ -124,6 +124,54 @@ export function lookupPrAuthor(ref: PrRef, exec: CliExec = realExec): string | n
   }
 }
 
+/** A PR/MR's lifecycle state, normalized across gh/glab. */
+export type PrState = "merged" | "open" | "closed";
+
+/**
+ * Best-effort PR/MR state lookup via the matching CLI (drives the git-context
+ * sweep's "was this squash-merged on the forge?" check — ancestry can't see squash
+ * or rebase merges). Null when the CLI is missing, unauthenticated or the output
+ * shape drifts — the sweep then falls back to local-git heuristics.
+ */
+export function lookupPrState(ref: PrRef, exec: CliExec = realExec): PrState | null {
+  try {
+    if (ref.forge === "github") {
+      const out = exec("gh", [
+        "pr",
+        "view",
+        String(ref.number),
+        "--repo",
+        `${ref.owner}/${ref.repo}`,
+        "--json",
+        "state",
+        "--jq",
+        ".state",
+      ]);
+      const state = out.trim().split("\n")[0]?.trim().toLowerCase();
+      if (state === "merged" || state === "open" || state === "closed") return state;
+      return null;
+    }
+    // ⚠ glab JSON output verified against docs, not live (same caveat as lookupPrAuthor).
+    const out = exec("glab", [
+      "mr",
+      "view",
+      String(ref.number),
+      "--repo",
+      `${ref.owner}/${ref.repo}`,
+      "--output",
+      "json",
+    ]);
+    const j = JSON.parse(out) as { state?: string };
+    const state = j.state?.trim().toLowerCase();
+    if (state === "merged") return "merged";
+    if (state === "opened" || state === "open") return "open";
+    if (state === "closed" || state === "locked") return "closed";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Direction inference (6.5.a): my own PR → I'm addressing feedback; otherwise I review. */
 export function inferDirection(author: string | null, account: string | null): "perform" | "address" {
   return author && account && author.toLowerCase() === account.toLowerCase() ? "address" : "perform";

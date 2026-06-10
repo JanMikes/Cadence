@@ -40,6 +40,7 @@ import type {
   TaskDetail,
   TaskDiff,
   TaskEvent,
+  TaskGitContext,
   TaskPlan,
   TranscriptEntry,
   TranscriptHit,
@@ -110,6 +111,14 @@ export function getDelivery(id: string): Promise<DeliveryResult> {
 
 export function getDiff(id: string): Promise<TaskDiff> {
   return fetch(`/api/tasks/${id}/diff`).then(json<TaskDiff>);
+}
+
+export function recheckGitContext(
+  id: string,
+): Promise<{ gitContext: TaskGitContext | null; changed: boolean }> {
+  return fetch(`/api/tasks/${id}/git-context/check`, { method: "POST" }).then(
+    json<{ gitContext: TaskGitContext | null; changed: boolean }>,
+  );
 }
 
 export function mergeReview(id: string): Promise<{ merged: boolean; task: TaskDetail }> {

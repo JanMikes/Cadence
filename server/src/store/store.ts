@@ -387,6 +387,8 @@ export function reindexProject(db: Db, slug: string): void {
     worktreeCheck: data.worktreeCheck ? JSON.stringify(data.worktreeCheck) : null,
     worktreeCheckRun: data.worktreeCheckRun ? JSON.stringify(data.worktreeCheckRun) : null,
     systemPrompt: body || null,
+    agentPrompts:
+      data.agentPrompts && Object.keys(data.agentPrompts).length ? JSON.stringify(data.agentPrompts) : null,
     notes: data.notes ?? null,
   };
   db.insert(projects)
@@ -435,6 +437,7 @@ export function reindexTask(db: Db, id: string): void {
     estimate: data.estimate ?? null,
     deliveryMode: data.deliveryMode ?? null,
     prUrl: data.prUrl ?? null,
+    gitContext: data.gitContext ? JSON.stringify(data.gitContext) : null,
     taskType: data.taskType ?? "standard",
     reviewDirection: data.reviewDirection ?? null,
     reviewRef: data.reviewRef ?? null,

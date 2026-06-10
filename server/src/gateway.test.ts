@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { migrateDb, openDb, type Db } from "./db/client";
 import { sessions, tasks as tasksTable } from "./db/schema";
 import { startGateway, type Gateway } from "./gateway";
-import { bootstrap, writeQa } from "./store/store";
+import { bootstrap, writeDelivery, writeQa } from "./store/store";
 
 let gw: Gateway;
 let db: Db;
@@ -84,6 +84,15 @@ beforeAll(() => {
         };
       } else if (opts.role === "reflector") {
         json = { lessons: [{ scope: "global", note: "Jan bumps priorities up by one" }] };
+      } else if (opts.prompt.includes("AMBIGUOUS-PROJECT")) {
+        // triage abstaining on the project (not confident → candidates, no guess)
+        json = {
+          sufficiency: "ok",
+          restatement: "auto",
+          projectSlug: null,
+          projectCandidates: ["pick-me-a"],
+          priority: "P2",
+        };
       } else {
         json = { sufficiency: "ok", restatement: "auto", priority: "P2", labels: ["auto"] }; // triage
       }
@@ -148,6 +157,70 @@ test("POST /api/tasks accepts a description-only capture and derives a provision
   const task = (await created.json()) as Task;
   expect(task.title).toBe("Fix the flaky login test"); // first line of the description
   expect(task.body).toContain("It fails on CI only.");
+});
+
+test("POST /api/tasks honors explicit capture chips (project/priority/deadline/permission/parent/blockedBy)", async () => {
+  const project = await fetch(`${gw.url}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Chip Capture", rootPath: "/tmp/chip-capture" }),
+  }).then((r) => r.json() as Promise<{ id: string; slug: string }>);
+  const blocker = await createViaApi("The blocker");
+  const parent = await createViaApi("The parent");
+
+  const deadline = Date.parse("2026-08-01T00:00:00Z");
+  const created = await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "Fully specified capture",
+      project: project.slug,
+      priority: "P1",
+      deadline,
+      permissionMode: "manual",
+      parentTask: parent.id,
+      blockedBy: [blocker.id],
+    }),
+  });
+  expect(created.status).toBe(201);
+  const task = (await created.json()) as Task;
+  expect(task).toMatchObject({ priority: "P1", permissionMode: "manual", projectId: project.id });
+  expect(task.deadline).toBe(deadline);
+  expect(task.parentTaskId).toBe(parent.id);
+
+  const deps = (await fetch(`${gw.url}/api/tasks/${task.id}/deps`).then((r) => r.json())) as {
+    blockedBy: Task[];
+  };
+  expect(deps.blockedBy.map((t) => t.id)).toEqual([blocker.id]);
+  const subtasks = (await fetch(`${gw.url}/api/tasks/${parent.id}/subtasks`).then((r) =>
+    r.json(),
+  )) as Task[];
+  expect(subtasks.map((t) => t.id)).toContain(task.id);
+});
+
+test("POST /api/tasks: explicit project null = pinned 'no project'", async () => {
+  const created = await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Unassigned on purpose", project: null }),
+  });
+  expect(created.status).toBe(201);
+  expect(((await created.json()) as Task).projectId).toBeNull();
+});
+
+test("POST /api/tasks validates the capture chips (400s)", async () => {
+  const post = (body: object) =>
+    fetch(`${gw.url}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "bad capture", ...body }),
+    });
+  expect((await post({ priority: "P9" })).status).toBe(400);
+  expect((await post({ permissionMode: "yolo" })).status).toBe(400);
+  expect((await post({ deadline: "tomorrow" })).status).toBe(400);
+  expect((await post({ parentTask: "no-such-task" })).status).toBe(400);
+  expect((await post({ blockedBy: ["no-such-task"] })).status).toBe(400);
+  expect((await post({ project: "" })).status).toBe(400);
 });
 
 async function createViaApi(title: string): Promise<Task> {
@@ -277,6 +350,62 @@ test("autonomy on: capturing runs the triage→discovery pipeline in the backgro
       body: JSON.stringify({ answers: { q1: "OAuth" } }),
     });
     expect(await statusNow()).toBe("ready");
+  } finally {
+    await fetch(`${gw.url}/api/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ global: { autonomy: false } }),
+    });
+  }
+});
+
+test("autonomy on: an unconfident triage asks 'which project?' and answering resumes the pipeline", async () => {
+  await fetch(`${gw.url}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Pick Me A", rootPath: "/tmp/pick-me-a" }),
+  });
+  await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ global: { autonomy: true } }),
+  });
+  try {
+    const task = await createViaApi("AMBIGUOUS-PROJECT tweak the build cache");
+    const getTaskNow = async () =>
+      (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as {
+        status: string;
+        projectId: string | null;
+      };
+    const getQa = async () =>
+      (await fetch(`${gw.url}/api/tasks/${task.id}/qa`).then((r) => r.json())) as {
+        questions: Array<{ id: string; options?: string[] }>;
+      };
+
+    // triage abstains → Needs-Feedback with the project card (no guess applied)
+    for (let i = 0; i < 100; i++) {
+      if ((await getTaskNow()).status === "needs_feedback") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect((await getTaskNow()).status).toBe("needs_feedback");
+    expect((await getTaskNow()).projectId).toBeNull();
+    const card = (await getQa()).questions.find((q) => q.id === "triage-project");
+    expect(card?.options?.[0]).toBe("pick-me-a"); // the candidate leads
+    expect(card?.options).toContain("None");
+
+    // answering assigns the project and resumes: discovery → questioner → q1 card
+    const answered = await fetch(`${gw.url}/api/tasks/${task.id}/qa/answers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers: { "triage-project": "pick-me-a" } }),
+    });
+    expect(answered.status).toBe(200);
+    for (let i = 0; i < 100; i++) {
+      if ((await getQa()).questions.some((q) => q.id === "q1")) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect((await getQa()).questions.map((q) => q.id)).toEqual(["q1"]); // project card consumed
+    expect((await getTaskNow()).projectId).toBeTruthy();
   } finally {
     await fetch(`${gw.url}/api/settings`, {
       method: "PATCH",
@@ -1830,5 +1959,59 @@ test("attention surfaces a dead capture pipeline (autonomy on, triage attempt di
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ global: { autonomy: false } }),
     });
+  }
+});
+
+test("POST /api/tasks/:id/git-context/check re-checks and persists the git outcome", async () => {
+  // A real (temp) git repo whose task branch was merged outside Cadence.
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-repo-"));
+  const git = (args: string[]) => {
+    const r = Bun.spawnSync(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+    return r.stdout.toString().trim();
+  };
+  try {
+    git(["init", "-q", "-b", "main"]);
+    git(["config", "user.email", "t@e.com"]);
+    git(["config", "user.name", "T"]);
+    writeFileSync(join(repo, "README.md"), "# r\n");
+    git(["add", "."]);
+    git(["commit", "-q", "-m", "init"]);
+    git(["checkout", "-q", "-b", "cadence/manual-test"]);
+    writeFileSync(join(repo, "f.txt"), "f\n");
+    git(["add", "."]);
+    git(["commit", "-q", "-m", "work"]);
+    git(["checkout", "-q", "main"]);
+    git(["merge", "--no-ff", "-q", "-m", "merged in a terminal", "cadence/manual-test"]);
+
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "GitCtx", rootPath: repo }),
+    }).then((r) => r.json())) as { slug: string };
+    const task = (await fetch(`${gw.url}/api/tasks`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Git ctx task", project: project.slug }),
+    }).then((r) => r.json())) as Task;
+    // a pre-feature delivery: delivery.md exists, no gitContext on the task yet
+    writeDelivery(task.id, {
+      mode: "branch_summary",
+      summary: "did it",
+      branch: "cadence/manual-test",
+      prUrl: null,
+    });
+
+    const res = await fetch(`${gw.url}/api/tasks/${task.id}/git-context/check`, { method: "POST" });
+    expect(res.status).toBe(200);
+    const out = (await res.json()) as { gitContext: { merged: string; baseBranch: string | null } | null; changed: boolean };
+    expect(out.changed).toBe(true);
+    expect(out.gitContext).toMatchObject({ merged: "merged", baseBranch: "main" });
+
+    // persisted: the task DTO now carries the context
+    const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
+    expect(after.gitContext).toMatchObject({ merged: "merged", mergedVia: "external" });
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });

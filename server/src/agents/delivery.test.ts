@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { createProject } from "../projects";
 import { bootstrap, readDelivery } from "../store/store";
-import { createTask, resolveDeliveryMode, updateTask } from "../tasks";
+import { createTask, getTask, resolveDeliveryMode, updateTask } from "../tasks";
 import { buildDeliveryPrompt, runDelivery } from "./delivery";
 
 let db: Db;
@@ -87,6 +87,14 @@ test("branch_summary delivery writes a summary + branch, no PR (no push)", async
   expect(delivery?.summary).toBe("Did the thing.");
   expect(delivery?.mode).toBe("branch_summary");
   expect(delivery?.branch).toBe(outcome.branch ?? null);
+
+  // delivery also records the task's git context (branch · base · merged?)
+  expect(getTask(db, task.id)?.gitContext).toMatchObject({
+    kind: "branch",
+    branch: outcome.branch,
+    baseBranch: "main",
+    merged: "unmerged",
+  });
 });
 
 test("apply_in_place delivery has no branch/PR", async () => {
@@ -97,4 +105,7 @@ test("apply_in_place delivery has no branch/PR", async () => {
   const outcome = await runDelivery(db, task.id, () => summaryResult("Edited in place."));
   expect(outcome).toMatchObject({ ran: true, mode: "apply_in_place", branch: null, prUrl: null });
   expect(readDelivery(task.id)?.summary).toBe("Edited in place.");
+
+  // direct-to-base work is merged from birth — no background check needed
+  expect(getTask(db, task.id)?.gitContext).toMatchObject({ kind: "direct", merged: "merged" });
 });

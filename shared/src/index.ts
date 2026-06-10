@@ -130,6 +130,8 @@ export interface Task {
   permissionMode: string | null; // explicit override (null = inherit project ?? global)
   /** The PR/MR opened by an auto_pr delivery (6.4.d). Server-managed. */
   prUrl: string | null;
+  /** Last known git outcome (branch · base · merged?). Server-managed; null until delivered. */
+  gitContext: TaskGitContext | null;
   /** Task flavor (6.5): "standard" (default) or "code_review". */
   taskType: string;
   /** Review direction when taskType is code_review (6.5). */
@@ -155,8 +157,21 @@ export interface CreateTaskInput {
   reviewDirection?: ReviewDirection;
   /** The PR/MR URL under review. */
   reviewRef?: string;
-  /** Project slug proposed at capture (e.g. matched from the PR/MR repo). */
-  project?: string;
+  /** Project slug. Sending the key pins the field (triage never overrides it);
+   *  explicit null = "no project". Omit the key for Auto (triage decides). */
+  project?: string | null;
+  /** Priority P0 (critical) .. P3 (low). Key presence pins it; omit for Auto. */
+  priority?: string;
+  /** Deadline in epoch ms; explicit null = "no deadline". Key presence pins it; omit for Auto. */
+  deadline?: number | null;
+  /** auto|manual|dangerous override; omit to inherit (project ?? global). */
+  permissionMode?: PermissionMode;
+  /** Fleet slug. */
+  fleet?: string;
+  /** Parent task id (subtasks). */
+  parentTask?: string;
+  /** Task ids that block this one (dependency edges created at capture). */
+  blockedBy?: string[];
 }
 
 /** A ranked search result (FTS5 over task text). */
@@ -323,6 +338,10 @@ export interface Project {
   /** In-flight/failed state of the readiness check (null = idle). Server-managed. */
   worktreeCheckRun: WorktreeCheckRun | null;
   systemPrompt: string | null;
+  /** Per-agent prompt additions keyed by registry role (e.g. "discovery") — appended to the
+   *  agent's global prompt (override ?? default) for every run on this project's tasks (§6.3.b).
+   *  Only customized roles appear here; null = none. */
+  agentPrompts: Record<string, string> | null;
   notes: string | null;
   createdAt: number;
 }
@@ -339,6 +358,7 @@ export interface CreateProjectInput {
   autonomy?: boolean | null;
   worktreesEnabled?: boolean;
   systemPrompt?: string;
+  agentPrompts?: Record<string, string> | null;
   notes?: string;
 }
 
@@ -354,6 +374,8 @@ export interface UpdateProjectInput {
   autonomy?: boolean | null;
   worktreesEnabled?: boolean;
   systemPrompt?: string | null;
+  /** Replaces the whole per-agent map (a role with blank text is dropped); null clears all. */
+  agentPrompts?: Record<string, string> | null;
   notes?: string | null;
 }
 
@@ -984,6 +1006,34 @@ export interface DeliveryResult {
   summary: string;
   branch: string | null;
   prUrl: string | null;
+}
+
+/** How far a task's delivered work has progressed in git (server-managed).
+ *  "merged" = the delivery commit reached the base branch (or was applied directly);
+ *  "unmerged" = the task branch still carries unmerged work; "branch_gone" = the
+ *  branch disappeared without the commit reaching base (likely squash-merged on the
+ *  forge); "unknown" = not determinable (repo missing, no commit recorded). */
+export type GitMergeState = "merged" | "unmerged" | "branch_gone" | "unknown";
+
+/**
+ * A task's git outcome: which branch the work landed on, what it merges into, and
+ * whether that merge has actually happened — written at delivery, flipped by
+ * Cadence's own merge, and kept honest by the background git-context sweep (which
+ * catches merges done outside Cadence: terminal merges, forge PR/MR merges).
+ */
+export interface TaskGitContext {
+  /** "direct" = committed straight onto the base branch (apply_in_place);
+   *  "branch" = the work lives on a per-task branch. */
+  kind: "direct" | "branch";
+  branch: string | null;
+  /** The branch the work merged / will merge into (recorded at delivery). */
+  baseBranch: string | null;
+  /** Tip commit of the delivered work — ancestry checks survive branch deletion. */
+  deliveryCommit: string | null;
+  merged: GitMergeState;
+  /** Who merged it: Cadence's Merge button, an external git merge, or the forge (PR/MR). */
+  mergedVia: "cadence" | "external" | "forge" | null;
+  checkedAt: number;
 }
 
 /** The task's changes for the Review screen (§7 / §10): unified git diff. */

@@ -2,7 +2,7 @@ import type { AgentResult } from "@cadence/shared";
 import type { Db } from "../db/client";
 import { withReadAccess } from "../project-locks";
 import { listProjects } from "../projects";
-import { appendContext } from "../store/store";
+import { appendContext, readQa, readTask, writeQa, writeTask } from "../store/store";
 import { getTaskDetail, resolveTaskCwd, updateTask } from "../tasks";
 import { getAgentPrompt, renderTemplate, TITLE_NAMING_INSTRUCTION } from "./prompts";
 import { type AgentRunOptions, runAgent } from "./runner";
@@ -17,6 +17,8 @@ export interface TriageJson {
   /** A proper task title — requested when capture was description-only. */
   title?: string;
   projectSlug?: string | null;
+  /** When the agent abstains from routing (not confident): 1-3 plausible slugs. */
+  projectCandidates?: string[];
   fleetName?: string | null;
   isMultiRepo?: boolean;
   priority?: string;
@@ -33,12 +35,24 @@ export interface TriageOutcome {
   status?: string; // resulting task status
   restatement?: string;
   needFromUser?: string;
+  /** True when triage abstained on the project and asked via a Q&A card. */
+  askedProject?: boolean;
 }
+
+/** Question id of the "which project?" card triage writes when it can't route confidently. */
+export const TRIAGE_PROJECT_QUESTION_ID = "triage-project";
+
+/** Q&A option meaning "assign no project". */
+export const TRIAGE_PROJECT_NONE = "None";
 
 export function buildTriagePrompt(
   raw: { title: string; body: string },
   projectList: Array<{ slug: string; name: string }>,
-  opts: { titleNeeded?: boolean } = {},
+  opts: {
+    titleNeeded?: boolean;
+    /** Capture-pinned fields, as human-readable values (e.g. project=acme, deadline=(none)). */
+    fixed?: Array<{ field: "project" | "priority" | "deadline"; value: string }>;
+  } = {},
 ): string {
   // The instructions live in the editable prompt registry (§6.3.a); this builder only
   // computes the variables. Conditional fragments are whole-line vars — empty → line drops.
@@ -48,6 +62,11 @@ export function buildTriagePrompt(
     projects: projectList.length
       ? projectList.map((p) => `${p.slug} (${p.name})`).join(", ")
       : "(none yet)",
+    fixedLine: opts.fixed?.length
+      ? `Already decided by the user — do NOT output or change these fields: ${opts.fixed
+          .map((f) => `${f.field}=${f.value}`)
+          .join(", ")}.`
+      : "",
     titleInstruction: opts.titleNeeded ? TITLE_NAMING_INSTRUCTION : "",
     titleField: opts.titleNeeded ? '"title":"string",' : "",
   });
@@ -67,6 +86,10 @@ export function applyTriage(db: Db, taskId: string, j: TriageJson): TriageOutcom
     return { ran: true, status: "needs_feedback", needFromUser: need };
   }
 
+  // Capture-pinned fields are the user's explicit decision — skipped here no matter
+  // what the model returned (the prompt also tells it not to, but this is the guarantee).
+  const fixed = new Set(readTask(taskId).data.fixedFields ?? []);
+
   const patch: Parameters<typeof updateTask>[2] = { status: "triaged" };
   if (agentTitle) patch.title = agentTitle;
   // Review classification (6.5.a): triage may recognize a review task captured as plain
@@ -76,16 +99,96 @@ export function applyTriage(db: Db, taskId: string, j: TriageJson): TriageOutcom
     patch.reviewDirection = j.reviewDirection === "address" ? "address" : "perform";
     if (j.reviewRef?.trim()) patch.reviewRef = j.reviewRef.trim();
   }
-  if (j.projectSlug) patch.project = j.projectSlug;
-  if (j.priority) patch.priority = j.priority;
+  if (!fixed.has("project") && j.projectSlug) patch.project = j.projectSlug;
+  if (!fixed.has("priority") && j.priority) patch.priority = j.priority;
   if (Array.isArray(j.labels) && j.labels.length) patch.labels = j.labels;
-  if (j.deadline) {
+  if (!fixed.has("deadline") && j.deadline) {
     const ms = Date.parse(j.deadline);
     if (!Number.isNaN(ms)) patch.deadline = ms;
   }
+
+  // The agent abstained on the project (not confident): don't guess — ask. The card
+  // reuses the qa.md mechanism, so it surfaces in the Attention Center and is answered
+  // like any other question; everything else triage decided still applies below.
+  const slugs = listProjects(db).map((p) => p.slug);
+  const candidates = (j.projectCandidates ?? []).filter(
+    (s) => typeof s === "string" && slugs.includes(s),
+  );
+  if (!fixed.has("project") && !j.projectSlug && candidates.length) {
+    const options = [
+      ...new Set([...candidates, ...slugs]),
+      TRIAGE_PROJECT_NONE,
+    ];
+    const qa = readQa(taskId);
+    writeQa(taskId, {
+      questions: [
+        {
+          id: TRIAGE_PROJECT_QUESTION_ID,
+          rank: 0,
+          type: "single_choice",
+          text: "Which project does this task belong to?",
+          options,
+          why: "Triage wasn't confident enough to route this automatically.",
+        },
+        ...qa.questions.filter((q) => q.id !== TRIAGE_PROJECT_QUESTION_ID),
+      ],
+      answers: qa.answers,
+    });
+    patch.status = "needs_feedback";
+    updateTask(db, taskId, patch);
+    if (j.restatement?.trim()) appendContext(taskId, `Triage restatement: ${j.restatement.trim()}`);
+    return { ran: true, status: "needs_feedback", askedProject: true, restatement: j.restatement?.trim() };
+  }
+
   updateTask(db, taskId, patch);
   if (j.restatement?.trim()) appendContext(taskId, `Triage restatement: ${j.restatement.trim()}`);
   return { ran: true, status: "triaged", restatement: j.restatement?.trim() };
+}
+
+/**
+ * Apply the user's answer to the triage "which project?" card: assign the project
+ * (pinning it so nothing second-guesses the user), drop the card from qa.md (the
+ * Questioner later rewrites qa.md wholesale — this question must never be part of
+ * its all-answered → ready math), and move needs_feedback → triaged so the caller
+ * can resume the refinement pipeline.
+ */
+export function applyTriageProjectAnswer(
+  db: Db,
+  taskId: string,
+  choice: string,
+): { ok: boolean; resume: boolean; reason?: string } {
+  const qa = readQa(taskId);
+  const question = qa.questions.find((q) => q.id === TRIAGE_PROJECT_QUESTION_ID);
+  if (!question) return { ok: false, resume: false, reason: "no pending project question" };
+
+  const known = listProjects(db).some((p) => p.slug === choice);
+  if (choice !== TRIAGE_PROJECT_NONE && !known) {
+    return { ok: false, resume: false, reason: `unknown project "${choice}"` };
+  }
+
+  appendContext(taskId, `Q: ${question.text}\nA: ${choice}`);
+  writeQa(taskId, {
+    questions: qa.questions.filter((q) => q.id !== TRIAGE_PROJECT_QUESTION_ID),
+    answers: Object.fromEntries(
+      Object.entries(qa.answers).filter(([k]) => k !== TRIAGE_PROJECT_QUESTION_ID),
+    ),
+  });
+
+  // The user's answer is a pin — record it in frontmatter like a capture-time pick.
+  const { data, body } = readTask(taskId);
+  data.fixedFields = [...new Set([...(data.fixedFields ?? []), "project"])];
+  writeTask(data, body);
+
+  const patch: Parameters<typeof updateTask>[2] = {
+    project: choice === TRIAGE_PROJECT_NONE ? null : choice,
+  };
+  // Only the explicit waiting states advance — if the user already moved the task
+  // elsewhere, apply the project but never yank the lifecycle sideways.
+  const status = getTaskDetail(db, taskId)?.status;
+  const resume = status === "needs_feedback" || status === "inbox";
+  if (resume) patch.status = "triaged";
+  updateTask(db, taskId, patch);
+  return { ok: true, resume };
 }
 
 /**
@@ -101,10 +204,24 @@ export async function runTriage(
   const task = getTaskDetail(db, taskId);
   if (!task) return { ran: false };
 
+  // Tell the model which fields the user pinned at capture (applyTriage also skips
+  // them deterministically — this just stops the model wasting effort on them).
+  const fm = readTask(taskId).data;
+  const fixed: Array<{ field: "project" | "priority" | "deadline"; value: string }> = [];
+  for (const field of fm.fixedFields ?? []) {
+    if (field === "project") fixed.push({ field, value: fm.project ?? "(none)" });
+    else if (field === "priority") fixed.push({ field, value: fm.priority ?? "(none)" });
+    else if (field === "deadline") {
+      const value =
+        typeof fm.deadline === "string" ? fm.deadline.slice(0, 10) : fm.deadline ? String(fm.deadline) : "(none)";
+      fixed.push({ field, value });
+    }
+  }
+
   const prompt = buildTriagePrompt(
     { title: task.title, body: task.body },
     listProjects(db).map((p) => ({ slug: p.slug, name: p.name })),
-    { titleNeeded: task.titleGenerated },
+    { titleNeeded: task.titleGenerated, fixed },
   );
   // Read lock: queued behind an in-place execution so triage never reads a
   // half-written task branch; shared with the other read stages.

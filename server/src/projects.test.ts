@@ -40,6 +40,23 @@ test("createProject writes projects/<slug>.md + an index row", () => {
   expect(listProjects(db).map((x) => x.slug)).toContain("acme-web");
 });
 
+test("agentPrompts round-trip markdown + index; blanks drop; empty map clears (§6.3.b)", () => {
+  const p = createProject(db, {
+    name: "Prompts",
+    agentPrompts: { discovery: "Prefer bun APIs.", planner: "   " }, // blank value is dropped
+  });
+  expect(p.agentPrompts).toEqual({ discovery: "Prefer bun APIs." });
+  expect(getProject(db, p.slug)?.agentPrompts).toEqual({ discovery: "Prefer bun APIs." });
+
+  // PATCH replaces the whole map (the UI always sends the full record).
+  const updated = updateProject(db, p.slug, { agentPrompts: { implementer: "Run make check." } });
+  expect(updated?.agentPrompts).toEqual({ implementer: "Run make check." });
+
+  // Clearing every field clears the layer entirely (null, not {}).
+  expect(updateProject(db, p.slug, { agentPrompts: {} })?.agentPrompts).toBeNull();
+  expect(updateProject(db, p.slug, { agentPrompts: null })?.agentPrompts).toBeNull();
+});
+
 test("autonomy round-trips through the index and defaults to null (inherit)", () => {
   const p = createProject(db, { name: "Auto Proj" });
   expect(p.autonomy).toBeNull();

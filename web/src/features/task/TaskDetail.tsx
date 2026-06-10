@@ -1,6 +1,6 @@
 import { PERMISSION_MODES, TASK_STATUSES } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquarePlus, Play, ShieldAlert, X } from "lucide-react";
+import { Check, GitMerge, MessageSquarePlus, Play, RotateCcw, ShieldAlert, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -19,14 +19,17 @@ import {
   getTaskDetail,
   getTaskSessions,
   playTask,
+  recheckGitContext,
   spawnSession,
   updateTask,
 } from "../../lib/api";
 import { formatDate, useDateFormats } from "../../lib/datetime";
+import { gitStateLabel, gitStateTone } from "../../lib/git";
 import { roleLabel, statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { ReviewWorkspace } from "../review/ReviewWorkspace";
+import { DeliveryRecord } from "./DeliveryRecord";
 import { PlanView } from "./PlanView";
 import { RelationsPanel } from "./RelationsPanel";
 import { ReviewPanel } from "./ReviewPanel";
@@ -124,6 +127,27 @@ export function TaskDetail({
     onSuccess: invalidateTask,
   });
 
+  // Manual git re-check ("did this merge yet?") — always answers with a toast so
+  // the click visibly did something, even when nothing changed.
+  const recheckGit = useMutation({
+    mutationFn: () => recheckGitContext(taskId),
+    onSuccess: (r) => {
+      invalidateTask();
+      toast(r.changed ? "Git state updated." : "Re-checked — no change.");
+    },
+  });
+
+  // "Mark done" for work that was merged outside Cadence (the banner below) —
+  // propose-don't-impose: the sweep only nudges, this click is the decision.
+  const markDone = useMutation({
+    mutationFn: () => updateTask(taskId, { status: "done" }),
+    onSuccess: (updated) => {
+      toast(`🎉 “${updated.title}” merged — task done. Nice ship!`);
+      resolved();
+      if (!flow) onClose();
+    },
+  });
+
   const addNote = useMutation({
     mutationFn: (text: string) => appendContext(taskId, text),
     onSuccess: () => {
@@ -194,6 +218,24 @@ export function TaskDetail({
               <ReviewWorkspace task={task} />
             ) : (
               <>
+                {task.status === "review" && task.gitContext?.merged === "merged" ? (
+                  // The sweep (or a re-check) found this work already merged outside
+                  // Cadence — the merge button below would fail; closing is the real action.
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-emerald-300">
+                      <GitMerge className="size-4" aria-hidden />
+                      <span>{gitStateLabel(task.gitContext)} — the task just needs closing.</span>
+                    </div>
+                    <LabeledIconButton
+                      icon={<Check />}
+                      label="Mark done"
+                      size="sm"
+                      onClick={() => markDone.mutate()}
+                      disabled={markDone.isPending}
+                    />
+                  </div>
+                ) : null}
+
                 {task.status === "review" ? (
                   <ReviewPanel
                     taskId={taskId}
@@ -209,6 +251,10 @@ export function TaskDetail({
                       if (!flow) onClose();
                     }}
                   />
+                ) : null}
+
+                {task.status === "done" ? (
+                  <DeliveryRecord taskId={taskId} gitContext={task.gitContext} />
                 ) : null}
 
                 {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
@@ -312,6 +358,39 @@ export function TaskDetail({
                     >
                       Open PR/MR ↗
                     </a>
+                  </dd>
+                </>
+              ) : null}
+
+              {task.gitContext ? (
+                <>
+                  <dt className="text-muted-foreground">Git</dt>
+                  <dd className="flex flex-wrap items-center gap-2">
+                    {task.gitContext.branch ? (
+                      <span className="font-mono text-[11px] text-muted-foreground">
+                        {task.gitContext.branch}
+                      </span>
+                    ) : null}
+                    <span
+                      title={`Last checked ${new Date(task.gitContext.checkedAt).toLocaleString()}`}
+                      className={
+                        {
+                          ok: "text-xs text-emerald-400",
+                          warn: "text-xs text-amber-400",
+                          muted: "text-xs text-muted-foreground",
+                        }[gitStateTone(task.gitContext)]
+                      }
+                    >
+                      {gitStateLabel(task.gitContext)}
+                    </span>
+                    <LabeledIconButton
+                      icon={<RotateCcw />}
+                      label="Re-check"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => recheckGit.mutate()}
+                      disabled={recheckGit.isPending}
+                    />
                   </dd>
                 </>
               ) : null}

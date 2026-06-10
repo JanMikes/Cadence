@@ -129,6 +129,14 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       gh/glab review data layer (meta/diff/threads/publish/reply/resolve), Review Workspace with
       armed explicit-confirm publishing (dismissed findings never leave the machine), deterministic
       PR-branch apply chain, board type filter + ⇄ Review badges, strictness setting
+- [x] **6.6 Per-task git context (branch · base · merged?)** — **DONE 2026-06-10**: delivery
+      records `task.gitContext` (kind/branch/baseBranch/deliveryCommit — the ancestry anchor that
+      survives branch deletion), Cadence's merge flips it instantly, background git-context sweep
+      (deterministic local git + cached gh/glab PR-state for squash/rebase merges) catches merges
+      done outside Cadence and nudges review tasks toward "mark done" (never auto-flips); board
+      GitChip on review/done cards (green merged / amber done-but-unmerged honest alarm), task
+      detail Git row + Re-check button + merged-externally banner, DeliveryRecord closes the
+      "done task shows no git outcome" gap; `POST /api/tasks/:id/git-context/check`; migration 0011
 
 ---
 

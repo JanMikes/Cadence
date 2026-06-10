@@ -1,10 +1,11 @@
-import type { Project, Task } from "@cadence/shared";
+import type { Project, Task, TaskGitContext } from "@cadence/shared";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronsUp, ChevronUp, Equal, ListFilter } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useActivity, stageLabel } from "../../lib/activity";
 import { formatDate, useDateFormats } from "../../lib/datetime";
 import { getProjects, getTasks } from "../../lib/api";
+import { gitStateLabel } from "../../lib/git";
 import { BOARD_COLUMNS, type StatusColumn } from "../../lib/status";
 import { cn } from "../../lib/utils";
 import { useAttention } from "../attention/useAttention";
@@ -398,6 +399,46 @@ export function PriorityBadge({ priority }: { priority: string }) {
   );
 }
 
+/**
+ * The card's git-outcome chip (review/done columns only — earlier the branch doesn't
+ * exist yet). Loud only when it carries a verdict: green = the work landed on base,
+ * amber = a done task whose branch never merged (the honest alarm this chip exists
+ * for). A review task that simply isn't merged yet is the normal state — no chip.
+ */
+export function GitChip({ ctx, status }: { ctx: TaskGitContext; status: string }) {
+  const title = `${gitStateLabel(ctx)}${ctx.branch ? ` · ${ctx.branch}` : ""}`;
+  if (ctx.kind === "direct") {
+    return (
+      <span title={title} className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
+        → {ctx.baseBranch ?? "branch"}
+      </span>
+    );
+  }
+  if (ctx.merged === "merged") {
+    return (
+      <span title={title} className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-medium text-emerald-400">
+        ⎇ Merged{ctx.baseBranch ? ` → ${ctx.baseBranch}` : ""}
+      </span>
+    );
+  }
+  if (status !== "done") return null; // unmerged-in-review is the expected state, not news
+  if (ctx.merged === "unmerged") {
+    return (
+      <span title={title} className="rounded bg-amber-500/15 px-1.5 py-0.5 font-medium text-amber-400">
+        ⎇ Not merged
+      </span>
+    );
+  }
+  if (ctx.merged === "branch_gone") {
+    return (
+      <span title={title} className="rounded bg-amber-500/10 px-1.5 py-0.5 font-medium text-amber-300/80">
+        ⎇ Branch gone
+      </span>
+    );
+  }
+  return null;
+}
+
 /** A small inline spinner shown while an autonomy stage is working a task. */
 export function WorkingSpinner({ stage, className }: { stage: string; className?: string }) {
   return (
@@ -462,6 +503,9 @@ function BoardCard({
           >
             ⇄ Review
           </span>
+        ) : null}
+        {task.gitContext && (task.status === "review" || task.status === "done") ? (
+          <GitChip ctx={task.gitContext} status={task.status} />
         ) : null}
         {task.priority ? <PriorityBadge priority={task.priority} /> : null}
         {task.deadline ? <span>⏷ {formatDate(task.deadline, fmts)}</span> : null}

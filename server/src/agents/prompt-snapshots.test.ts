@@ -52,6 +52,13 @@ const verify = {
 const RENDERED: Record<string, string> = {
   "triage:full": buildTriagePrompt(task, projects, { titleNeeded: false }),
   "triage:titleNeeded-bare": buildTriagePrompt(bare, [], { titleNeeded: true }),
+  "triage:fixed": buildTriagePrompt(task, projects, {
+    titleNeeded: false,
+    fixed: [
+      { field: "project", value: "acme-app" },
+      { field: "deadline", value: "(none)" },
+    ],
+  }),
   "discovery:full": buildDiscoveryPrompt(task, { titleNeeded: false }),
   "discovery:titleNeeded-bare": buildDiscoveryPrompt(bare, { titleNeeded: true }),
   "questioner:spec": buildQuestionerPrompt(spec, task),

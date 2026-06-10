@@ -10,8 +10,10 @@ import {
   commitInPlaceChanges,
   type ExecutionTarget,
   finalizeInPlaceExecution,
+  readExecutionState,
   resolveExecutionCwd,
 } from "../worktree";
+import { recordDeliveryGitContext } from "../git-context";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -182,6 +184,9 @@ export async function runDelivery(
       if (attempt.note) appendContext(taskId, attempt.note);
     }
   };
+  // The in-place execution's recorded base — captured before finalize clears it, so
+  // the git context knows what this branch should merge into.
+  const baseBranchHint = readExecutionState(taskId)?.baseBranch ?? null;
   if (mode !== "apply_in_place") {
     branch = branchName({ id: task.id, title: task.title });
     if (target.worktreePath) {
@@ -214,5 +219,13 @@ export async function runDelivery(
 
   const delivery: DeliveryResult = { mode: effectiveMode, summary, branch, prUrl };
   writeDelivery(taskId, delivery);
+  // Record the git outcome (branch · base · tip commit · merged?) on the task itself —
+  // what the board chip and the background merge-detection sweep read.
+  recordDeliveryGitContext(db, taskId, {
+    mode,
+    branch,
+    rootPath: project?.rootPath ?? null,
+    baseBranchHint,
+  });
   return { ran: true, mode: effectiveMode, branch, prUrl };
 }

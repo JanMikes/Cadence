@@ -1,6 +1,7 @@
 import type { TaskDiff } from "@cadence/shared";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
+import { markTaskMergedByCadence } from "./git-context";
 import { getProjectById } from "./projects";
 import { getTask, resolveDeliveryMode } from "./tasks";
 import {
@@ -90,5 +91,9 @@ export function mergeTask(db: Db, taskId: string): MergeResult {
     git(["branch", "-d", branch], rootPath); // best-effort
     clearExecutionState(taskId);
   }
+  // The git context flips to merged instantly — no background check needed for the
+  // happy path (this is also why "branch exists?" is never the merged-signal: the
+  // in-place branch was just deleted above).
+  markTaskMergedByCadence(db, taskId);
   return { ok: true, message: `merged ${branch}` };
 }

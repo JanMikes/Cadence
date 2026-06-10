@@ -49,6 +49,21 @@ test("buildWorktreeCheckPrompt asks for the strict JSON verdict shape", () => {
   expect(p).toContain('"verdict":"ready|blockers"');
 });
 
+test("buildWorktreeCheckPrompt appends the project's per-agent addition (§6.3.b)", () => {
+  const project = createProject(db, {
+    name: "Repo",
+    rootPath: repo,
+    agentPrompts: { worktree_check: "The compose file is dev-only — ignore it.", discovery: "irrelevant" },
+  });
+  const p = buildWorktreeCheckPrompt(project);
+  expect(p).toContain('"verdict":"ready|blockers"');
+  expect(p).toEndWith("PROJECT INSTRUCTIONS (Repo):\nThe compose file is dev-only — ignore it.");
+  // no addition for this role → unchanged base prompt
+  expect(buildWorktreeCheckPrompt({ name: "Repo", agentPrompts: { discovery: "x" } })).toBe(
+    buildWorktreeCheckPrompt(),
+  );
+});
+
 test("runWorktreeCheck persists a parsed verdict on the project (read-only run in the repo)", async () => {
   const project = createProject(db, { name: "Repo", rootPath: repo });
 

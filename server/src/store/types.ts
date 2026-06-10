@@ -18,6 +18,8 @@ export interface TaskFrontmatter {
   fleet?: string | null; // fleet slug
   deliveryMode?: string | null; // per-task override
   prUrl?: string | null; // PR/MR from an auto_pr delivery (server-managed, 6.4.d)
+  /** Last known git outcome (branch · base · merged?). Server-managed. */
+  gitContext?: import("@cadence/shared").TaskGitContext | null;
   taskType?: string; // standard | code_review (6.5)
   reviewDirection?: string | null; // perform | address (when code_review)
   reviewRef?: string | null; // PR/MR URL under review (when code_review)
@@ -25,6 +27,10 @@ export interface TaskFrontmatter {
   parentTask?: string | null; // parent task id
   blockedBy?: string[]; // task ids that block this one (→ task_deps edges on reindex)
   labels?: string[]; // stays in markdown only (not indexed as a column)
+  /** Fields the user pinned at capture ("project" | "priority" | "deadline") —
+   *  triage must never override them. An explicit "None" pick is a pin too
+   *  (the field is listed here but absent above). */
+  fixedFields?: string[];
 }
 
 export interface ProjectFrontmatter {
@@ -42,6 +48,8 @@ export interface ProjectFrontmatter {
   worktreesEnabled?: boolean; // opt-in worktree isolation (default false → in-place, serialized)
   worktreeCheck?: import("@cadence/shared").WorktreeCheck | null; // last readiness check
   worktreeCheckRun?: import("@cadence/shared").WorktreeCheckRun | null; // running/failed check lifecycle
+  /** Per-agent prompt additions (role → text) appended to the agent's global prompt (§6.3.b). */
+  agentPrompts?: Record<string, string> | null;
   notes?: string | null;
   // The markdown BODY is the project's systemPrompt context layer (spec §4/§7.1).
 }

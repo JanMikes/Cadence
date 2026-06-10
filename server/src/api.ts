@@ -12,6 +12,7 @@ import {
   type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
+  PERMISSION_MODES,
   type PrRef,
   type ProjectForgeStatus,
   type RecapDigestInput,
@@ -42,7 +43,12 @@ import { runReviewResponderApply, runReviewResponderPropose } from "./agents/rev
 import { finalizeReviewBranch, prepareReviewBranch } from "./review-branch";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
-import { type AgentRunner, runTriage } from "./agents/triage";
+import {
+  type AgentRunner,
+  applyTriageProjectAnswer,
+  runTriage,
+  TRIAGE_PROJECT_QUESTION_ID,
+} from "./agents/triage";
 import { computeAnalytics } from "./analytics";
 import { type ApprovalDecision, ApprovalRegistry } from "./approvals";
 import { composeContext } from "./context";
@@ -51,6 +57,7 @@ import type { Db } from "./db/client";
 import { searchTaskHits } from "./db/search";
 import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents, recordEvent } from "./events";
+import { checkTaskGitContext } from "./git-context";
 import { projectLocks } from "./project-locks";
 import { clearExecutionState, executionLockTarget } from "./worktree";
 import { runWorktreeCheck } from "./agents/worktree-check";
@@ -180,11 +187,48 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
               reviewRef: typeof input.reviewRef === "string" ? input.reviewRef : undefined,
             }
           : {};
+
+      // Capture-time explicit fields. Key presence = the user pinned the field
+      // (even to null/None) — triage must never override a pinned field.
+      if ("priority" in input && !/^P[0-3]$/.test(String(input.priority))) {
+        return badRequest("priority must be P0..P3");
+      }
+      if ("deadline" in input && input.deadline !== null && typeof input.deadline !== "number") {
+        return badRequest("deadline must be epoch ms or null");
+      }
+      if ("permissionMode" in input && !PERMISSION_MODES.includes(input.permissionMode as never)) {
+        return badRequest(`permissionMode must be one of ${PERMISSION_MODES.join("|")}`);
+      }
+      if ("project" in input && input.project !== null && (typeof input.project !== "string" || !input.project)) {
+        return badRequest("project must be a slug or null");
+      }
+      if ("parentTask" in input) {
+        if (typeof input.parentTask !== "string" || !getTask(ctx.db, input.parentTask)) {
+          return badRequest("parentTask: no such task");
+        }
+      }
+      if ("blockedBy" in input) {
+        const ids = input.blockedBy;
+        if (!Array.isArray(ids) || ids.some((b) => typeof b !== "string")) {
+          return badRequest("blockedBy must be an array of task ids");
+        }
+        const missing = ids.find((b) => !getTask(ctx.db, b));
+        if (missing) return badRequest(`blockedBy: no such task ${missing}`);
+      }
+      const fixedFields = (["project", "priority", "deadline"] as const).filter((f) => f in input);
+
       const task = createTask(ctx.db, {
         title: title || undefined,
         body: body || undefined,
         ...reviewCapture,
-        ...(typeof input.project === "string" && input.project ? { project: input.project } : {}),
+        ...(input.project ? { project: input.project } : {}),
+        ...(input.priority ? { priority: input.priority } : {}),
+        ...(typeof input.deadline === "number" ? { deadline: input.deadline } : {}),
+        ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
+        ...(typeof input.fleet === "string" && input.fleet ? { fleet: input.fleet } : {}),
+        ...(typeof input.parentTask === "string" ? { parentTask: input.parentTask } : {}),
+        ...(Array.isArray(input.blockedBy) && input.blockedBy.length ? { blockedBy: input.blockedBy } : {}),
+        ...(fixedFields.length ? { fixedFields } : {}),
       });
       ctx.hub.broadcast({ type: "event", name: "task:created", payload: task.id });
       maybeTriageOnCapture(ctx, task.id); // background; no-op unless autonomy is on
@@ -319,6 +363,19 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const taskId = deliveryMatch[1] as string;
     if (!getTask(ctx.db, taskId)) return notFound(pathname);
     return Response.json(readDelivery(taskId));
+  }
+
+  // Manual git-context re-check (the "Re-check" button): deterministic local git +
+  // an optional forge lookup — fast enough to answer synchronously. Always persists
+  // (a fresh checkedAt), broadcasts when the verdict moved.
+  const gitContextMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/git-context\/check$/);
+  if (gitContextMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = gitContextMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    const result = checkTaskGitContext(ctx.db, taskId, { persist: true });
+    if (result?.changed) ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    return Response.json({ gitContext: result?.context ?? null, changed: result?.changed ?? false });
   }
 
   const diffMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/diff$/);
@@ -803,7 +860,29 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     }
     if (!body?.answers || typeof body.answers !== "object") return badRequest("answers required");
     const before = getTask(ctx.db, taskId);
-    const result = answerQuestions(ctx.db, taskId, body.answers);
+
+    // Triage's "which project?" card is answered here like any other question, but it
+    // resumes the refinement pipeline (needs_feedback → triaged → discovery) instead
+    // of counting toward the Questioner's all-answered → ready math.
+    const { [TRIAGE_PROJECT_QUESTION_ID]: projectChoice, ...rest } = body.answers;
+    if (projectChoice !== undefined) {
+      const choice = Array.isArray(projectChoice) ? (projectChoice[0] ?? "") : projectChoice;
+      const applied = applyTriageProjectAnswer(ctx.db, taskId, choice);
+      if (!applied.ok && Object.keys(rest).length === 0) {
+        return badRequest(applied.reason ?? "invalid project choice");
+      }
+      if (applied.resume) {
+        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+        void continueRefinement(ctx, taskId).catch((err) =>
+          console.error(`[cadence] resume after triage answer failed for ${taskId}:`, err),
+        );
+      }
+      if (Object.keys(rest).length === 0) {
+        return Response.json({ status: getTask(ctx.db, taskId)?.status ?? "needs_feedback" });
+      }
+    }
+
+    const result = answerQuestions(ctx.db, taskId, rest);
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     if (before?.status === "needs_feedback" && result.status === "ready") {
       ctx.hub.broadcast({ type: "event", name: "task:ready", payload: taskId });
@@ -1755,35 +1834,44 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
         if (t) notifyOnTransition(ctx.hub, "inbox", t);
         return;
       }
-      // Triaged → auto-continue into Discovery (the refinement loop) — unless the
-      // assigned project opted out of autonomy (§9.1: per-project enable/disable).
-      ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
-      const triaged = getTask(ctx.db, taskId);
-      if (!resolveProjectAutonomy(ctx.db, triaged?.projectId ?? null)) return;
-      const disc = await ctx.activity.track(taskId, "discovery", () =>
-        runDiscovery(ctx.db, taskId, ctx.runAgent),
-      );
-      if (!disc.ran) return;
-      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-      if (disc.status === "needs_feedback") {
-        const t = getTask(ctx.db, taskId);
-        if (t) notifyOnTransition(ctx.hub, "refining", t);
-        return;
-      }
-      // Refining with unknowns → the Questioner turns them into Q&A cards.
-      if (disc.status === "refining") {
-        const q = await ctx.activity.track(taskId, "questioner", () =>
-          runQuestioner(ctx.db, taskId, ctx.runAgent),
-        );
-        if (!q.ran) return;
-        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-        if (q.status === "needs_feedback") {
-          const t = getTask(ctx.db, taskId);
-          if (t) notifyOnTransition(ctx.hub, "refining", t);
-        }
-      }
+      await continueRefinement(ctx, taskId);
     })
     .catch((err) => console.error(`[cadence] autonomy pipeline failed for ${taskId}:`, err));
+}
+
+/**
+ * Continue a just-triaged task into the refinement loop: Discovery, then (when the
+ * spec has unknowns) the Questioner. Shared by triage-on-capture and the resume
+ * after the user answers triage's "which project?" card.
+ */
+async function continueRefinement(ctx: ApiContext, taskId: string): Promise<void> {
+  // Auto-continue into Discovery — unless the assigned project opted out of
+  // autonomy (§9.1: per-project enable/disable, falls back to the global switch).
+  ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });
+  const triaged = getTask(ctx.db, taskId);
+  if (!resolveProjectAutonomy(ctx.db, triaged?.projectId ?? null)) return;
+  const disc = await ctx.activity.track(taskId, "discovery", () =>
+    runDiscovery(ctx.db, taskId, ctx.runAgent),
+  );
+  if (!disc.ran) return;
+  ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+  if (disc.status === "needs_feedback") {
+    const t = getTask(ctx.db, taskId);
+    if (t) notifyOnTransition(ctx.hub, "refining", t);
+    return;
+  }
+  // Refining with unknowns → the Questioner turns them into Q&A cards.
+  if (disc.status === "refining") {
+    const q = await ctx.activity.track(taskId, "questioner", () =>
+      runQuestioner(ctx.db, taskId, ctx.runAgent),
+    );
+    if (!q.ran) return;
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    if (q.status === "needs_feedback") {
+      const t = getTask(ctx.db, taskId);
+      if (t) notifyOnTransition(ctx.hub, "refining", t);
+    }
+  }
 }
 
 /** A Q&A answer counts as given if it's a non-empty string or a non-empty selection. */

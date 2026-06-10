@@ -96,6 +96,10 @@ export const AGENT_PROMPTS: Record<string, AgentPromptDef> = {
       TITLE_VAR,
       { name: "bodyLine", doc: "`TASK BODY: <body>` when the task has a description; empty otherwise (line drops)." },
       { name: "projects", doc: "Comma-separated known projects as `slug (Name)`, or `(none yet)`." },
+      {
+        name: "fixedLine",
+        doc: "User-pinned capture fields triage must not change (e.g. `project=acme, deadline=(none)`); empty when none (line drops). Pinned fields are also skipped deterministically when applying the result.",
+      },
       TITLE_INSTRUCTION_VAR,
       TITLE_FIELD_VAR,
     ],
@@ -104,6 +108,10 @@ export const AGENT_PROMPTS: Record<string, AgentPromptDef> = {
       "dumped into their inbox, do a fast first pass. Do NOT explore code. Output JSON only.",
       "Decide: which known project this belongs to (or null); a priority (P0..P3); a deadline if one is",
       "implied (YYYY-MM-DD or null); 2-4 labels; and a one-line restatement of the goal.",
+      "If you are not confident which project this belongs to, do NOT guess: set projectSlug to null",
+      'and list 1-3 plausible candidate slugs in "projectCandidates". Omit projectCandidates when you',
+      "are confident, or when no known project plausibly fits.",
+      "{{fixedLine}}",
       'If too vague to even route or restate, set sufficiency:"insufficient" and say what you need.',
       "If the task is fundamentally a CODE REVIEW — it references a PR/MR to review, or review",
       'feedback to address on the user\'s own PR/MR — also set taskType:"code_review", reviewRef to',
@@ -114,7 +122,8 @@ export const AGENT_PROMPTS: Record<string, AgentPromptDef> = {
       "Respond with ONLY this JSON shape:",
       '{"sufficiency":"ok|insufficient","needFromUser":"string|null","restatement":"string",{{titleField}}',
       '"taskType":"standard|code_review","reviewDirection":"perform|address","reviewRef":"url|null",',
-      '"projectSlug":"string|null","priority":"P0|P1|P2|P3","deadline":"YYYY-MM-DD|null","labels":["string"]}',
+      '"projectSlug":"string|null","projectCandidates":["slug"],"priority":"P0|P1|P2|P3",',
+      '"deadline":"YYYY-MM-DD|null","labels":["string"]}',
       "TASK TITLE: {{title}}",
       "{{bodyLine}}",
     ].join("\n"),
@@ -489,6 +498,20 @@ export const AGENT_PROMPTS: Record<string, AgentPromptDef> = {
       "You run the project's build and tests, then report pass/fail with the key failing output. Run only build/test/lint commands — do not modify source files.",
   },
 };
+
+/**
+ * The project layer (§6.3.b): a project's per-role prompt addition, framed for appending
+ * after the rendered global prompt (override ?? default) — the layers are put together,
+ * never replaced. Null when the project has no addition for this role.
+ */
+export function projectPromptLayer(
+  project: { name: string; agentPrompts: Record<string, string> | null } | null | undefined,
+  role: string | undefined,
+): string | null {
+  if (!project || !role) return null;
+  const text = project.agentPrompts?.[role]?.trim();
+  return text ? `PROJECT INSTRUCTIONS (${project.name}):\n${text}` : null;
+}
 
 /** The user's override for a role, if any (settings.agents, §6.3.b). */
 export function getAgentOverride(role: string): AgentOverride | undefined {

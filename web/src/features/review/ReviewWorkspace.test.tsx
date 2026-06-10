@@ -18,6 +18,7 @@ function reviewTask(direction: "perform" | "address", status = "review"): TaskDe
     deliveryMode: null,
     permissionMode: null,
     prUrl: null,
+    gitContext: null,
     taskType: "code_review",
     reviewDirection: direction,
     reviewRef: "https://github.com/acme/widget/pull/42",

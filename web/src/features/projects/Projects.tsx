@@ -13,6 +13,7 @@ import { LabeledIconButton } from "../../components/LabeledIconButton";
 import {
   checkWorktreeReadiness,
   createProject,
+  getAgentPrompts,
   getProjectForge,
   getProjects,
   updateProject,
@@ -191,6 +192,7 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
         {save.isError ? <p className="mt-2 text-xs text-red-400">Couldn’t save changes.</p> : null}
 
         <RepositoryCard project={project} />
+        <ProjectAgentPrompts project={project} />
         <WorktreeReadiness project={project} />
       </aside>
     </div>
@@ -367,6 +369,97 @@ function RepositoryCard({ project }: { project: Project }) {
         </p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- Agent prompts (§6.3.b project layer)
+
+/**
+ * Per-project agent-prompt additions: extra instructions per pipeline stage, APPENDED to
+ * the agent's global prompt (Settings → Agents & Prompts) on every run for this project's
+ * tasks — the layers compose, they never replace each other.
+ */
+export function ProjectAgentPrompts({ project }: { project: Project }) {
+  const qc = useQueryClient();
+  const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const live = projects.data?.find((p) => p.slug === project.slug) ?? project;
+  const prompts = useQuery({ queryKey: ["agent-prompts"], queryFn: getAgentPrompts });
+  const stages = (prompts.data ?? []).filter((d) => d.kind === "stage");
+
+  const saved = live.agentPrompts ?? {};
+  const [drafts, setDrafts] = useState<Record<string, string>>(saved);
+  const [role, setRole] = useState<string>("");
+  const current = role || stages[0]?.role || "";
+
+  // Dirty = the trimmed non-empty drafts differ from what's saved.
+  const normalize = (m: Record<string, string>): string =>
+    JSON.stringify(
+      Object.entries(m)
+        .map(([k, v]) => [k, v.trim()] as const)
+        .filter(([, v]) => v)
+        .sort(([a], [b]) => a.localeCompare(b)),
+    );
+  const dirty = normalize(drafts) !== normalize(saved);
+  const customized = stages.filter((d) => (drafts[d.role] ?? "").trim());
+
+  const save = useMutation({
+    mutationFn: () => updateProject(project.slug, { agentPrompts: drafts }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+
+  return (
+    <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
+      <h3 className="text-sm font-medium">Agent prompts (this project)</h3>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        Extra instructions per pipeline stage, appended to the global prompt from Settings →
+        Agents &amp; Prompts whenever an agent runs on this project’s tasks.
+      </p>
+
+      <label className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+        Stage
+        <select
+          value={current}
+          onChange={(e) => setRole(e.target.value)}
+          className="rounded-md border border-border bg-card px-3 py-2 text-xs outline-none"
+        >
+          {stages.map((d) => (
+            <option key={d.role} value={d.role}>
+              {d.label}
+              {(drafts[d.role] ?? "").trim() ? " ●" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
+        Additional instructions (blank = none for this stage)
+        <textarea
+          value={drafts[current] ?? ""}
+          onChange={(e) => setDrafts((m) => ({ ...m, [current]: e.target.value }))}
+          rows={5}
+          placeholder="e.g. Always run `make check` before declaring done; DB schema changes need a migration file."
+          className="rounded-md border border-border bg-card px-3 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </label>
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          {customized.length
+            ? `Customized: ${customized.map((d) => d.label).join(", ")}`
+            : "No project additions yet."}
+        </span>
+        {dirty ? (
+          <LabeledIconButton
+            icon={<Save />}
+            label={save.isPending ? "Saving…" : "Save agent prompts"}
+            size="sm"
+            onClick={() => save.mutate()}
+            disabled={save.isPending}
+          />
+        ) : null}
+      </div>
+      {save.isError ? <p className="mt-2 text-xs text-red-400">Couldn’t save agent prompts.</p> : null}
+    </section>
   );
 }
 

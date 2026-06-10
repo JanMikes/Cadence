@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `git_context` text;

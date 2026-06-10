@@ -2,7 +2,7 @@ import type { WorktreeCheck, WorktreeCheckBlocker } from "@cadence/shared";
 import type { Db } from "../db/client";
 import { getProject, setProjectWorktreeCheck, setProjectWorktreeCheckRun } from "../projects";
 import { isGitRepo } from "../worktree";
-import { getAgentPrompt } from "./prompts";
+import { getAgentPrompt, projectPromptLayer } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
 
@@ -20,8 +20,14 @@ export interface WorktreeCheckOutcome {
   reason?: string;
 }
 
-export function buildWorktreeCheckPrompt(): string {
-  return getAgentPrompt("worktree_check");
+export function buildWorktreeCheckPrompt(
+  project?: { name: string; agentPrompts: Record<string, string> | null } | null,
+): string {
+  // Project-scoped (no task), so it bypasses the recording runner — the project's
+  // per-agent addition (§6.3.b) is composed here instead.
+  const base = getAgentPrompt("worktree_check");
+  const layer = projectPromptLayer(project, "worktree_check");
+  return layer ? `${base}\n\n${layer}` : base;
 }
 
 const SEVERITIES = new Set(["high", "medium", "low"]);
@@ -61,7 +67,7 @@ export async function runWorktreeCheck(
     result = await run({
       cwd: project.rootPath,
       role: "worktree_check",
-      prompt: buildWorktreeCheckPrompt(),
+      prompt: buildWorktreeCheckPrompt(project),
       permissionMode: "plan",
     });
   } catch (err) {

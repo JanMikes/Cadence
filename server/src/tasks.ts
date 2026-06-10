@@ -1,4 +1,4 @@
-import type { Task, TaskDetail, UpdateTaskInput } from "@cadence/shared";
+import type { Task, TaskDetail, TaskGitContext, UpdateTaskInput } from "@cadence/shared";
 import { eq, sql } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
@@ -26,6 +26,14 @@ export interface CreateTaskArgs {
   reviewRef?: string;
   /** Project slug proposed at capture (e.g. matched from the PR/MR repo). */
   project?: string;
+  priority?: string;
+  deadline?: number | null; // epoch ms
+  permissionMode?: string;
+  fleet?: string;
+  parentTask?: string;
+  blockedBy?: string[];
+  /** Capture-pinned fields triage must never override (see TaskFrontmatter.fixedFields). */
+  fixedFields?: string[];
 }
 
 /** Derive a provisional title from a description: its first line, squashed and
@@ -65,6 +73,13 @@ export function createTask(db: Db, args: CreateTaskArgs): Task {
           }
         : {}),
       ...(args.project ? { project: args.project } : {}),
+      ...(args.priority ? { priority: args.priority } : {}),
+      ...(args.deadline != null ? { deadline: new Date(args.deadline).toISOString() } : {}),
+      ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
+      ...(args.fleet ? { fleet: args.fleet } : {}),
+      ...(args.parentTask ? { parentTask: args.parentTask } : {}),
+      ...(args.blockedBy?.length ? { blockedBy: [...new Set(args.blockedBy)] } : {}),
+      ...(args.fixedFields?.length ? { fixedFields: args.fixedFields } : {}),
     },
     args.body ?? "",
   );
@@ -195,6 +210,16 @@ export function setTaskPrUrl(db: Db, id: string, prUrl: string): TaskDetail | nu
   return getTaskDetail(db, id);
 }
 
+/** Persist a task's git outcome (server-managed — written at delivery, by Cadence's
+ *  merge, and by the background git-context sweep; not part of the PATCH API). */
+export function setTaskGitContext(db: Db, id: string, ctx: TaskGitContext): TaskDetail | null {
+  if (!existsSync(paths.taskFile(id))) return null;
+  const { data, body } = readTask(id);
+  writeTask({ ...data, id, gitContext: ctx }, body);
+  reindexTask(db, id);
+  return getTaskDetail(db, id);
+}
+
 /**
  * Resolve the working directory a Claude session for this task should run in:
  * the assigned project's rootPath, else CADENCE_DEFAULT_CWD, else the process cwd.
@@ -207,6 +232,15 @@ export function resolveTaskCwd(db: Db, taskId: string): string {
     if (project?.rootPath) return project.rootPath;
   }
   return process.env.CADENCE_DEFAULT_CWD ?? process.cwd();
+}
+
+function parseGitContext(raw: string | null): TaskGitContext | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as TaskGitContext;
+  } catch {
+    return null; // tolerate a corrupt cell rather than break task listing
+  }
 }
 
 function toTask(row: typeof tasks.$inferSelect): Task {
@@ -222,6 +256,7 @@ function toTask(row: typeof tasks.$inferSelect): Task {
     estimate: row.estimate,
     deliveryMode: row.deliveryMode,
     prUrl: row.prUrl,
+    gitContext: parseGitContext(row.gitContext),
     taskType: row.taskType,
     reviewDirection: row.reviewDirection,
     reviewRef: row.reviewRef,

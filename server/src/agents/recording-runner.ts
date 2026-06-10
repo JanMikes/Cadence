@@ -3,10 +3,11 @@ import { eq } from "drizzle-orm";
 import { composeContext } from "../context";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
+import { getProjectById } from "../projects";
 import { getTask } from "../tasks";
 import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
-import { getAgentModel } from "./prompts";
+import { getAgentModel, projectPromptLayer } from "./prompts";
 import { type AgentRunOptions, runAgent } from "./runner";
 import { assertConcurrencyCapacity, assertStageIdle } from "./stage-guard";
 import type { AgentRunner } from "./triage";
@@ -57,6 +58,17 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
       }
     }
 
+    // Project agent-prompt layer (§6.3.b): the project's per-role addition is appended to
+    // the rendered global prompt (override ?? default) — the layers compose, like the
+    // context layers above. Lookup failure must never break a spawn.
+    let prompt = opts.prompt;
+    try {
+      const layer = projectPromptLayer(projectId ? getProjectById(db, projectId) : null, role);
+      if (layer) prompt = `${prompt}\n\n${layer}`;
+    } catch (err) {
+      console.warn(`[cadence] project prompt layer skipped for ${role}:`, (err as Error).message);
+    }
+
     // In-flight dedupe (§6.1.b, the runaway-discovery fix): every task-linked stage run
     // passes through here, so this one check covers capture, heal, /refine, PLAY and the
     // execution chain. Throws when an honestly-alive run of the same (task, role) exists;
@@ -88,7 +100,7 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
     } catch (err) {
       // Recording must never break the pipeline — if the insert fails, just run plainly.
       console.warn(`[cadence] could not record ${role} session:`, (err as Error).message);
-      return base({ ...opts, sessionId: id });
+      return base({ ...opts, prompt, sessionId: id });
     }
 
     const update = (patch: Partial<typeof sessions.$inferInsert>): void => {
@@ -114,6 +126,7 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
     try {
       const result = await base({
         ...opts,
+        prompt,
         appendSystemPrompt,
         sessionId: id,
         // Track the child pid so liveness ("is this run actually alive?"), Stop/Kill and

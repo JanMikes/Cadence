@@ -71,6 +71,20 @@
       "when": 1781072679566,
       "tag": "0009_nosy_tarot",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1781090845235,
+      "tag": "0010_numerous_rockslide",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1781094345995,
+      "tag": "0011_narrow_wither",
+      "breakpoints": true
     }
   ]
 }

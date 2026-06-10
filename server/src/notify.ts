@@ -1,4 +1,4 @@
-import type { NotifyPayload, Task } from "@cadence/shared";
+import type { NotifyPayload, Task, TaskGitContext } from "@cadence/shared";
 import type { WorktreeCheckOutcome } from "./agents/worktree-check";
 import type { WsHub } from "./ws";
 
@@ -25,6 +25,28 @@ export function notifyOnTransition(
   }
 
   if (payload) hub.broadcast({ type: "event", name: "notify", payload });
+  return payload;
+}
+
+/**
+ * Notify when the git-context sweep discovers a task's branch was merged outside
+ * Cadence (terminal merge, forge PR/MR merge). Propose, don't impose: a task still
+ * in review is nudged toward "mark it done" — its status never flips silently.
+ */
+export function notifyGitMergedExternally(
+  hub: WsHub,
+  task: Pick<Task, "id" | "title" | "status">,
+  ctx: TaskGitContext,
+): NotifyPayload {
+  const where = ctx.mergedVia === "forge" ? "PR/MR merged" : "Branch merged outside Cadence";
+  const payload: NotifyPayload = {
+    kind: "info",
+    title: where,
+    message:
+      task.status === "review" ? `${task.title} — open it to mark the task done` : task.title,
+    taskId: task.id,
+  };
+  hub.broadcast({ type: "event", name: "notify", payload });
   return payload;
 }
 

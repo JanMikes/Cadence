@@ -49,6 +49,7 @@ export function createProject(db: Db, input: CreateProjectInput): Project {
     defaultDeliveryMode: input.defaultDeliveryMode ?? "branch_summary",
     autonomy: input.autonomy ?? null,
     worktreesEnabled: input.worktreesEnabled ?? false,
+    agentPrompts: sanitizeAgentPrompts(input.agentPrompts),
     notes: input.notes ?? null,
   };
   writeProject(fm, input.systemPrompt ?? "");
@@ -105,6 +106,7 @@ export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): 
   if (patch.defaultDeliveryMode !== undefined) next.defaultDeliveryMode = patch.defaultDeliveryMode;
   if (patch.autonomy !== undefined) next.autonomy = patch.autonomy;
   if (patch.worktreesEnabled !== undefined) next.worktreesEnabled = patch.worktreesEnabled;
+  if (patch.agentPrompts !== undefined) next.agentPrompts = sanitizeAgentPrompts(patch.agentPrompts);
   if (patch.notes !== undefined) next.notes = patch.notes;
   const nextPrompt = patch.systemPrompt !== undefined ? (patch.systemPrompt ?? "") : body;
 
@@ -150,6 +152,16 @@ export function failStaleWorktreeCheckRuns(db: Db): number {
   return fixed;
 }
 
+/** Keep only roles with real text (trimmed); an empty/cleared map becomes null (frontmatter key drops). */
+function sanitizeAgentPrompts(input: Record<string, string> | null | undefined): Record<string, string> | null {
+  if (!input || typeof input !== "object") return null;
+  const out: Record<string, string> = {};
+  for (const [role, text] of Object.entries(input)) {
+    if (typeof text === "string" && text.trim()) out[role] = text.trim();
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 function toProject(row: typeof projects.$inferSelect): Project {
   return {
     id: row.id,
@@ -167,6 +179,7 @@ function toProject(row: typeof projects.$inferSelect): Project {
     worktreeCheck: parseJsonCell<WorktreeCheck>(row.worktreeCheck),
     worktreeCheckRun: parseJsonCell<WorktreeCheckRun>(row.worktreeCheckRun),
     systemPrompt: row.systemPrompt,
+    agentPrompts: parseJsonCell<Record<string, string>>(row.agentPrompts),
     notes: row.notes,
     createdAt: row.createdAt,
   };

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
+import { createProject } from "../projects";
 import { listTaskSessions, taskCostUsd } from "../sessions";
 import { bootstrap } from "../store/store";
 import { createTask } from "../tasks";
@@ -78,6 +79,34 @@ test("marks the session failed when the agent returns no parseable output", asyn
   const rows = listTaskSessions(db, t.id);
   expect(rows).toHaveLength(1);
   expect(rows[0]?.status).toBe("failed");
+});
+
+test("appends the project's per-agent prompt addition to a stage run (§6.3.b project layer)", async () => {
+  const p = createProject(db, {
+    name: "Acme",
+    rootPath: "/tmp/acme",
+    agentPrompts: { discovery: "Prefer bun APIs over node shims.", planner: "Plan in small steps." },
+  });
+  const t = createTask(db, { title: "do a thing", project: p.slug });
+  const seen: AgentRunOptions[] = [];
+  const run = makeRecordingRunner({
+    db,
+    hub: new WsHub(),
+    base: async (opts) => {
+      seen.push(opts);
+      return okResult({ ok: true });
+    },
+  });
+
+  // A role with an addition: composed onto the rendered global prompt, put together.
+  await run({ cwd: "/tmp/acme", role: "discovery", prompt: "rendered stage prompt", taskId: t.id });
+  expect(seen[0]?.prompt).toBe(
+    "rendered stage prompt\n\nPROJECT INSTRUCTIONS (Acme):\nPrefer bun APIs over node shims.",
+  );
+
+  // A role without one: the prompt is untouched.
+  await run({ cwd: "/tmp/acme", role: "verifier", prompt: "verify it", taskId: t.id });
+  expect(seen[1]?.prompt).toBe("verify it");
 });
 
 test("a run with no taskId is not recorded — it passes straight through", async () => {

@@ -49,6 +49,9 @@ export const projects = sqliteTable("projects", {
   // persists so the UI never loses an in-flight or failed check when a panel closes
   worktreeCheckRun: text("worktree_check_run"),
   systemPrompt: text("system_prompt"),
+  // per-agent prompt additions (JSON Record<role, text>; null = none) — appended to the
+  // agent's global prompt for runs on this project's tasks (§6.3.b project layer)
+  agentPrompts: text("agent_prompts"),
   notes: text("notes"),
   createdAt: integer("created_at").notNull().default(now),
 });
@@ -82,6 +85,8 @@ export const tasks = sqliteTable("tasks", {
   estimate: integer("estimate"), // minutes
   deliveryMode: text("delivery_mode"), // per-task override of project/global
   prUrl: text("pr_url"), // PR/MR opened by an auto_pr delivery (6.4.d; server-managed)
+  // last known git outcome (JSON TaskGitContext; server-managed) — branch · base · merged?
+  gitContext: text("git_context"),
   // standard | code_review (6.5) — reviews flow the same board with a type badge
   taskType: text("task_type").notNull().default("standard"),
   reviewDirection: text("review_direction"), // perform | address (when code_review)

@@ -1,7 +1,8 @@
+import type { TaskGitContext } from "@cadence/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Board, PriorityBadge, ProjectFilter } from "./Board";
+import { Board, GitChip, PriorityBadge, ProjectFilter } from "./Board";
 
 test("Board renders lifecycle columns with plain-language labels", () => {
   const qc = new QueryClient();
@@ -66,6 +67,7 @@ const PROJECTS = [
     worktreeCheck: null,
     worktreeCheckRun: null,
     systemPrompt: null,
+    agentPrompts: null,
     notes: null,
     createdAt: 0,
   },
@@ -111,6 +113,81 @@ test("PriorityBadge renders Jira-style arrows + colors (and falls back to raw te
 
   const raw = renderToStaticMarkup(<PriorityBadge priority="someday" />);
   expect(raw).toContain("someday"); // unknown values stay visible as-is
+});
+
+const gitCtx = (over: Partial<TaskGitContext> = {}): TaskGitContext => ({
+  kind: "branch",
+  branch: "cadence/fix-auth-3f2a1b9c",
+  baseBranch: "main",
+  deliveryCommit: "abc123",
+  merged: "unmerged",
+  mergedVia: null,
+  checkedAt: 1,
+  ...over,
+});
+
+test("GitChip: merged work is green and names the base branch", () => {
+  const html = renderToStaticMarkup(
+    <GitChip ctx={gitCtx({ merged: "merged", mergedVia: "external" })} status="done" />,
+  );
+  expect(html).toContain("Merged → main");
+  expect(html).toContain("text-emerald-400"); // shipped = green
+  expect(html).toContain("cadence/fix-auth-3f2a1b9c"); // full branch in the tooltip
+});
+
+test("GitChip: a done task that never merged is the amber honest alarm", () => {
+  const html = renderToStaticMarkup(<GitChip ctx={gitCtx()} status="done" />);
+  expect(html).toContain("Not merged");
+  expect(html).toContain("text-amber-400"); // waiting on you = amber
+});
+
+test("GitChip: unmerged-in-review is the expected state — no chip", () => {
+  expect(renderToStaticMarkup(<GitChip ctx={gitCtx()} status="review" />)).toBe("");
+});
+
+test("GitChip: direct commits show the target branch quietly; gone branches say so", () => {
+  const direct = renderToStaticMarkup(
+    <GitChip ctx={gitCtx({ kind: "direct", branch: null })} status="done" />,
+  );
+  expect(direct).toContain("→ main");
+  expect(direct).toContain("Committed directly to main"); // plain language in the tooltip
+
+  const gone = renderToStaticMarkup(<GitChip ctx={gitCtx({ merged: "branch_gone" })} status="done" />);
+  expect(gone).toContain("Branch gone");
+  expect(gone).toContain("possibly squash-merged");
+});
+
+test("Board cards show the git chip on done cards", () => {
+  const qc = new QueryClient();
+  qc.setQueryData(["tasks", "all", "urgency"], [
+    {
+      id: "t1",
+      title: "Fix auth token refresh",
+      body: "",
+      status: "done",
+      priority: null,
+      projectId: null,
+      fleetId: null,
+      deadline: null,
+      estimate: null,
+      deliveryMode: null,
+      permissionMode: null,
+      prUrl: null,
+      gitContext: gitCtx({ merged: "merged", mergedVia: "cadence" }),
+      taskType: "standard",
+      reviewDirection: null,
+      reviewRef: null,
+      parentTaskId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ]);
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <Board onOpen={() => {}} />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("Merged → main");
 });
 
 test("Board has the type filter and review cards carry the Review badge (§6.5.g)", () => {
