@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.4.e (surface the PR/MR link in the UI).
+- **Current step:** 6.5.a (review task type: schema + capture). **§6.1–6.4 all COMPLETE.**
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -281,16 +281,17 @@ assume.
   `branch_summary` with a plain-language note (never hard-fail the whole delivery on a missing CLI).
   - Verify: mocked delivery tests per forge assert the right CLI + captured URL + fallback path.
     ✓ 2026-06-10 (398 tests; honest degrade reports mode=branch_summary + context note).
-- [ ] **6.4.e Surface the link.** Task detail metadata row + board card chip: **Open PR/MR**
+- [x] **6.4.e Surface the link.** Task detail metadata row + board card chip: **Open PR/MR**
   (labeled, external-link icon).
-  - Verify: a task with `prUrl` renders the link in both spots.
-- [ ] **6.4.f Forge context injection.** `composeContext` project layer gains a capability line
+  - Verify: a task with `prUrl` renders the link in both spots. ✓ 2026-06-10.
+- [x] **6.4.f Forge context injection.** `composeContext` project layer gains a capability line
   (e.g. “Repo: github.com/acme/app — `gh` CLI is installed and authenticated; use it for PR/issue/CI
   operations when relevant”). Reaches every agent thanks to 6.3.f. *Tell Claude, don’t hardcode.*
   - Verify: composed context for a GitHub project contains the capability line (test).
-- [ ] **6.4.g Journal future forge ideas** (no code): issue import → tasks; PR-comment → follow-up
+    ✓ 2026-06-10 (cache-pre-warmed deterministic test; 399 tests).
+- [x] **6.4.g Journal future forge ideas** (no code): issue import → tasks; PR-comment → follow-up
   task; CI-failure → auto fix-task; richer review integration (6.5 consumes this foundation).
-  - Verify: journal entry exists.
+  - Verify: journal entry exists. ✓ 2026-06-10 — **§6.4 COMPLETE.**
 
 ---
 
@@ -638,3 +639,11 @@ yourself.
   (setTaskPrUrl, not in the PATCH API), migration 0007. ⚠ `glab mr create --fill --yes
   --source-branch` flags are doc-verified, not live-run — the human acceptance (6.5.i) exercises
   the real CLI.
+- **2026-06-10 — 6.4.e+f+g done → §6.4 COMPLETE.** Link surfaced in TaskDetail (real <a>) and on
+  board cards (role=link span — card root is a <button>). Forge capability line joins the project
+  context layer; the deterministic test pre-warms the probe cache with a fake exec so CI never
+  shells to gh/glab. **6.4.g — future forge ideas (no code yet):** (1) issue import: `gh issue
+  list`/`glab issue list` → capture as tasks with backlinks; (2) PR comment → follow-up task
+  (poll/webhookless via `gh api notifications` sweep); (3) CI-failure → auto fix-task (checks API +
+  budgeted autonomy); (4) review-thread deep integration lands with §6.5; (5) delivery PR body from
+  delivery.md (today --fill uses commits). All consume forge.ts + the probe as their foundation.

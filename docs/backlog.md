@@ -119,9 +119,10 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       extraction) + per-agent prompt/model overrides + Agents & Prompts editor, Czech `d.m.Y H:i:s`
       formatter everywhere + Formats section, operations knobs incl. a new global concurrency cap,
       composed context wired into every one-shot stage
-- [ ] **6.4 GitHub/GitLab forge foundation** — remote-URL forge detection, `gh`/`glab` capability
-      probe, project Repository card, forge-aware `auto_pr` delivery (PR/MR URL on task + Open
-      link), forge capability line in composed context
+- [x] **6.4 GitHub/GitLab forge foundation** — **DONE 2026-06-10**: remote-URL forge detection
+      (+ forgeOverride for self-hosted), gh/glab capability probe + Repository card, forge-aware
+      auto_pr delivery with honest fallback (PR/MR URL on task + Open links), forge capability
+      line in composed context
 - [ ] **6.5 ⭐ Code-review module** — `code_review` task type with inferred perform/address
       direction, reviewer + review-responder agents (editable prompts), forge review data layer
       (diff/threads/publish/resolve), findings-centric Review Workspace UI with explicit-confirm
