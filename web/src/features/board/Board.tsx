@@ -439,6 +439,20 @@ export function GitChip({ ctx, status }: { ctx: TaskGitContext; status: string }
   return null;
 }
 
+/** Quiet provenance, not a shout: a dot in the project's color + its name. */
+export function ProjectChip({ project }: { project: Project }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/50 px-1.5 py-0.5 text-[10px]">
+      <span
+        aria-hidden
+        className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+        style={project.color ? { backgroundColor: project.color } : undefined}
+      />
+      <span className="truncate">{project.name}</span>
+    </span>
+  );
+}
+
 /** A small inline spinner shown while an autonomy stage is working a task. */
 export function WorkingSpinner({ stage, className }: { stage: string; className?: string }) {
   return (
@@ -530,17 +544,7 @@ function BoardCard({
             PR ↗
           </span>
         ) : null}
-        {project ? (
-          // Quiet provenance, not a shout: a dot in the project's color + its name.
-          <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/50 px-1.5 py-0.5 text-[10px]">
-            <span
-              aria-hidden
-              className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-              style={project.color ? { backgroundColor: project.color } : undefined}
-            />
-            <span className="truncate">{project.name}</span>
-          </span>
-        ) : null}
+        {project ? <ProjectChip project={project} /> : null}
       </div>
     </button>
   );

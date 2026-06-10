@@ -73,6 +73,10 @@ export interface AttentionItem {
   summary: string;
   /** Verb for the resolve button, e.g. "Answer" / "Approve plan". */
   actionLabel: string;
+  /** The task's project — the web joins it against /api/projects for name + color. */
+  projectId?: string | null;
+  /** The task's priority (P0..P3 or free text) — rendered with the board's glyphs. */
+  priority?: string | null;
   /** Sort key (urgency = f(deadline, priority); tool approvals rank highest). */
   urgency: number;
   createdAt: number;

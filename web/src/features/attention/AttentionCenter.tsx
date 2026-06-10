@@ -1,10 +1,12 @@
 import type { AttentionItem, AttentionKind } from "@cadence/shared";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowRight, Check, GitMerge, HelpCircle, ListChecks, Play, ShieldQuestion, Sparkles, X } from "lucide-react";
-import { type ComponentType, type ReactNode, useState } from "react";
+import { type ComponentType, type ReactNode, useMemo, useState } from "react";
 import type { FlowControls } from "../../components/FlowStrip";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { getProjects } from "../../lib/api";
 import { cn } from "../../lib/utils";
+import { PriorityBadge, ProjectChip } from "../board/Board";
 import { TaskDetail } from "../task/TaskDetail";
 import { ToolApprovalModal } from "./ToolApprovalModal";
 import { useAttention } from "./useAttention";
@@ -127,6 +129,12 @@ function ListModal({
   onStartFlow: () => void;
   onPick: (i: number) => void;
 }) {
+  // Same cached query the board uses — joins each item's projectId to its name + color.
+  const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const projectById = useMemo(
+    () => new Map((projects.data ?? []).map((p) => [p.id, p])),
+    [projects.data],
+  );
   return (
     <Backdrop onClose={onClose}>
       <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -156,6 +164,7 @@ function ListModal({
             {items.map((item, i) => {
               const meta = KIND_META[item.kind];
               const Icon = meta.icon;
+              const project = item.projectId ? projectById.get(item.projectId) : undefined;
               return (
                 <li key={item.id}>
                   <button
@@ -165,8 +174,14 @@ function ListModal({
                   >
                     <Icon className={cn("size-4 shrink-0", meta.tint)} />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{item.title}</span>
-                      <span className="block truncate text-xs text-muted-foreground">{item.summary}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium">{item.title}</span>
+                        {item.priority ? <PriorityBadge priority={item.priority} /> : null}
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span className="truncate">{item.summary}</span>
+                        {project ? <ProjectChip project={project} /> : null}
+                      </span>
                     </span>
                     <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
                       {item.actionLabel} <ArrowRight className="size-3" />

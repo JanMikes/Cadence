@@ -554,6 +554,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         title: t.title,
         summary: open === 1 ? "1 question" : `${open} questions`,
         actionLabel: "Answer",
+        projectId: t.projectId,
+        priority: t.priority,
         urgency: t.urgency ?? 0,
         createdAt: t.updatedAt,
       });
@@ -568,6 +570,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         title: t.title,
         summary: `Plan ready · ${steps} step${steps === 1 ? "" : "s"}`,
         actionLabel: "Approve plan",
+        projectId: t.projectId,
+        priority: t.priority,
         urgency: t.urgency ?? 0,
         createdAt: t.updatedAt,
       });
@@ -581,12 +585,15 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         title: t.title,
         summary: "Verified — ready to merge",
         actionLabel: "Review & merge",
+        projectId: t.projectId,
+        priority: t.priority,
         urgency: t.urgency ?? 0,
         createdAt: t.updatedAt,
       });
     }
 
     for (const a of ctx.approvals.list()) {
+      const t = a.taskId ? getTask(ctx.db, a.taskId) : null;
       items.push({
         id: `tool_approval:${a.id}`,
         kind: "tool_approval",
@@ -595,6 +602,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         title: a.toolName,
         summary: "Tool action awaiting approval (Manual mode)",
         actionLabel: "Review action",
+        projectId: t?.projectId ?? null,
+        priority: t?.priority ?? null,
         urgency: Number.MAX_SAFE_INTEGER, // a live agent is blocked — top priority
         createdAt: a.createdAt,
       });
@@ -615,6 +624,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
           title: t.title,
           summary: `Stalled — no active run (${status === "verifying" ? "Verifying" : "In progress"})`,
           actionLabel: "Inspect",
+          projectId: t.projectId,
+          priority: t.priority,
           urgency: (t.urgency ?? 0) + 1_000_000,
           createdAt: t.updatedAt,
         });
@@ -634,6 +645,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         title: t.title,
         summary: "Refinement interrupted — no active run",
         actionLabel: "Inspect",
+        projectId: t.projectId,
+        priority: t.priority,
         urgency: (t.urgency ?? 0) + 1_000_000,
         createdAt: t.updatedAt,
       });
@@ -659,6 +672,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
             title: t.title,
             summary: "Capture pipeline died — triage never finished",
             actionLabel: "Inspect",
+            projectId: t.projectId,
+            priority: t.priority,
             urgency: (t.urgency ?? 0) + 1_000_000,
             createdAt: t.updatedAt,
           });
