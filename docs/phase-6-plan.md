@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.5.c (reviewer agent + prompt).
+- **Current step:** 6.5.e (Review Workspace UI — perform).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -347,13 +347,13 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
   reply to a thread. Everything mockable; record fixtures for tests.
   - Verify: unit tests against recorded fixtures for both forges; real-API smoke is deferred to the
     human acceptance run. ✓ 2026-06-10 (408 tests).
-- [ ] **6.5.c Reviewer agent.** Register `reviewer` in the prompt registry (template below, adapted
+- [x] **6.5.c Reviewer agent.** Register `reviewer` in the prompt registry (template below, adapted
   to the codebase’s variable plumbing; also append both prompts to `docs/agent-prompts.md`). Runs in
   the repo with the PR branch available (read stage → read lock per worktree rules). Output: strict
   JSON findings → persisted into `reviewState` artifacts (`review.md` + `findings.json` in the task
   folder).
   - Verify: mock run produces parseable findings rendered into artifacts; snapshot test.
-- [ ] **6.5.d Review-responder agent.** Register `review-responder` (template below). Phase 1
+- [x] **6.5.d Review-responder agent.** Register `review-responder` (template below). Phase 1
   (propose): fetch threads → classify + propose patch/reply per thread → `plan_review`. Phase 2
   (apply, after approval): implementer-style run on the PR branch (RW lock), commits fixes, runs
   relevant tests; replies stay queued for the workspace.
@@ -660,3 +660,16 @@ yourself.
   GitLab has no request-changes verdict → encoded as a bold note prefix + no approval; GitLab
   inline comments resolve diff refs from the /versions endpoint per publish. ⚠ All payload shapes
   doc-verified only — 6.5.i exercises the real CLIs.
+- **2026-06-10 — 6.5.c+d done ✓ (417 tests).** **Key design shift (journaled deviation):** the
+  agents get the PR/MR meta/diff/threads PRE-FETCHED by Cadence via the 6.5.b layer instead of
+  shelling gh/glab themselves — deterministic, cheaper, and read-only plan mode stays intact
+  (delivery-agent pattern). Diff capped at 150k chars with a truncation note. **Apply-phase branch
+  handling:** Cadence (not the agent) fetches/switches the PR branch and restores the previous one
+  (prepare/finalizeReviewBranch; dirty-tree refusal — the user's checkout is sacred), so the
+  in-place "never switch branches" guardrail keeps holding for the AGENT. Zero unresolved threads
+  → honest happy empty proposal (review state). PLAY/approve route by taskType; the 6.1 guards
+  (dedupe, budget, concurrency, timeouts) cover the new roles automatically via the recording
+  runner. Both prompts registered (editable, opus; verify lines satisfied: findings/proposal
+  artifacts + fixture-repo branch tests) + noted in docs/agent-prompts.md §8–9; fixtures re-frozen
+  (26 snapshots). Note: artifacts are findings.json / review-proposal.json (review.md render
+  folded into the workspace UI step, 6.5.e).
