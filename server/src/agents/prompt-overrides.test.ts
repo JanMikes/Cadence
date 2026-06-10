@@ -82,3 +82,40 @@ test("an empty/whitespace prompt override falls back to the default (never an em
   setOverride("planner", { prompt: "   \n  " });
   expect(getAgentPrompt("planner")).toBe(AGENT_PROMPTS.planner?.defaultTemplate ?? "");
 });
+
+test("one-shot stages receive the composed context layers (§6.3.f)", async () => {
+  const { createProject } = await import("../projects");
+  const { updateTask } = await import("../tasks");
+  const db: Db = openDb(join(home, "ctx.db"));
+  migrateDb(db);
+
+  const project = createProject(db, {
+    name: "Ctx Proj",
+    rootPath: "/tmp/ctx",
+    systemPrompt: "ALWAYS USE TABS IN THIS PROJECT",
+  });
+  const t = createTask(db, { title: "context flows" });
+  updateTask(db, t.id, { project: project.slug });
+
+  const seen: Array<{ role?: string; appendSystemPrompt?: string }> = [];
+  const run = makeRecordingRunner({
+    db,
+    hub: new WsHub(),
+    base: async (opts) => {
+      seen.push({ role: opts.role, appendSystemPrompt: opts.appendSystemPrompt });
+      return { text: "{}", json: {}, costUsd: 0, sessionId: null, isError: false, raw: {} };
+    },
+  });
+
+  await run({ cwd: "/tmp/ctx", role: "discovery", prompt: "p", taskId: t.id });
+  await run({ cwd: "/tmp/ctx", role: "delivery", prompt: "p", taskId: t.id });
+
+  for (const call of seen) {
+    expect(call.appendSystemPrompt ?? "").toContain("ALWAYS USE TABS IN THIS PROJECT");
+    expect(call.appendSystemPrompt ?? "").toContain("Project: Ctx Proj");
+  }
+
+  // an explicit caller value always wins over composition
+  await run({ cwd: "/tmp/ctx", role: "verifier", prompt: "p", taskId: t.id, appendSystemPrompt: "EXPLICIT" });
+  expect(seen[2]?.appendSystemPrompt).toBe("EXPLICIT");
+});

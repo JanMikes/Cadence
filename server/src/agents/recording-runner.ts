@@ -1,5 +1,6 @@
 import type { AgentResult, ClaudeEvent } from "@cadence/shared";
 import { eq } from "drizzle-orm";
+import { composeContext } from "../context";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
 import { getTask } from "../tasks";
@@ -35,7 +36,26 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
 
     const id = crypto.randomUUID();
     const role = opts.role ?? "agent";
-    const projectId = getTask(db, opts.taskId)?.projectId ?? null;
+    const task = getTask(db, opts.taskId);
+    const projectId = task?.projectId ?? null;
+
+    // Layered context (§6.3.f — the "compose into every agent run" locked decision):
+    // one-shot stages receive the global→project→fleet→task layers via
+    // --append-system-prompt, exactly like warm chats. An explicit caller value wins;
+    // composition failure must never break a spawn.
+    let appendSystemPrompt = opts.appendSystemPrompt;
+    if (appendSystemPrompt == null) {
+      try {
+        appendSystemPrompt =
+          composeContext(db, {
+            taskId: opts.taskId,
+            projectId,
+            fleetId: task?.fleetId ?? null,
+          }) || undefined;
+      } catch (err) {
+        console.warn(`[cadence] context composition skipped for ${role}:`, (err as Error).message);
+      }
+    }
 
     // In-flight dedupe (§6.1.b, the runaway-discovery fix): every task-linked stage run
     // passes through here, so this one check covers capture, heal, /refine, PLAY and the
@@ -94,6 +114,7 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
     try {
       const result = await base({
         ...opts,
+        appendSystemPrompt,
         sessionId: id,
         // Track the child pid so liveness ("is this run actually alive?"), Stop/Kill and
         // the watchdog work for pipeline runs — not just warm chats.
