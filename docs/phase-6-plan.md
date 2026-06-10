@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.4.a (forge.ts — remote URL parsing). **§6.1–6.3 all COMPLETE.**
+- **Current step:** 6.4.c (project Repository card UI).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -255,17 +255,19 @@ Current state: `projects.gitRemote` exists (`schema.ts:27-49`) and is detected a
 project UI. Both `gh` and `glab` may or may not be installed/authenticated — always probe, never
 assume.
 
-- [ ] **6.4.a `server/src/forge.ts`.** Parse a remote URL (ssh `git@host:owner/repo.git`, https,
+- [x] **6.4.a `server/src/forge.ts`.** Parse a remote URL (ssh `git@host:owner/repo.git`, https,
   self-hosted) → `{forge: 'github'|'gitlab'|null, host, owner, repo, webUrl}`. Heuristic: host
   contains `github` → github, `gitlab` → gitlab; unknown → null + new project field
   `forgeOverride` (`'github'|'gitlab'|null`) for self-hosted instances. ⚠ test against real-world
   URL shapes.
   - Verify: unit-test matrix (gh ssh/https, gl ssh/https, self-hosted gitlab, no remote).
-- [ ] **6.4.b CLI capability probe.** `gh --version` + `gh auth status` / `glab --version` +
+    ✓ 2026-06-10 (with 6.4.b in one commit; 390 tests).
+- [x] **6.4.b CLI capability probe.** `gh --version` + `gh auth status` / `glab --version` +
   `glab auth status` (⚠ add `--hostname <host>` for self-hosted); capture the authenticated
   account login (needed by 6.5 direction inference). Cache in `~/.cadence/runtime.json` with a
   probedAt timestamp; `GET /api/projects/:id/forge` + a refresh endpoint.
   - Verify: probe returns `{installed, authenticated, account}` on this machine; mocked unit tests.
+    ✓ 2026-06-10 (in-memory 10-min cache instead of runtime.json — see Journal).
 - [ ] **6.4.c Project UI: Repository card.** In the project edit drawer: editable **Git remote**
   field, detected forge badge (GitHub/GitLab + `owner/repo`), CLI status line (“✓ gh authenticated
   as @user” / “✗ glab not installed — `brew install glab`, then `glab auth login`”), labeled
@@ -615,3 +617,10 @@ yourself.
   exactly like warm chats; explicit `appendSystemPrompt` callers win; failures degrade to no
   context, never a broken spawn. Note: fleet fan-out children (no taskId, unrecorded) still build
   their own prompts — composing project layers there is a future nicety, journal-noted.
+- **2026-06-10 — 6.4.a+b done.** `forgeOverride` threaded end-to-end (shared → schema/migration
+  0006 → markdown frontmatter → reindex → create/update/PATCH). **Deviation:** probe cache is
+  in-memory (10 min TTL + `?refresh=1`), NOT `~/.cadence/runtime.json` as the plan text said — the
+  gateway rewrites runtime.json wholesale at boot, which would silently drop cached probes; memory
+  is simpler and the probe is cheap. ⚠ account parsing is text-based (`account <user>` / `as
+  <user>`); wording drift degrades to `account: null` while the load-bearing authenticated flag
+  stays robust. GitLab subgroup owners keep their full path ("group/sub").
