@@ -115,10 +115,10 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       refining-stalled attention items; verified by a zero-cost live incident replay
 - [x] **6.2 Remove Inbox view** — **DONE 2026-06-10**: nav/view/palette/tray entries removed;
       capture modal + board inbox column cover it
-- [ ] **6.3 Settings expansion** — per-agent editable prompts + per-agent model (registry +
-      overrides), Czech `d.m.Y H:i:s` date/time format setting + central formatter, operations
-      knobs (stuck threshold, timeouts, attempt caps, concurrency), composed context wired into
-      one-shot agents
+- [x] **6.3 Settings expansion** — **DONE 2026-06-10**: prompt registry (byte-identical
+      extraction) + per-agent prompt/model overrides + Agents & Prompts editor, Czech `d.m.Y H:i:s`
+      formatter everywhere + Formats section, operations knobs incl. a new global concurrency cap,
+      composed context wired into every one-shot stage
 - [ ] **6.4 GitHub/GitLab forge foundation** — remote-URL forge detection, `gh`/`glab` capability
       probe, project Repository card, forge-aware `auto_pr` delivery (PR/MR URL on task + Open
       link), forge capability line in composed context

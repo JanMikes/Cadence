@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.3.f (composed context for one-shot agents) — the last 6.3 step.
+- **Current step:** 6.4.a (forge.ts — remote URL parsing). **§6.1–6.3 all COMPLETE.**
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -238,12 +238,12 @@ global→project→fleet→task context, violating the “compose into every age
   6.1.c), `maxConcurrentAgents` (default 4; enforced at spawn).
   - Verify: watchdog/budget/runner read live settings (tests); UI saves and broadcasts.
     ✓ 2026-06-10 (`242dfc2`, 381 tests; + a NEW global concurrent-agent cap at the spawn choke point).
-- [ ] **6.3.f Composed context for one-shot agents.** Pass `composeContext` output as
+- [x] **6.3.f Composed context for one-shot agents.** Pass `composeContext` output as
   `--append-system-prompt` to **every** pipeline stage run (`runner.ts:102` already accepts it);
   stage template remains the prompt body. Mind token economy: context layers only (no transcript
   dumps).
   - Verify: mock-runner test asserts a project systemPrompt phrase reaches a discovery and a
-    delivery run; gates green.
+    delivery run; gates green. ✓ 2026-06-10 — **§6.3 COMPLETE** (382 tests).
 
 ---
 
@@ -610,3 +610,8 @@ yourself.
   counting only honestly-alive rows; refusal = StageConcurrencyError (never a silent queue —
   visible failure per the §6.1 philosophy; a queued-spawn upgrade is a future nicety).
   STUCK_IDLE_MS const removed (was watchdog-internal only) in favor of live `stuckIdleMs()`.
+- **2026-06-10 — 6.3.f done → §6.3 COMPLETE.** Context composition wired at the recording-runner
+  choke point (it already had db + task) — every task-linked stage now gets the layered context
+  exactly like warm chats; explicit `appendSystemPrompt` callers win; failures degrade to no
+  context, never a broken spawn. Note: fleet fan-out children (no taskId, unrecorded) still build
+  their own prompts — composing project layers there is a future nicety, journal-noted.
