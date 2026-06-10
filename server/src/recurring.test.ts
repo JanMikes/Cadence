@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeNextRun, describeSchedule } from "@cadence/shared";
@@ -15,7 +15,17 @@ import {
   updateRecurring,
 } from "./recurring";
 import { paths } from "./store/paths";
-import { bootstrap, readContext, readRecurring, reindexRecurring, writeProject, writeRecurring, reindexProject } from "./store/store";
+import {
+  bootstrap,
+  listAttachments,
+  readContext,
+  readRecurring,
+  reindexRecurring,
+  reindexProject,
+  saveRecurringAttachment,
+  writeProject,
+  writeRecurring,
+} from "./store/store";
 import { getTask, listTasks } from "./tasks";
 
 let db: Db;
@@ -135,6 +145,27 @@ test("deleteRecurring removes the markdown + the row, but not the tasks it creat
   expect(getRecurring(db, rec.id)).toBeNull();
   expect(getTask(db, fired!.task.id)).not.toBeNull(); // the created task survives
   expect(deleteRecurring(db, rec.id)).toBe(false); // idempotent-ish: gone is gone
+});
+
+test("template attachments are copied onto every created task; delete cleans the template's dir but not the copies", () => {
+  const rec = createRecurring(db, { title: "Report", cadence: "daily", time: "09:00" });
+  saveRecurringAttachment(rec.id, "spec.md", new TextEncoder().encode("# the spec"));
+  saveRecurringAttachment(rec.id, "logo.png", new Uint8Array([137, 80, 78, 71]));
+
+  const fired = triggerRecurring(db, rec.id);
+  expect(fired).not.toBeNull();
+  const copied = listAttachments(fired!.task.id);
+  expect(copied.map((a) => a.name).sort()).toEqual(["logo.png", "spec.md"]);
+  expect(readFileSync(paths.taskAttachment(fired!.task.id, "spec.md"), "utf8")).toBe("# the spec");
+
+  // a second trigger gets its own fresh copies too
+  const again = triggerRecurring(db, rec.id);
+  expect(listAttachments(again!.task.id).map((a) => a.name).sort()).toEqual(["logo.png", "spec.md"]);
+
+  // the template (and its attachments dir) goes away; the tasks keep their copies
+  expect(deleteRecurring(db, rec.id)).toBe(true);
+  expect(existsSync(paths.recurringAssetsDir(rec.id))).toBe(false);
+  expect(listAttachments(fired!.task.id).map((a) => a.name).sort()).toEqual(["logo.png", "spec.md"]);
 });
 
 // ------------------------------------------------------------ triggering

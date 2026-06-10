@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowUpRight,
   CalendarClock,
+  Paperclip,
   Pause,
   Pencil,
   Play,
@@ -19,7 +20,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type FormEvent, type KeyboardEvent, useState } from "react";
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useRef,
+  useState,
+} from "react";
 import { ChipSelect } from "../../components/ChipSelect";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { SelectBox } from "../../components/SelectBox";
@@ -32,9 +40,16 @@ import {
   getRecurring,
   runRecurringNow,
   updateRecurring,
+  uploadRecurringAttachments,
 } from "../../lib/api";
 import { formatAgo, formatDateTime, formatUntil, useDateFormats } from "../../lib/datetime";
 import { cn } from "../../lib/utils";
+import {
+  eventFiles,
+  formatBytes,
+  RecurringAttachmentsSection,
+  useRecurringAttachmentUpload,
+} from "../task/Attachments";
 
 /**
  * Recurring tasks (templates + schedule). Each card is one template; at its
@@ -342,6 +357,31 @@ export function RecurringEditor({
     return p?.slug ?? "none";
   });
   const [priority, setPriority] = useState<string>(initial?.priority ?? "none");
+  // New-template flow mirrors AddTaskModal: files picked before the template exists are
+  // held locally and uploaded right after create. Editing uploads straight away.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const editUpload = useRecurringAttachmentUpload(initial?.id ?? "");
+
+  const addFiles = (files: File[]) => {
+    if (!files.length) return;
+    if (initial) editUpload.mutate(files);
+    else setPendingFiles((cur) => [...cur, ...files]);
+  };
+  const onBodyPaste = (e: ClipboardEvent) => {
+    const files = eventFiles(e.clipboardData);
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  };
+  const onBodyDrop = (e: DragEvent) => {
+    const files = eventFiles(e.dataTransfer);
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  };
 
   const schedule: RecurringSchedule = {
     cadence,
@@ -353,7 +393,7 @@ export function RecurringEditor({
   const nextPreview = valid ? computeNextRun(schedule, Date.now()) : null;
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const input: CreateRecurringInput = {
         ...(title.trim() ? { title: title.trim() } : {}),
         body: body.trim() || undefined,
@@ -364,15 +404,25 @@ export function RecurringEditor({
         ...(projectSlug !== "none" ? { project: projectSlug } : {}),
         ...(priority !== "none" ? { priority } : {}),
       };
-      return initial
-        ? updateRecurring(initial.id, {
-            ...input,
-            title: title.trim() || initial.title,
-            body,
-            project: projectSlug === "none" ? null : projectSlug,
-            priority: priority === "none" ? null : priority,
-          })
-        : createRecurring(input);
+      if (initial) {
+        return updateRecurring(initial.id, {
+          ...input,
+          title: title.trim() || initial.title,
+          body,
+          project: projectSlug === "none" ? null : projectSlug,
+          priority: priority === "none" ? null : priority,
+        });
+      }
+      const saved = await createRecurring(input);
+      if (pendingFiles.length) {
+        // The template exists either way — a failed upload shouldn't lose it.
+        try {
+          await uploadRecurringAttachments(saved.id, pendingFiles);
+        } catch {
+          toast("Template created, but the attachments didn’t upload — re-add them by editing it.");
+        }
+      }
+      return saved;
     },
     onSuccess: (saved) => {
       void qc.invalidateQueries({ queryKey: ["recurring"] });
@@ -423,10 +473,12 @@ export function RecurringEditor({
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
+            onPaste={onBodyPaste}
+            onDrop={onBodyDrop}
             // biome-ignore lint/a11y/noAutofocus: the modal exists to type this field
             autoFocus
             rows={4}
-            placeholder="Describe the work like you'd capture any task — e.g. “Generate the monthly Toggl timesheet for the client and verify the totals.”"
+            placeholder="Describe the work like you'd capture any task — e.g. “Generate the monthly Toggl timesheet for the client and verify the totals.” Paste files & screenshots too…"
             className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
           <span className="text-xs text-muted-foreground">
@@ -443,6 +495,51 @@ export function RecurringEditor({
             className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
         </label>
+
+        {initial ? (
+          // Existing template: live attachments block (upload/list/remove hit the API directly).
+          <RecurringAttachmentsSection recurringId={initial.id} />
+        ) : (
+          // New template: hold files locally, upload right after create (AddTaskModal pattern).
+          <div className="flex flex-wrap items-center gap-1.5">
+            <LabeledIconButton
+              icon={<Paperclip />}
+              label="Attach files"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInput.current?.click()}
+              title="Files are copied onto every task this template creates (images included)."
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              multiple
+              onChange={(e) => {
+                addFiles(Array.from(e.target.files ?? []));
+                e.target.value = "";
+              }}
+              className="hidden"
+              aria-label="Attach files"
+            />
+            {pendingFiles.map((f, i) => (
+              <span
+                key={`${f.name}-${i}`}
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+              >
+                <Paperclip className="size-3 text-muted-foreground" aria-hidden />
+                {f.name} · {formatBytes(f.size)}
+                <button
+                  type="button"
+                  aria-label={`Remove attachment ${f.name}`}
+                  onClick={() => setPendingFiles((cur) => cur.filter((_, j) => j !== i))}
+                  className="rounded-full text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         <fieldset className="flex flex-col gap-2">
           <legend className="text-xs font-medium text-muted-foreground">Repeats</legend>

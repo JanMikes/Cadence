@@ -2178,6 +2178,56 @@ test("recurring API: create → list → patch (validated post-merge) → run no
   expect((await fetch(`${gw.url}/api/recurring/${rec.id}`)).status).toBe(404);
 });
 
+test("recurring attachments API: upload, list, fetch bytes, copy onto run-now task, delete", async () => {
+  const created = await fetch(`${gw.url}/api/recurring`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "Monthly report from the template", cadence: "monthly", dayOfMonth: 1, time: "09:00" }),
+  });
+  const rec = (await created.json()) as { id: string };
+
+  expect(await fetch(`${gw.url}/api/recurring/${rec.id}/attachments`).then((r) => r.json())).toEqual([]);
+
+  const form = new FormData();
+  form.append("files", new File(["quarterly numbers"], "numbers.csv"));
+  const post = await fetch(`${gw.url}/api/recurring/${rec.id}/attachments`, {
+    method: "POST",
+    body: form,
+  });
+  expect(post.status).toBe(201);
+  const listed = (await post.json()) as Array<{ name: string; path: string }>;
+  expect(listed.map((a) => a.name)).toEqual(["numbers.csv"]);
+  expect(listed[0]?.path).toContain(`recurring/${rec.id}/attachments/`);
+
+  const bytes = await fetch(`${gw.url}/api/recurring/${rec.id}/attachments/numbers.csv`).then((r) =>
+    r.text(),
+  );
+  expect(bytes).toBe("quarterly numbers");
+
+  // traversal-shaped names never resolve
+  const evil = await fetch(
+    `${gw.url}/api/recurring/${rec.id}/attachments/${encodeURIComponent(`../${rec.id}.md`)}`,
+  );
+  expect(evil.status).toBe(404);
+
+  // the file rides along onto the task a trigger creates
+  const ran = await fetch(`${gw.url}/api/recurring/${rec.id}/run`, { method: "POST" });
+  const fired = (await ran.json()) as { task: Task };
+  const taskFiles = (await fetch(`${gw.url}/api/tasks/${fired.task.id}/attachments`).then((r) =>
+    r.json(),
+  )) as Array<{ name: string }>;
+  expect(taskFiles.map((a) => a.name)).toEqual(["numbers.csv"]);
+
+  const del = await fetch(`${gw.url}/api/recurring/${rec.id}/attachments/numbers.csv`, {
+    method: "DELETE",
+  });
+  expect(del.status).toBe(200);
+  expect((await del.json()) as unknown[]).toEqual([]);
+
+  // unknown template → 404, not an empty list
+  expect((await fetch(`${gw.url}/api/recurring/nope/attachments`)).status).toBe(404);
+});
+
 test("recurring API rejects unsound schedules with actionable messages", async () => {
   const cases: Array<Record<string, unknown>> = [
     { body: "x", cadence: "hourly", time: "09:00" }, // unknown cadence

@@ -194,6 +194,29 @@ export function attachmentUrl(id: string, name: string): string {
   return `/api/tasks/${id}/attachments/${encodeURIComponent(name)}`;
 }
 
+// Recurring-template attachments — same contract; copied onto every created task.
+export function getRecurringAttachments(id: string): Promise<TaskAttachment[]> {
+  return fetch(`/api/recurring/${id}/attachments`).then(json<TaskAttachment[]>);
+}
+
+export function uploadRecurringAttachments(id: string, files: File[]): Promise<TaskAttachment[]> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f, f.name);
+  return fetch(`/api/recurring/${id}/attachments`, { method: "POST", body: form }).then(
+    json<TaskAttachment[]>,
+  );
+}
+
+export function deleteRecurringAttachment(id: string, name: string): Promise<TaskAttachment[]> {
+  return fetch(`/api/recurring/${id}/attachments/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  }).then(json<TaskAttachment[]>);
+}
+
+export function recurringAttachmentUrl(id: string, name: string): string {
+  return `/api/recurring/${id}/attachments/${encodeURIComponent(name)}`;
+}
+
 export function getQa(taskId: string): Promise<QAChannel> {
   return fetch(`/api/tasks/${taskId}/qa`).then(json<QAChannel>);
 }

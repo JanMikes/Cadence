@@ -104,9 +104,13 @@ import {
   applyClaudeBinEnv,
   attachmentPath,
   deleteAttachment,
+  deleteRecurringAttachment,
   listAttachments,
+  listRecurringAttachments,
   readContext,
+  recurringAttachmentPath,
   saveAttachment,
+  saveRecurringAttachment,
   readDelivery,
   readPlan,
   readQa,
@@ -1758,6 +1762,52 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: fired.recurring.id });
     maybeTriageOnCapture(ctx, fired.task.id); // background; no-op unless autonomy is on
     return Response.json(fired, { status: 201 });
+  }
+
+  // Template attachments (multipart form, any field name) — same contract as task
+  // attachments; stored under ~/.cadence/recurring/<id>/attachments/ and copied onto
+  // every task the template creates.
+  const recurringAttachListMatch = pathname.match(/^\/api\/recurring\/([^/]+)\/attachments$/);
+  if (recurringAttachListMatch) {
+    const id = recurringAttachListMatch[1] as string;
+    if (!getRecurring(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") return Response.json(listRecurringAttachments(id));
+    if (method === "POST") {
+      const files: Array<{ name: string; arrayBuffer(): Promise<ArrayBuffer> }> = [];
+      try {
+        const form = await req.formData();
+        for (const [, value] of form) {
+          if (typeof value !== "string" && value.size > 0) files.push(value);
+        }
+      } catch {
+        return badRequest("expected multipart/form-data with at least one file");
+      }
+      if (!files.length) return badRequest("no files in upload");
+      for (const file of files) {
+        saveRecurringAttachment(id, file.name || "pasted-file", new Uint8Array(await file.arrayBuffer()));
+      }
+      ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: id });
+      return Response.json(listRecurringAttachments(id), { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const recurringAttachFileMatch = pathname.match(/^\/api\/recurring\/([^/]+)\/attachments\/([^/]+)$/);
+  if (recurringAttachFileMatch) {
+    const id = recurringAttachFileMatch[1] as string;
+    const name = decodeURIComponent(recurringAttachFileMatch[2] as string);
+    if (!getRecurring(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") {
+      const file = recurringAttachmentPath(id, name);
+      if (!file) return notFound(pathname);
+      return new Response(Bun.file(file));
+    }
+    if (method === "DELETE") {
+      if (!deleteRecurringAttachment(id, name)) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: id });
+      return Response.json(listRecurringAttachments(id));
+    }
+    return methodNotAllowed();
   }
 
   if (pathname === "/api/fleets") {

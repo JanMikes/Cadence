@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, extname } from "node:path";
+import { basename, extname, join } from "node:path";
 import type {
   DailyDigest,
   DeliveryResult,
@@ -138,7 +138,9 @@ export function writeSpec(id: string, content: string): void {
   writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
 }
 
-// ------------------------------------------------- task attachments (files for Claude)
+// ------------------------------------------------- attachments (files for Claude)
+// Same machinery for tasks and recurring templates — only the base dir differs
+// (tasks/<id>/attachments/ vs recurring/<id>/attachments/).
 
 /** Reduce an uploaded filename to one safe path segment: basename only, no control
  *  chars, never empty/dot-only, length-capped with the extension preserved. */
@@ -154,48 +156,79 @@ export function safeAttachmentName(raw: string): string {
   return name;
 }
 
-/** Resolve an attachment name to its on-disk path, or null when the name is not a
- *  plain segment (traversal) or the file doesn't exist. */
-export function attachmentPath(id: string, name: string): string | null {
+/** Resolve an attachment name to its on-disk path inside `dir`, or null when the
+ *  name is not a plain segment (traversal) or the file doesn't exist. */
+function attachmentPathIn(dir: string, name: string): string | null {
   if (!name || name !== safeAttachmentName(name) || name.includes("/") || name.includes("\\")) {
     return null;
   }
-  const file = paths.taskAttachment(id, name);
+  const file = join(dir, name);
   return existsSync(file) ? file : null;
 }
 
-/** Save one uploaded file under the task's attachments/ dir. Filenames are sanitized
- *  and deduped (`shot.png` → `shot-2.png`); returns the stored attachment. */
-export function saveAttachment(id: string, rawName: string, bytes: Uint8Array): TaskAttachment {
-  mkdirSync(paths.taskAttachmentsDir(id), { recursive: true });
+/** Save one uploaded file under `dir`. Filenames are sanitized and deduped
+ *  (`shot.png` → `shot-2.png`); returns the stored attachment. */
+function saveAttachmentIn(dir: string, rawName: string, bytes: Uint8Array): TaskAttachment {
+  mkdirSync(dir, { recursive: true });
   const safe = safeAttachmentName(rawName);
   const ext = extname(safe);
   const stem = safe.slice(0, safe.length - ext.length);
   let name = safe;
-  for (let n = 2; existsSync(paths.taskAttachment(id, name)); n++) {
+  for (let n = 2; existsSync(join(dir, name)); n++) {
     name = `${stem}-${n}${ext}`;
   }
-  const file = paths.taskAttachment(id, name);
+  const file = join(dir, name);
   writeFileSync(file, bytes);
   return toAttachment(name, file);
 }
 
-/** List a task's attachments (newest last). */
-export function listAttachments(id: string): TaskAttachment[] {
-  const dir = paths.taskAttachmentsDir(id);
+/** List the attachments under `dir` (newest last). */
+function listAttachmentsIn(dir: string): TaskAttachment[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((name) => statSync(paths.taskAttachment(id, name)).isFile())
-    .map((name) => toAttachment(name, paths.taskAttachment(id, name)))
+    .filter((name) => statSync(join(dir, name)).isFile())
+    .map((name) => toAttachment(name, join(dir, name)))
     .sort((a, b) => a.addedAt - b.addedAt || a.name.localeCompare(b.name));
 }
 
-/** Delete one attachment; false when it didn't exist (or the name was unsafe). */
-export function deleteAttachment(id: string, name: string): boolean {
-  const file = attachmentPath(id, name);
+/** Delete one attachment under `dir`; false when it didn't exist (or was unsafe). */
+function deleteAttachmentIn(dir: string, name: string): boolean {
+  const file = attachmentPathIn(dir, name);
   if (!file) return false;
   rmSync(file);
   return true;
+}
+
+// Task attachments.
+export function attachmentPath(id: string, name: string): string | null {
+  return attachmentPathIn(paths.taskAttachmentsDir(id), name);
+}
+export function saveAttachment(id: string, rawName: string, bytes: Uint8Array): TaskAttachment {
+  return saveAttachmentIn(paths.taskAttachmentsDir(id), rawName, bytes);
+}
+export function listAttachments(id: string): TaskAttachment[] {
+  return listAttachmentsIn(paths.taskAttachmentsDir(id));
+}
+export function deleteAttachment(id: string, name: string): boolean {
+  return deleteAttachmentIn(paths.taskAttachmentsDir(id), name);
+}
+
+// Recurring-template attachments — copied onto every task the template creates.
+export function recurringAttachmentPath(id: string, name: string): string | null {
+  return attachmentPathIn(paths.recurringAttachmentsDir(id), name);
+}
+export function saveRecurringAttachment(
+  id: string,
+  rawName: string,
+  bytes: Uint8Array,
+): TaskAttachment {
+  return saveAttachmentIn(paths.recurringAttachmentsDir(id), rawName, bytes);
+}
+export function listRecurringAttachments(id: string): TaskAttachment[] {
+  return listAttachmentsIn(paths.recurringAttachmentsDir(id));
+}
+export function deleteRecurringAttachment(id: string, name: string): boolean {
+  return deleteAttachmentIn(paths.recurringAttachmentsDir(id), name);
 }
 
 function toAttachment(name: string, file: string): TaskAttachment {

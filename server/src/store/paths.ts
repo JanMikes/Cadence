@@ -39,6 +39,12 @@ export const paths = {
 
   recurringDir: () => join(cadenceHome(), "recurring"),
   recurringFile: (id: string) => join(cadenceHome(), "recurring", `${id}.md`),
+  // Template attachments live in a per-id dir beside the template's .md and are
+  // copied onto every task the template creates.
+  recurringAssetsDir: (id: string) => join(cadenceHome(), "recurring", id),
+  recurringAttachmentsDir: (id: string) => join(cadenceHome(), "recurring", id, "attachments"),
+  recurringAttachment: (id: string, name: string) =>
+    join(cadenceHome(), "recurring", id, "attachments", name),
 
   memoryDir: () => join(cadenceHome(), "memory"),
   memoryFile: (name: string) => join(cadenceHome(), "memory", `${name}.md`),

@@ -1,4 +1,4 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import {
   describeSchedule,
   type CreateRecurringInput,
@@ -12,7 +12,14 @@ import { and, asc, eq, lte } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { recurringTasks } from "./db/schema";
 import { paths } from "./store/paths";
-import { appendContext, readRecurring, reindexRecurring, writeRecurring } from "./store/store";
+import {
+  appendContext,
+  listRecurringAttachments,
+  readRecurring,
+  reindexRecurring,
+  saveAttachment,
+  writeRecurring,
+} from "./store/store";
 import type { RecurringFrontmatter } from "./store/types";
 import { createTask, deriveTitle } from "./tasks";
 import type { WsHub } from "./ws";
@@ -93,11 +100,13 @@ export function updateRecurring(db: Db, id: string, patch: UpdateRecurringInput)
   return getRecurring(db, id);
 }
 
-/** Delete a template (markdown + index row). The tasks it created stay. */
+/** Delete a template (markdown + attachments dir + index row). The tasks it created stay
+ *  (their attachment copies live under tasks/<id>/ and are untouched). */
 export function deleteRecurring(db: Db, id: string): boolean {
   const file = paths.recurringFile(id);
   if (!existsSync(file)) return false;
   rmSync(file);
+  rmSync(paths.recurringAssetsDir(id), { recursive: true, force: true });
   db.delete(recurringTasks).where(eq(recurringTasks.id, id)).run();
   return true;
 }
@@ -122,6 +131,15 @@ export function triggerRecurring(
     ...(data.project ? { project: data.project } : {}),
     ...(data.priority ? { priority: data.priority } : {}),
   });
+  // Template attachments ride along: copy each onto the new task so agents see them
+  // (saveAttachment re-sanitizes/dedupes). A bad file must not block the task itself.
+  for (const a of listRecurringAttachments(id)) {
+    try {
+      saveAttachment(task.id, a.name, readFileSync(a.path));
+    } catch (err) {
+      console.error(`[cadence] recurring ${id}: failed to copy attachment ${a.name}:`, err);
+    }
+  }
   // Attribution in the task's context channel: where this task came from.
   appendContext(
     task.id,
