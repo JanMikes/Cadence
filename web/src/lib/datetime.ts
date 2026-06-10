@@ -69,6 +69,15 @@ export function formatDate(ts: number | Date | null | undefined, f: DateFormats 
   return formatTimestamp(ts, f.date, "date");
 }
 
+/** Format a server-local `YYYY-MM-DD` day key (digest dates, throughput buckets).
+ *  Parsed as local time — `new Date("YYYY-MM-DD")` would be UTC midnight and could
+ *  shift the day in negative-offset timezones. */
+export function formatDayKey(key: string | null | undefined, f: DateFormats = current): string {
+  const m = key ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(key) : null;
+  if (!m) return key ?? "—";
+  return formatTimestamp(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])), f.date, "date");
+}
+
 export function formatDateTime(ts: number | Date | null | undefined, f: DateFormats = current): string {
   return formatTimestamp(ts, f.dateTime, "dateTime");
 }

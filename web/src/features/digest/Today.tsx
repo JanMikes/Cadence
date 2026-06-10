@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, CalendarCheck, Check, Flame, Moon, Sparkles, X } fr
 import { useEffect, useRef, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { commitDigest, getDigest, recapDigest } from "../../lib/api";
+import { formatDayKey, useDateFormats } from "../../lib/datetime";
 import { ProgressRing } from "./ProgressRing";
 import { SweepPanel } from "./SweepPanel";
 
@@ -19,6 +20,7 @@ const TIER_BADGE: Record<string, { label: string; className: string }> = {
  */
 export function Today({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
+  const fmts = useDateFormats();
   const digest = useQuery({ queryKey: ["digest", "today"], queryFn: () => getDigest() });
 
   const [picks, setPicks] = useState<DigestPick[]>([]);
@@ -73,7 +75,7 @@ export function Today({ onOpen }: { onOpen: (id: string) => void }) {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
             {digest.data ? (
-              <span className="text-sm text-muted-foreground">{digest.data.date}</span>
+              <span className="text-sm text-muted-foreground">{formatDayKey(digest.data.date, fmts)}</span>
             ) : null}
             {recapped ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-300">

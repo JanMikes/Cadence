@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3 } from "lucide-react";
 import { getAnalytics, getSelfMonitor } from "../../lib/api";
+import { formatDayKey, useDateFormats } from "../../lib/datetime";
 import { statusLabel } from "../../lib/status";
 
 function pct(n: number | null): string {
@@ -41,6 +42,7 @@ function SelfMonitorSection() {
  */
 export function Analytics() {
   const a = useQuery({ queryKey: ["analytics"], queryFn: getAnalytics });
+  const fmts = useDateFormats();
   const data = a.data;
 
   const maxDay = Math.max(1, ...(data?.throughput ?? []).map((d) => d.completed));
@@ -69,7 +71,7 @@ export function Analytics() {
             <h2 className="text-sm font-medium">Completions — last 14 days</h2>
             <div className="mt-3 flex h-32 items-end gap-1">
               {data.throughput.map((d) => (
-                <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${d.date}: ${d.completed}`}>
+                <div key={d.date} className="flex flex-1 flex-col items-center gap-1" title={`${formatDayKey(d.date, fmts)}: ${d.completed}`}>
                   <div
                     className="w-full rounded-t bg-primary/70"
                     style={{ height: `${(d.completed / maxDay) * 100}%`, minHeight: d.completed ? "3px" : "0" }}

@@ -23,7 +23,7 @@ import {
   spawnSession,
   updateTask,
 } from "../../lib/api";
-import { formatDate, useDateFormats } from "../../lib/datetime";
+import { formatDate, formatDateTime, useDateFormats } from "../../lib/datetime";
 import { gitStateLabel, gitStateTone } from "../../lib/git";
 import { roleLabel, statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
@@ -372,7 +372,7 @@ export function TaskDetail({
                       </span>
                     ) : null}
                     <span
-                      title={`Last checked ${new Date(task.gitContext.checkedAt).toLocaleString()}`}
+                      title={`Last checked ${formatDateTime(task.gitContext.checkedAt, fmts)}`}
                       className={
                         {
                           ok: "text-xs text-emerald-400",

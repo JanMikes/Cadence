@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DEFAULT_FORMATS, formatTimestamp, SYSTEM_FORMAT } from "./datetime";
+import { DEFAULT_FORMATS, formatDayKey, formatTimestamp, SYSTEM_FORMAT } from "./datetime";
 
 // 2026-06-10 14:05:09 local time — the plan's verify example.
 const T = new Date(2026, 5, 10, 14, 5, 9);
@@ -27,4 +27,17 @@ test("SYSTEM sentinel defers to the locale (smoke: non-empty, no tokens)", () =>
   const out = formatTimestamp(T, SYSTEM_FORMAT);
   expect(out.length).toBeGreaterThan(0);
   expect(out).not.toContain("SYSTEM");
+});
+
+test("formatDayKey renders a YYYY-MM-DD day key with the configured date pattern", () => {
+  expect(formatDayKey("2026-06-10", DEFAULT_FORMATS)).toBe("10.06.2026");
+  expect(formatDayKey("2026-06-10", { date: "n/j/y", dateTime: "" })).toBe("6/10/26");
+  // Parsed as LOCAL midnight — the day must never shift with the timezone.
+  expect(formatDayKey("2026-01-01", DEFAULT_FORMATS)).toBe("01.01.2026");
+});
+
+test("formatDayKey passes through malformed keys and dashes empties", () => {
+  expect(formatDayKey(null)).toBe("—");
+  expect(formatDayKey(undefined)).toBe("—");
+  expect(formatDayKey("not-a-date")).toBe("not-a-date");
 });
