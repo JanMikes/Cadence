@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.3.d (Czech date/time format + central formatter).
+- **Current step:** 6.3.e (operations knobs in settings).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -222,7 +222,7 @@ global→project→fleet→task context, violating the “compose into every age
   - Verify: edit the discovery prompt → next discovery run uses it (mock-runner test); reset
     restores default; keyboard navigable; gates green. ✓ 2026-06-10 (`e9db554`, 368 tests; the
     render-through-override path was proven in 6.3.b's tests).
-- [ ] **6.3.d Date/time format (Czech default).** Settings `dateTimeFormat` + `dateFormat` with
+- [x] **6.3.d Date/time format (Czech default).** Settings `dateTimeFormat` + `dateFormat` with
   presets — **`d.m.Y H:i:s` / `d.m.Y` (DEFAULT)**, ISO, US, System locale — plus a custom
   PHP-style token input (`d m Y H i s`) with live preview. New `web/src/lib/datetime.ts`
   (`formatDate`, `formatDateTime`; tiny token renderer, no date lib). Replace all 5 `toLocale*`
@@ -230,7 +230,8 @@ global→project→fleet→task context, violating the “compose into every age
   `SessionDetail.tsx:217`. Settings reach the web app via existing GET `/api/settings` + the
   `settings:updated` WS event.
   - Verify: formatter unit tests (incl. `10.06.2026 14:05:09`); all five UI spots render the Czech
-    format by default.
+    format by default. ✓ 2026-06-10 (`a03fa24`, 374 tests; grep proves zero date `toLocale*` calls
+    remain outside the formatter).
 - [ ] **6.3.e Operations knobs.** Settings + Operations section UI (plain-language labels + help
   text): `stuckThresholdMinutes` (default 10; watchdog reads it, env var stays as override),
   `stageTimeoutMinutes` {read, implement} (wires 6.1.g), `maxStageAttemptsPer24h` (default 3; wires
@@ -594,3 +595,10 @@ yourself.
   precedent); variables legend renders each `{{var}}` chip with its doc line. New
   GET /api/agents/prompts (registry + overrides merged); gateway test cleans its override up so
   test order stays independent.
+- **2026-06-10 — 6.3.d done** (`a03fa24`). `lib/datetime.ts` = pure PHP-token formatter + reactive
+  store (mirrors lib/activity.ts: hydrate once, refresh on `settings:updated`). **Decisions:**
+  components pass the hook's formats object into `formatDate/formatDateTime` (reactive re-render on
+  change, no polling); SYSTEM sentinel = browser locale; token escaping (\d) skipped — patterns are
+  short token strings, journal-noted as a future nicety; only customizations persist (`formats.date`
+  equal to the default is cleared on save, same honesty rule as agent overrides). Presets: Czech
+  (default) · ISO · US · System locale.
