@@ -1402,3 +1402,31 @@ test("PATCH /api/settings stores operations knobs and clears invalid/null values
   s = (await res.json()) as typeof s;
   expect(s.operations?.maxConcurrentAgents).toBeUndefined(); // back to the built-in default
 });
+
+test("GET /api/projects/:slug/forge detects the forge from the remote (§6.4.a/b)", async () => {
+  const project = (await fetch(`${gw.url}/api/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Forge Probe", gitRemote: "git@github.com:acme/widget.git" }),
+  }).then((r) => r.json())) as { slug: string };
+
+  const status = (await fetch(`${gw.url}/api/projects/${project.slug}/forge`).then((r) =>
+    r.json(),
+  )) as { remote: { forge: string; owner: string; repo: string } | null; cli: { cli: string } | null };
+  expect(status.remote?.forge).toBe("github");
+  expect(status.remote?.owner).toBe("acme");
+  expect(status.remote?.repo).toBe("widget");
+  // cli reflects this machine (installed or not) — shape is the contract here
+  if (status.cli) expect(status.cli.cli).toBe("gh");
+
+  // forgeOverride round-trips through PATCH and reclassifies a custom host
+  await fetch(`${gw.url}/api/projects/${project.slug}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ gitRemote: "git@code.acme.dev:platform/app.git", forgeOverride: "gitlab" }),
+  });
+  const overridden = (await fetch(`${gw.url}/api/projects/${project.slug}/forge`).then((r) =>
+    r.json(),
+  )) as typeof status;
+  expect(overridden.remote?.forge).toBe("gitlab");
+});

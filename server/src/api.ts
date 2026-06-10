@@ -12,6 +12,7 @@ import {
   type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
+  type ProjectForgeStatus,
   type RecapDigestInput,
   type ResolveSuggestionInput,
   type ReviewActionInput,
@@ -32,6 +33,7 @@ import { approvePlan, runPlanner } from "./agents/planner";
 import { runReflector } from "./agents/reflector";
 import { AGENT_PROMPTS } from "./agents/prompts";
 import { findLiveStage } from "./agents/stage-guard";
+import { projectForgeStatus } from "./forge";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
@@ -1146,6 +1148,22 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       return Response.json(updated);
     }
     return methodNotAllowed();
+  }
+
+  // Forge status (§6.4): parsed remote + matching CLI capability. ?refresh=1 re-probes.
+  const forgeMatch = pathname.match(/^\/api\/projects\/([^/]+)\/forge$/);
+  if (forgeMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const project = getProject(ctx.db, forgeMatch[1] as string);
+    if (!project) return notFound(pathname);
+    const status = projectForgeStatus(project.gitRemote, project.forgeOverride, {
+      refresh: url.searchParams.get("refresh") === "1",
+    });
+    return Response.json({
+      remote: status.remote,
+      cli: status.cli,
+      probedAt: status.probedAt,
+    } satisfies ProjectForgeStatus);
   }
 
   // Worktree-readiness check (§9, propose-don't-impose): a read-only Claude run inspects

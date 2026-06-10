@@ -273,6 +273,8 @@ export interface Project {
   color: string | null;
   rootPath: string | null;
   gitRemote: string | null;
+  /** Manual forge override for self-hosted instances the host heuristic can't classify (6.4.a). */
+  forgeOverride: ForgeKind | null;
   defaultModel: string | null;
   defaultPermissionMode: string;
   defaultDeliveryMode: string;
@@ -294,6 +296,7 @@ export interface CreateProjectInput {
   rootPath?: string;
   color?: string;
   gitRemote?: string;
+  forgeOverride?: ForgeKind | null;
   defaultModel?: string;
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;
@@ -306,6 +309,7 @@ export interface CreateProjectInput {
 export interface UpdateProjectInput {
   name?: string;
   rootPath?: string | null;
+  forgeOverride?: ForgeKind | null;
   color?: string | null;
   gitRemote?: string | null;
   defaultModel?: string | null;
@@ -551,6 +555,35 @@ export interface AgentPromptInfo {
   variables: Array<{ name: string; doc: string }>;
   defaultTemplate: string;
   override: AgentOverride | null;
+}
+
+/** Git forge kinds Cadence understands (6.4). */
+export type ForgeKind = "github" | "gitlab";
+
+/** Parsed git remote (6.4.a). */
+export interface ForgeInfo {
+  forge: ForgeKind | null;
+  host: string;
+  owner: string;
+  repo: string;
+  webUrl: string;
+}
+
+/** One forge CLI's local capability (6.4.b). */
+export interface ForgeCliStatus {
+  cli: "gh" | "glab";
+  installed: boolean;
+  version: string | null;
+  authenticated: boolean;
+  /** The authenticated account login when detectable (used for review-direction inference, 6.5). */
+  account: string | null;
+}
+
+/** GET /api/projects/:id/forge — the project's forge + the matching CLI capability. */
+export interface ProjectForgeStatus {
+  remote: ForgeInfo | null;
+  cli: ForgeCliStatus | null;
+  probedAt: number | null;
 }
 
 /** Supported terminal apps for one-click handoff (macOS). */

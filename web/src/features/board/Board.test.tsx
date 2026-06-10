@@ -57,6 +57,7 @@ const PROJECTS = [
     color: "#ff0000",
     rootPath: null,
     gitRemote: null,
+    forgeOverride: null,
     defaultModel: null,
     defaultPermissionMode: "auto",
     defaultDeliveryMode: "branch_summary",

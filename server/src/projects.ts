@@ -37,6 +37,7 @@ export function createProject(db: Db, input: CreateProjectInput): Project {
     color: input.color ?? null,
     rootPath: input.rootPath ?? null,
     gitRemote: input.gitRemote ?? null,
+    forgeOverride: input.forgeOverride ?? null,
     defaultModel: input.defaultModel ?? null,
     defaultPermissionMode: input.defaultPermissionMode ?? "auto",
     defaultDeliveryMode: input.defaultDeliveryMode ?? "branch_summary",
@@ -92,6 +93,7 @@ export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): 
   if (patch.color !== undefined) next.color = patch.color;
   if (patch.rootPath !== undefined) next.rootPath = patch.rootPath;
   if (patch.gitRemote !== undefined) next.gitRemote = patch.gitRemote;
+  if (patch.forgeOverride !== undefined) next.forgeOverride = patch.forgeOverride;
   if (patch.defaultModel !== undefined) next.defaultModel = patch.defaultModel;
   if (patch.defaultPermissionMode !== undefined) next.defaultPermissionMode = patch.defaultPermissionMode;
   if (patch.defaultDeliveryMode !== undefined) next.defaultDeliveryMode = patch.defaultDeliveryMode;
@@ -122,6 +124,7 @@ function toProject(row: typeof projects.$inferSelect): Project {
     color: row.color,
     rootPath: row.rootPath,
     gitRemote: row.gitRemote,
+    forgeOverride: (row.forgeOverride as Project["forgeOverride"]) ?? null,
     defaultModel: row.defaultModel,
     defaultPermissionMode: row.defaultPermissionMode,
     defaultDeliveryMode: row.defaultDeliveryMode,

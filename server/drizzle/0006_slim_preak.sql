@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `forge_override` text;

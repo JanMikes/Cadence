@@ -30,6 +30,7 @@ export interface ProjectFrontmatter {
   color?: string | null;
   rootPath?: string | null;
   gitRemote?: string | null;
+  forgeOverride?: import("@cadence/shared").ForgeKind | null; // self-hosted forge hint (6.4.a)
   defaultModel?: string | null;
   defaultPermissionMode?: string;
   defaultDeliveryMode?: string;

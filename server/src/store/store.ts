@@ -344,6 +344,7 @@ export function reindexProject(db: Db, slug: string): void {
     color: data.color ?? null,
     rootPath: data.rootPath ?? null,
     gitRemote: data.gitRemote ?? null,
+    forgeOverride: data.forgeOverride ?? null,
     defaultModel: data.defaultModel ?? null,
     defaultPermissionMode: data.defaultPermissionMode ?? "auto",
     defaultDeliveryMode: data.defaultDeliveryMode ?? "branch_summary",

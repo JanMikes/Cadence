@@ -31,6 +31,8 @@ export const projects = sqliteTable("projects", {
   color: text("color"),
   rootPath: text("root_path"),
   gitRemote: text("git_remote"),
+  // manual forge override for self-hosted instances ("github" | "gitlab"; null = host heuristic)
+  forgeOverride: text("forge_override"),
   defaultModel: text("default_model"),
   // auto (default) | manual | dangerous  → real permission modes (§9.1)
   defaultPermissionMode: text("default_permission_mode").notNull().default("auto"),
