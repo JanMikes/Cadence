@@ -1,8 +1,8 @@
-import type { DeliveryResult, ForgeKind, VerifyReport } from "@cadence/shared";
+import type { DeliveryResult, ForgeKind, TaskOutputFile, VerifyReport } from "@cadence/shared";
 import type { Db } from "../db/client";
 import { type CliExec, projectForgeStatus } from "../forge";
 import { getProjectById } from "../projects";
-import { appendContext, readSpec, readVerify, writeDelivery } from "../store/store";
+import { appendContext, listOutputs, readSpec, readVerify, writeDelivery } from "../store/store";
 import { getAgentPrompt, renderTemplate } from "./prompts";
 import { getTaskDetail, resolveDeliveryMode, setTaskPrUrl } from "../tasks";
 import {
@@ -12,6 +12,7 @@ import {
   finalizeInPlaceExecution,
   readExecutionState,
   resolveExecutionCwd,
+  taskWorkEvidence,
 } from "../worktree";
 import { recordDeliveryGitContext } from "../git-context";
 import { runAgent } from "./runner";
@@ -119,6 +120,7 @@ export function buildDeliveryPrompt(
   task: { title: string; body: string },
   spec: string,
   verify: VerifyReport | null,
+  outputs: TaskOutputFile[] = [],
 ): string {
   const checks = (verify?.checks ?? []).map((c) => `${c.passed ? "✅" : "❌"} ${c.name}`).join(", ");
   return renderTemplate(getAgentPrompt("delivery"), {
@@ -126,6 +128,9 @@ export function buildDeliveryPrompt(
     detailsLine: task.body ? `DETAILS: ${task.body}` : "",
     specBlock: spec.trim() ? `\nSPEC:\n${spec.trim()}` : "",
     checksLine: checks ? `\nVERIFY CHECKS: ${checks}` : "",
+    outputsLine: outputs.length
+      ? `OUTPUT FILES (non-code deliverables, linked on the task): ${outputs.map((o) => o.name).join(", ")}`
+      : "",
   });
 }
 
@@ -158,16 +163,28 @@ export async function runDelivery(
     target = { cwd: process.cwd(), branch: null, worktreePath: null, inPlace: false, mode: "worktree" };
   }
 
+  const outputs = listOutputs(taskId);
   const result = await run({
     cwd: target.cwd,
     taskId,
     role: "delivery",
-    prompt: buildDeliveryPrompt({ title: task.title, body: task.body }, readSpec(taskId), readVerify(taskId)),
+    prompt: buildDeliveryPrompt(
+      { title: task.title, body: task.body },
+      readSpec(taskId),
+      readVerify(taskId),
+      outputs,
+    ),
     permissionMode: "plan",
   });
 
   const j = (result.json ?? null) as DeliveryJson | null;
   const summary = (j?.summary ?? result.text ?? "").trim() || "Changes delivered.";
+
+  // Outputs-only run: the deliverable is the files in outputs/, the repo is
+  // (correctly) untouched. An empty branch, an empty commit, or a PR with no diff
+  // would be noise — skip the git ceremony and deliver the summary + the files.
+  const evidence = taskWorkEvidence(db, taskId);
+  const outputsOnly = outputs.length > 0 && evidence.attributable && !evidence.hasWork;
 
   let branch: string | null = null;
   let prUrl: string | null = null;
@@ -187,7 +204,26 @@ export async function runDelivery(
   // The in-place execution's recorded base — captured before finalize clears it, so
   // the git context knows what this branch should merge into.
   const baseBranchHint = readExecutionState(taskId)?.baseBranch ?? null;
-  if (mode !== "apply_in_place") {
+  if (mode !== "apply_in_place" && outputsOnly) {
+    if (mode === "auto_pr") {
+      effectiveMode = "branch_summary";
+      appendContext(
+        taskId,
+        "auto_pr: no repo changes — the task's deliverables are output files (linked on the task); nothing to push or open a PR for.",
+      );
+    }
+    // In-place execution still has to give the repo back: restore the base branch
+    // even though there was nothing to commit.
+    if (target.inPlace && target.branch) {
+      const fin = finalizeInPlaceExecution(db, taskId);
+      if (!fin.restored) {
+        appendContext(
+          taskId,
+          `Delivery left the repo on branch ${target.branch}: ${fin.reason ?? "could not restore the base branch"}.`,
+        );
+      }
+    }
+  } else if (mode !== "apply_in_place") {
     branch = branchName({ id: task.id, title: task.title });
     if (target.worktreePath) {
       // Ensure the Implementer's changes are committed to the task branch. Deterministic — a direct
@@ -220,7 +256,13 @@ export async function runDelivery(
     }
   }
 
-  const delivery: DeliveryResult = { mode: effectiveMode, summary, branch, prUrl };
+  const delivery: DeliveryResult = {
+    mode: effectiveMode,
+    summary,
+    branch,
+    prUrl,
+    outputs: outputs.length ? outputs.map((o) => o.name) : null,
+  };
   writeDelivery(taskId, delivery);
   // Record the git outcome (branch · base · tip commit · merged?) on the task itself —
   // what the board chip and the background merge-detection sweep read.

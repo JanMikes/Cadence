@@ -142,7 +142,11 @@ costUsd, startedAt, endedAt, transcriptPath
     spec.md                 # Discovery output (spec, scope, acceptance criteria)
     plan.md                 # Planner output
     verify.md               # Verifier output
-    delivery.md             # Delivery summary + branch/PR
+    delivery.md             # Delivery summary + branch/PR (+ output filenames)
+    attachments/            # files the USER gave the task (inputs, passed to agents by path)
+    outputs/                # files AGENTS produced (reports, PDFs, exports) — non-code
+                            # deliverables live here, never committed to the repo; the
+                            # task links each file so it opens directly from the UI
   memory/                   # self-written memory: global learnings + MEMORY.md + communication.md
   digests/<date>.md         # daily plan + evening recap (the productivity journal)
   decisions.md              # optional global decisions/history log
@@ -277,6 +281,15 @@ better over time — autonomous self-improving, self-monitoring, self-proposing.
   results; I merge.
 - **`auto_pr`** — additionally push + `gh pr create`.
 - **`apply_in_place`** — edit files directly in `rootPath` (no isolation, no branch; scratch repos).
+
+**Non-code deliverables (outputs).** Some tasks produce reports/PDFs/exports rather than (or in
+addition to) repo changes. Every task agent's composed context names the task's
+`~/.cadence/tasks/<id>/outputs/` dir and the rule: generated assets go there, never into the repo
+(the planner plans for it, the implementer writes there, the verifier checks there). Output files
+count as work product (a report task correctly leaves git clean), delivery records and summarizes
+them, an outputs-only task skips the empty branch/PR ceremony, and the Review "merge → Done" gate
+accepts outputs as the delivery. The task UI lists each file (served by the gateway) so it opens
+directly; outputs are deletable but never uploadable — they only get there by a run writing them.
 
 ### 9.0 Execution isolation — worktrees are opt-in per project
 

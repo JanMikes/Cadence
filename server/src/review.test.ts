@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "./db/client";
 import { createProject } from "./projects";
+import { paths } from "./store/paths";
 import { bootstrap } from "./store/store";
 import { createTask, updateTask } from "./tasks";
 import { mergeTask, taskDiff } from "./review";
@@ -120,6 +121,20 @@ test("mergeTask refuses an empty task branch (zero commits ahead of base)", () =
   const result = mergeTask(db, task.id);
   expect(result.ok).toBe(false);
   expect(result.message).toMatch(/no commits and no changes/);
+});
+
+test("mergeTask accepts an outputs-only task — no repo changes is the CORRECT outcome", () => {
+  const project = createProject(db, { name: "ReportOnly", rootPath: repo });
+  const task = createTask(db, { title: "Monthly report" });
+  updateTask(db, task.id, { project: project.slug, status: "review" });
+  // No branch, no commits — the deliverable lives in outputs/ (a report task
+  // SHOULD leave git untouched).
+  mkdirSync(paths.taskOutputsDir(task.id), { recursive: true });
+  writeFileSync(join(paths.taskOutputsDir(task.id), "report.pdf"), "pdf bytes");
+
+  const result = mergeTask(db, task.id);
+  expect(result.ok).toBe(true);
+  expect(result.message).toMatch(/output files/);
 });
 
 test("mergeTask refuses while the task's work sits uncommitted (run didn't finish)", () => {

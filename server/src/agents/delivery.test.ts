@@ -1,10 +1,11 @@
 import type { AgentResult } from "@cadence/shared";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { createProject } from "../projects";
+import { paths } from "../store/paths";
 import { bootstrap, readDelivery } from "../store/store";
 import { createTask, getTask, resolveDeliveryMode, updateTask } from "../tasks";
 import { buildDeliveryPrompt, runDelivery } from "./delivery";
@@ -95,6 +96,37 @@ test("branch_summary delivery writes a summary + branch, no PR (no push)", async
     baseBranch: "main",
     merged: "unmerged",
   });
+});
+
+test("outputs-only delivery: no branch ceremony, outputs recorded, prompt names the files", async () => {
+  const project = createProject(db, { name: "Repo3", rootPath: repo });
+  const task = createTask(db, { title: "Monthly report" });
+  updateTask(db, task.id, { project: project.slug, status: "review" });
+  // The run's deliverable: a file in outputs/, the repo (correctly) untouched.
+  mkdirSync(paths.taskOutputsDir(task.id), { recursive: true });
+  writeFileSync(join(paths.taskOutputsDir(task.id), "report.pdf"), "pdf bytes");
+
+  let prompt = "";
+  const outcome = await runDelivery(db, task.id, (opts) => {
+    prompt = opts.prompt;
+    return summaryResult("Report generated — see report.pdf.");
+  });
+
+  // No empty branch, no PR — the files ARE the delivery.
+  expect(outcome).toMatchObject({ ran: true, branch: null, prUrl: null });
+  expect(prompt).toContain("OUTPUT FILES");
+  expect(prompt).toContain("report.pdf");
+
+  const delivery = readDelivery(task.id);
+  expect(delivery?.outputs).toEqual(["report.pdf"]);
+  expect(delivery?.branch).toBeNull();
+  // nothing left to merge — same "merged from birth" treatment as direct work
+  expect(getTask(db, task.id)?.gitContext).toMatchObject({ kind: "direct", merged: "merged" });
+  // and the repo never left its base branch
+  const head = Bun.spawnSync(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd: repo, stdout: "pipe" })
+    .stdout.toString()
+    .trim();
+  expect(head).toBe("main");
 });
 
 test("apply_in_place delivery has no branch/PR", async () => {

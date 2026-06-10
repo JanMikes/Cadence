@@ -231,6 +231,30 @@ export function deleteRecurringAttachment(id: string, name: string): boolean {
   return deleteAttachmentIn(paths.recurringAttachmentsDir(id), name);
 }
 
+// ------------------------------------------------- task outputs (files FROM agents)
+// Non-code deliverables (reports, PDFs, exports) agents write for a task. The same
+// safe-name/list machinery as attachments, but the data flows the other way: agents
+// produce these files (they get the absolute dir in their composed context) and the
+// UI links them so each opens directly from the task.
+
+/** Ensure a task's outputs/ dir exists (called before execution so the agent can
+ *  write into it without ceremony). */
+export function ensureOutputsDir(id: string): string {
+  const dir = paths.taskOutputsDir(id);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+export function outputPath(id: string, name: string): string | null {
+  return attachmentPathIn(paths.taskOutputsDir(id), name);
+}
+export function listOutputs(id: string): TaskAttachment[] {
+  return listAttachmentsIn(paths.taskOutputsDir(id));
+}
+export function deleteOutput(id: string, name: string): boolean {
+  return deleteAttachmentIn(paths.taskOutputsDir(id), name);
+}
+
 function toAttachment(name: string, file: string): TaskAttachment {
   const stat = statSync(file);
   return {
@@ -445,6 +469,7 @@ export function readDelivery(id: string): DeliveryResult | null {
     summary: (data.summary ?? body ?? "").trim(),
     branch: data.branch ?? null,
     prUrl: data.prUrl ?? null,
+    outputs: data.outputs ?? null,
   };
 }
 
@@ -454,7 +479,13 @@ export function writeDelivery(id: string, result: DeliveryResult): void {
   writeFileSync(
     paths.taskDelivery(id),
     stringifyMarkdown(
-      { mode: result.mode, branch: result.branch, prUrl: result.prUrl, summary: result.summary },
+      {
+        mode: result.mode,
+        branch: result.branch,
+        prUrl: result.prUrl,
+        outputs: result.outputs ?? null,
+        summary: result.summary,
+      },
       `# Delivery\n\n${result.summary}`,
     ),
   );

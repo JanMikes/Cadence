@@ -1141,6 +1141,12 @@ export interface TaskAttachment {
   addedAt: number;
 }
 
+/** A file a task's agents PRODUCED (stored under ~/.cadence/tasks/<id>/outputs/) —
+ *  non-code deliverables like reports, PDFs, and exports. Agents are told to write
+ *  these here instead of committing generated assets to the repo; the task links
+ *  each file so it opens directly from the UI. Same shape as an attachment. */
+export type TaskOutputFile = TaskAttachment;
+
 // ------------------------------------------------------------- Daily Digest (§10.3)
 // The morning planning ritual: a deadline-first shortlist Claude proposes and I
 // commit as today's goal. Each day persists to ~/.cadence/digests/<date>.md.
@@ -1248,6 +1254,9 @@ export interface DeliveryResult {
   summary: string;
   branch: string | null;
   prUrl: string | null;
+  /** Filenames of non-code deliverables in the task's outputs/ dir at delivery time
+   *  (the live list is GET /api/tasks/:id/outputs). Null for pre-feature deliveries. */
+  outputs?: string[] | null;
 }
 
 /** How far a task's delivered work has progressed in git (server-managed).

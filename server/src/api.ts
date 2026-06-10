@@ -104,9 +104,12 @@ import {
   applyClaudeBinEnv,
   attachmentPath,
   deleteAttachment,
+  deleteOutput,
   deleteRecurringAttachment,
   listAttachments,
+  listOutputs,
   listRecurringAttachments,
+  outputPath,
   readContext,
   recurringAttachmentPath,
   saveAttachment,
@@ -1655,6 +1658,36 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       if (!deleteAttachment(id, name)) return notFound(pathname);
       ctx.hub.broadcast({ type: "event", name: "task:attachments", payload: id });
       return Response.json(listAttachments(id));
+    }
+    return methodNotAllowed();
+  }
+
+  // Outputs: non-code deliverables AGENTS produced for the task (reports, PDFs,
+  // exports) — written to ~/.cadence/tasks/<id>/outputs/ instead of the repo, and
+  // linked on the task so each opens directly. Read + delete only: there is no
+  // upload route by design — files get here by the run writing them.
+  const outputsListMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/outputs$/);
+  if (outputsListMatch) {
+    const id = outputsListMatch[1] as string;
+    if (!getTaskDetail(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") return Response.json(listOutputs(id));
+    return methodNotAllowed();
+  }
+
+  const outputFileMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/outputs\/([^/]+)$/);
+  if (outputFileMatch) {
+    const id = outputFileMatch[1] as string;
+    const name = decodeURIComponent(outputFileMatch[2] as string);
+    if (!getTaskDetail(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") {
+      const file = outputPath(id, name);
+      if (!file) return notFound(pathname);
+      return new Response(Bun.file(file));
+    }
+    if (method === "DELETE") {
+      if (!deleteOutput(id, name)) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "task:outputs", payload: id });
+      return Response.json(listOutputs(id));
     }
     return methodNotAllowed();
   }

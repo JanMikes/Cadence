@@ -39,6 +39,7 @@ import type {
   SweepReport,
   Task,
   TaskAttachment,
+  TaskOutputFile,
   TaskDepsView,
   TaskDetail,
   TaskDiff,
@@ -192,6 +193,23 @@ export function deleteAttachment(id: string, name: string): Promise<TaskAttachme
 /** URL serving the attachment bytes (image previews, click-to-open). */
 export function attachmentUrl(id: string, name: string): string {
   return `/api/tasks/${id}/attachments/${encodeURIComponent(name)}`;
+}
+
+// Task outputs — non-code deliverables agents produced (reports, PDFs, exports).
+// Read + delete only: files get here by a run writing them, never by upload.
+export function getOutputs(id: string): Promise<TaskOutputFile[]> {
+  return fetch(`/api/tasks/${id}/outputs`).then(json<TaskOutputFile[]>);
+}
+
+export function deleteOutput(id: string, name: string): Promise<TaskOutputFile[]> {
+  return fetch(`/api/tasks/${id}/outputs/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  }).then(json<TaskOutputFile[]>);
+}
+
+/** URL serving the output file's bytes (click-to-open in a new tab). */
+export function outputUrl(id: string, name: string): string {
+  return `/api/tasks/${id}/outputs/${encodeURIComponent(name)}`;
 }
 
 // Recurring-template attachments — same contract; copied onto every created task.

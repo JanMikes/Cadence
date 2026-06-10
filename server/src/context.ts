@@ -4,7 +4,8 @@ import { fleets } from "./db/schema";
 import { projectForgeStatus } from "./forge";
 import { readGlobalMemory, readProjectMemory } from "./memory";
 import { getProjectById } from "./projects";
-import { listAttachments, readContext, readSettings, readSpec } from "./store/store";
+import { paths } from "./store/paths";
+import { listAttachments, listOutputs, readContext, readSettings, readSpec } from "./store/store";
 
 export interface ContextScope {
   taskId?: string | null;
@@ -89,6 +90,26 @@ export function composeContext(db: Db, scope: ContextScope): string {
         ),
       );
     }
+    // Non-code deliverables (§7: outputs, not commits). Every stage sees the same
+    // rule, so the planner plans for it, the implementer writes there, the verifier
+    // checks there, and delivery reports it.
+    const outputsDir = paths.taskOutputsDir(scope.taskId);
+    const outputs = listOutputs(scope.taskId);
+    sections.push(
+      section(
+        "Task outputs (non-code deliverables)",
+        "If this task's deliverable includes files that are NOT source-code changes — reports, " +
+          "PDFs, generated documents, exports, datasets — save them as plain files directly in " +
+          "this directory (create it if needed), NOT inside the repository:\n\n" +
+          `${outputsDir}\n\n` +
+          "Never commit generated assets to the repo. Every file in this directory is linked on " +
+          "the task automatically, so the user opens it directly from the task." +
+          (outputs.length
+            ? "\n\nOutput files saved so far:\n" +
+              outputs.map((o) => `- ${o.path}${o.mimeType ? ` (${o.mimeType})` : ""}`).join("\n")
+            : ""),
+      ),
+    );
   }
 
   return sections.join("\n\n");

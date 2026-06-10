@@ -1,7 +1,7 @@
 import type { TaskPlan } from "@cadence/shared";
 import type { Db } from "../db/client";
 import { claudePermissionMode } from "../sessions";
-import { readPlan, readSpec } from "../store/store";
+import { ensureOutputsDir, listOutputs, readPlan, readSpec } from "../store/store";
 import { getTaskDetail, resolvePermissionMode, updateTask } from "../tasks";
 import { beginInPlaceExecution, type ExecutionTarget, taskWorkEvidence } from "../worktree";
 import { getAgentPrompt, renderTemplate } from "./prompts";
@@ -95,6 +95,11 @@ export async function runImplementer(
       reason: "Dangerous mode requires an isolated worktree — enable worktrees for this project",
     };
   }
+  // Non-code deliverables (reports, exports) land in the task's outputs/ dir — the
+  // composed context tells the agent so. Pre-create it, and snapshot what's already
+  // there so the work-product gate below can attribute NEW files to this run.
+  ensureOutputsDir(taskId);
+  const outputsBefore = new Map(listOutputs(taskId).map((o) => [o.name, o.addedAt]));
   // In the isolated, disposable worktree, grant the one-shot Implementer full tool access so it can
   // edit + commit + build + test without stalling on a permission-gated `git` (acceptEdits gates
   // Bash, and a one-shot agent has nobody to ask). The sandbox + the plan-approval and review/merge
@@ -135,9 +140,12 @@ export async function runImplementer(
   // Work-product gate: an agent that "succeeded" without changing anything must not
   // advance — verifying nothing and reviewing nothing only fabricates a Done later.
   // (An early bail — "too vague", "nothing to do" — is a legitimate agent outcome,
-  // but it belongs back with the human, not in the pipeline.)
+  // but it belongs back with the human, not in the pipeline.) Non-code deliverables
+  // count: a run that wrote/updated files in the task's outputs/ dir did real work
+  // even when the repo is untouched (a report task SHOULD leave git clean).
   const evidence = taskWorkEvidence(db, taskId);
-  if (evidence.attributable && !evidence.hasWork) {
+  const newOutputs = listOutputs(taskId).filter((o) => (outputsBefore.get(o.name) ?? 0) < o.addedAt);
+  if (evidence.attributable && !evidence.hasWork && newOutputs.length === 0) {
     return {
       ran: false,
       reason: `the implementer finished without delivering any changes (${evidence.detail})`,

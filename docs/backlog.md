@@ -165,6 +165,17 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       hint lines (e.g. delivery-mode descriptions), check on the current value, "No matches" state;
       keyboard guards: Enter in a closed combobox never submits the form, Esc closes just the
       dropdown (not the modal above it)
+- [x] **6.10 Non-code task outputs** — **DONE 2026-06-11**: tasks whose deliverable is a
+      report/PDF/export (not a repo change) are first-class (platform-definition §9). Per-task
+      `~/.cadence/tasks/<id>/outputs/` dir; every agent's composed context carries the rule
+      (write assets there, never commit them) + the planner/implementer/verifier/delivery
+      default prompts reinforce it per stage; output files count as work product (the
+      implementer's gate attributes NEW outputs to the run, pre-existing ones don't fake work);
+      outputs-only delivery skips the empty branch/PR ceremony (in-place base branch still
+      restored) and records the filenames in delivery.md; merge → Done accepts outputs as the
+      delivery (tidies the empty task branch); REST GET `/api/tasks/:id/outputs` +
+      GET/DELETE `…/outputs/:name` (read/delete only — no upload route by design); TaskDetail
+      "Outputs" section links each file (opens via the gateway), hidden when a task has none
 
 ---
 

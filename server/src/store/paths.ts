@@ -30,6 +30,10 @@ export const paths = {
   // User-uploaded files passed to agents as context (referenced by absolute path).
   taskAttachmentsDir: (id: string) => join(cadenceHome(), "tasks", id, "attachments"),
   taskAttachment: (id: string, name: string) => join(cadenceHome(), "tasks", id, "attachments", name),
+  // Agent-produced non-code deliverables (reports, PDFs, exports) — written here
+  // instead of being committed to the repo, and linked on the task in the UI.
+  taskOutputsDir: (id: string) => join(cadenceHome(), "tasks", id, "outputs"),
+  taskOutput: (id: string, name: string) => join(cadenceHome(), "tasks", id, "outputs", name),
 
   projectsDir: () => join(cadenceHome(), "projects"),
   projectFile: (slug: string) => join(cadenceHome(), "projects", `${slug}.md`),

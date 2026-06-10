@@ -34,6 +34,7 @@ import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { ReviewWorkspace } from "../review/ReviewWorkspace";
 import { DeliveryRecord } from "./DeliveryRecord";
+import { OutputsSection } from "./Outputs";
 import { PlanView } from "./PlanView";
 import { RelationsPanel } from "./RelationsPanel";
 import { ReviewPanel } from "./ReviewPanel";
@@ -318,6 +319,11 @@ export function TaskDetail({
                 {task.status === "done" ? (
                   <DeliveryRecord taskId={taskId} gitContext={task.gitContext} />
                 ) : null}
+
+                {/* Non-code deliverables the run produced — visible as soon as they
+                    exist (verifying/review), not only after Done. Renders nothing
+                    when the task has no output files. */}
+                <OutputsSection taskId={taskId} />
 
                 {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
                   <PlanView taskId={taskId} status={task.status} onResolved={resolved} />

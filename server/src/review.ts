@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
 import { markTaskMergedByCadence } from "./git-context";
 import { getProjectById } from "./projects";
+import { listOutputs } from "./store/store";
 import { getTask, resolveDeliveryMode } from "./tasks";
 import {
   branchName,
@@ -85,6 +86,11 @@ export function mergeTask(db: Db, taskId: string): MergeResult {
   if (mode === "apply_in_place") {
     const evidence = taskWorkEvidence(db, taskId);
     if (evidence.attributable && !evidence.hasWork) {
+      // Outputs-only delivery: the work product is the files in outputs/, not the
+      // repo — a clean tree is the CORRECT outcome, not an empty run.
+      if (listOutputs(taskId).length > 0) {
+        return { ok: true, message: "no repo changes — the task's deliverables are its output files" };
+      }
       return {
         ok: false,
         message: `nothing was delivered — ${evidence.detail}; send the task back to implementation instead of marking it done`,
@@ -103,6 +109,15 @@ export function mergeTask(db: Db, taskId: string): MergeResult {
   }
   const evidence = taskWorkEvidence(db, taskId);
   if (evidence.attributable && !evidence.hasWork) {
+    // Outputs-only delivery: nothing in git BY DESIGN. Mark done without a merge,
+    // and tidy the (empty) task branch the same way a merged in-place branch is.
+    if (listOutputs(taskId).length > 0) {
+      if (!existsSync(worktreePathFor(rootPath, task))) {
+        git(["branch", "-d", branch], rootPath); // best-effort
+        clearExecutionState(taskId);
+      }
+      return { ok: true, message: "no repo changes to merge — the task's deliverables are its output files" };
+    }
     return { ok: false, message: `nothing to merge — ${evidence.detail}` };
   }
   if (evidence.attributable && evidence.commitsAhead === 0 && evidence.dirty) {

@@ -1,10 +1,11 @@
 import type { AgentResult } from "@cadence/shared";
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { createProject } from "../projects";
+import { paths } from "../store/paths";
 import { bootstrap } from "../store/store";
 import { createTask, getTask, updateTask } from "../tasks";
 import { applyPlan, approvePlan } from "./planner";
@@ -186,6 +187,36 @@ test("work-product gate: an implementer that changes nothing does NOT advance to
   expect(outcome.ran).toBe(false);
   expect(outcome.reason).toMatch(/without delivering any changes/);
   expect(getTask(db, task.id)?.status).toBe("implementing"); // the chain routes it onward, not the agent
+});
+
+test("work-product gate: output files count as work — a report-only run advances", async () => {
+  const task = readyTask(); // worktree mode; the repo stays untouched on purpose
+  applyPlan(task.id, { steps: [{ title: "Generate the report" }] });
+  approvePlan(task.id);
+
+  // A non-code task writes its deliverable to outputs/ (the composed context gives
+  // the real agent this dir) and correctly leaves git clean.
+  const capture = (): Promise<AgentResult> => {
+    writeFileSync(join(paths.taskOutputsDir(task.id), "report.pdf"), "pdf bytes");
+    return ok();
+  };
+  const outcome = await runImplementer(db, task.id, capture);
+
+  expect(outcome.ran).toBe(true);
+  expect(getTask(db, task.id)?.status).toBe("verifying");
+});
+
+test("work-product gate: PRE-EXISTING output files are not credited to an empty run", async () => {
+  const task = readyTask();
+  applyPlan(task.id, { steps: [{ title: "x" }] });
+  approvePlan(task.id);
+  mkdirSync(paths.taskOutputsDir(task.id), { recursive: true });
+  writeFileSync(join(paths.taskOutputsDir(task.id), "old-report.pdf"), "from a previous run");
+
+  const outcome = await runImplementer(db, task.id, ok); // writes nothing anywhere
+
+  expect(outcome.ran).toBe(false);
+  expect(outcome.reason).toMatch(/without delivering any changes/);
 });
 
 test("work-product gate (apply_in_place): pre-existing user dirt is NOT credited as the task's work", async () => {

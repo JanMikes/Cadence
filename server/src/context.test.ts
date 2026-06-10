@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { composeContext } from "./context";
 import { migrateDb, openDb, type Db } from "./db/client";
 import { createProject } from "./projects";
+import { paths } from "./store/paths";
 import { appendContext, bootstrap, DEFAULT_SETTINGS, saveAttachment, writeSettings } from "./store/store";
 import { createTask, getTask, updateTask } from "./tasks";
 
@@ -48,9 +49,27 @@ test("composeContext layers global → project → task context, most-general fi
   expect(composed).toContain("Project: Acme");
 });
 
-test("composeContext is empty when there's nothing to add", () => {
+test("composeContext without a task is empty when there's nothing to add", () => {
+  expect(composeContext(db, { taskId: null, projectId: null })).toBe("");
+});
+
+test("composeContext for a bare task still carries the outputs rule (and nothing else)", () => {
   const task = createTask(db, { title: "Bare" });
-  expect(composeContext(db, { taskId: task.id, projectId: null })).toBe("");
+  const composed = composeContext(db, { taskId: task.id, projectId: null });
+  // Every task agent learns where non-code deliverables go — that's the only section.
+  expect(composed).toContain("Task outputs (non-code deliverables)");
+  expect(composed).toContain(join("tasks", task.id, "outputs"));
+  expect(composed).toContain("Never commit generated assets");
+  expect(composed.match(/^## /gm)?.length).toBe(1);
+});
+
+test("composeContext lists existing output files by absolute path", () => {
+  const task = createTask(db, { title: "Report task" });
+  mkdirSync(paths.taskOutputsDir(task.id), { recursive: true });
+  writeFileSync(join(paths.taskOutputsDir(task.id), "report.pdf"), "pdf");
+  const composed = composeContext(db, { taskId: task.id, projectId: null });
+  expect(composed).toContain("Output files saved so far:");
+  expect(composed).toContain(join(paths.taskOutputsDir(task.id), "report.pdf"));
 });
 
 test("composeContext lists attachments by absolute path so agents can Read them", () => {
