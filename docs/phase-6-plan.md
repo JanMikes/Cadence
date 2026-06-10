@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.5.a (review task type: schema + capture). **§6.1–6.4 all COMPLETE.**
+- **Current step:** 6.5.b (forge review data layer).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -331,13 +331,13 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
 
 ### Sub-steps
 
-- [ ] **6.5.a Schema + capture.** Add `taskType`, `reviewDirection`, `reviewRef`, `reviewState`,
+- [x] **6.5.a Schema + capture.** Add `taskType`, `reviewDirection`, `reviewRef`, `reviewState`,
   (+ `prUrl` exists from 6.4.d) to tasks (+ task.md frontmatter mirror + migration). Capture: pasting
   a GitHub/GitLab PR/MR URL into AddTaskModal proposes `code_review` type, infers direction (6.4.b
   account vs PR author), matches the project by remote `owner/repo` — all as editable
   propose-don’t-impose chips. Triage prompt updated to classify review tasks it recognizes.
   - Verify: paste a PR URL → proposed review task with inferred direction + matched project;
-    frontmatter round-trip test.
+    frontmatter round-trip test. ✓ 2026-06-10 (403 tests).
 - [ ] **6.5.b Forge review data layer.** `server/src/forge-review.ts`, one interface, two impls:
   fetch PR/MR meta + diff (`gh pr view --json …` / `gh pr diff`; `glab mr view` / `glab mr diff` ⚠
   verify flags); fetch review threads + comments (GitHub: `gh api repos/:o/:r/pulls/:n/comments` +
@@ -647,3 +647,10 @@ yourself.
   (poll/webhookless via `gh api notifications` sweep); (3) CI-failure → auto fix-task (checks API +
   budgeted autonomy); (4) review-thread deep integration lands with §6.5; (5) delivery PR body from
   delivery.md (today --fill uses commits). All consume forge.ts + the probe as their foundation.
+- **2026-06-10 — 6.5.a done.** **Deviation:** no `reviewState` DB column — review artifacts will be
+  task-folder files (findings.json / threads.json) like plan.md/qa.md, simpler + consistent.
+  Inspection is a dedicated endpoint (POST /api/review/inspect) so the capture chips stay editable
+  BEFORE the task exists (propose-don't-impose); author lookup is injectable (`prAuthor` gateway
+  opt) and best-effort in prod (CLI failure → direction defaults to perform). Triage's review
+  classification never overrides a capture-time decision. Triage fixtures re-frozen (documented
+  re-freeze flow) — first intentional template change since 6.3.a; all other agents byte-stable.
