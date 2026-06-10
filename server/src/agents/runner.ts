@@ -1,5 +1,6 @@
 import type { AgentResult, ClaudeEvent, InteractiveAsk } from "@cadence/shared";
 import { spawn } from "node:child_process";
+import { claudeSubprocessEnv } from "../claude-env";
 import { killGroup } from "../liveness";
 import { opsSettings } from "../ops";
 import { getAgentModel } from "./prompts";
@@ -177,6 +178,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
       cwd: opts.cwd,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
+      env: claudeSubprocessEnv(), // subscription guard — never silently bill the API
     });
     opts.onSpawn?.(child.pid ?? null);
 

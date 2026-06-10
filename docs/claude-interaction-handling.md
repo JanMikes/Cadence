@@ -126,6 +126,13 @@ What runs now (`runnerBackend()` default `"sdk"`, override via Settings → Oper
 - **Success-first outcomes**: a run that produced usable output stands even if an ask timed
   out (the miss is noted on the context channel); only a run with nothing usable turns its
   asks into Q&A cards + Needs-input.
+- **Billing: subscription, verified.** The SDK's bundled Claude Code authenticates exactly
+  like the terminal `claude` — the stored subscription OAuth in `~/.claude`/keychain. Live
+  check 2026-06-10: a real SDK run reported `apiKeySource: "none"` (the per-run
+  `total_cost_usd` is the notional API-equivalent figure, not a charge). Guard: every claude
+  subprocess (CLI, SDK, warm chats) gets its env via `claude-env.ts`, which strips a stray
+  `ANTHROPIC_API_KEY` so nothing can silently flip runs to pay-per-token API billing
+  (explicit opt-in: `CADENCE_ALLOW_API_BILLING=1`).
 
 Layer map after this wave:
 | Layer | Mechanism | Guarantee |

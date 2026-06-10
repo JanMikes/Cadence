@@ -1,5 +1,6 @@
 import type { ClaudeEvent } from "@cadence/shared";
 import { type ChildProcess, spawn } from "node:child_process";
+import { claudeSubprocessEnv } from "./claude-env";
 
 export interface SpawnOptions {
   sessionId: string;
@@ -50,6 +51,7 @@ export function openSession(opts: SpawnOptions): SessionHandle {
   const child: ChildProcess = spawn(base[0] as string, [...base.slice(1), ...args], {
     cwd: opts.cwd,
     stdio: ["pipe", "pipe", "pipe"],
+    env: claudeSubprocessEnv(), // subscription guard — never silently bill the API
   });
 
   let buf = "";

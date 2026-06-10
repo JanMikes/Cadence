@@ -1,5 +1,6 @@
 import type { AgentResult, ClaudeEvent, InteractiveAsk } from "@cadence/shared";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
+import { claudeSubprocessEnv } from "../claude-env";
 import { registerInProcessRun, unregisterInProcessRun } from "../liveness";
 import type { AskGate } from "./ask-gate";
 import { getAgentModel } from "./prompts";
@@ -169,6 +170,9 @@ export function makeSdkRunner(deps: SdkRunnerDeps = {}): (opts: AgentRunOptions)
           includePartialMessages: true,
           canUseTool: canUseTool as never,
           abortController: abort,
+          // Subscription guard: Options.env REPLACES the subprocess env, so this is
+          // the full inherited env minus any stray ANTHROPIC_API_KEY (claude-env.ts).
+          env: claudeSubprocessEnv(),
           // bypassPermissions (worktree implementer) requires the explicit opt-in flag.
           ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
         },
