@@ -163,6 +163,15 @@ export function updateTask(db: Db, id: string, patch: UpdateTaskInput): TaskDeta
   return detail;
 }
 
+/** Persist the PR/MR url an auto_pr delivery opened (server-managed — not part of the PATCH API). */
+export function setTaskPrUrl(db: Db, id: string, prUrl: string): TaskDetail | null {
+  if (!existsSync(paths.taskFile(id))) return null;
+  const { data, body } = readTask(id);
+  writeTask({ ...data, id, prUrl }, body);
+  reindexTask(db, id);
+  return getTaskDetail(db, id);
+}
+
 /**
  * Resolve the working directory a Claude session for this task should run in:
  * the assigned project's rootPath, else CADENCE_DEFAULT_CWD, else the process cwd.
@@ -189,6 +198,7 @@ function toTask(row: typeof tasks.$inferSelect): Task {
     deadline: row.deadline,
     estimate: row.estimate,
     deliveryMode: row.deliveryMode,
+    prUrl: row.prUrl,
     permissionMode: row.permissionMode,
     parentTaskId: row.parentTaskId,
     createdAt: row.createdAt,

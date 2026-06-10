@@ -17,6 +17,7 @@ export interface TaskFrontmatter {
   project?: string | null; // project slug
   fleet?: string | null; // fleet slug
   deliveryMode?: string | null; // per-task override
+  prUrl?: string | null; // PR/MR from an auto_pr delivery (server-managed, 6.4.d)
   permissionMode?: string | null; // auto|manual|dangerous override (null = inherit)
   parentTask?: string | null; // parent task id
   blockedBy?: string[]; // task ids that block this one (→ task_deps edges on reindex)

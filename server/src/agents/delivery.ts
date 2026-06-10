@@ -1,8 +1,10 @@
-import type { DeliveryResult, VerifyReport } from "@cadence/shared";
+import type { DeliveryResult, ForgeKind, VerifyReport } from "@cadence/shared";
 import type { Db } from "../db/client";
+import { type CliExec, projectForgeStatus } from "../forge";
+import { getProjectById } from "../projects";
 import { appendContext, readSpec, readVerify, writeDelivery } from "../store/store";
 import { getAgentPrompt, renderTemplate } from "./prompts";
-import { getTaskDetail, resolveDeliveryMode } from "../tasks";
+import { getTaskDetail, resolveDeliveryMode, setTaskPrUrl } from "../tasks";
 import {
   branchName,
   commitInPlaceChanges,
@@ -33,16 +35,82 @@ function git(args: string[], cwd: string): { ok: boolean; stdout: string; stderr
   return { ok: r.exitCode === 0, stdout: r.stdout.toString().trim(), stderr: r.stderr.toString().trim() };
 }
 
-/** auto_pr finalization: push the task branch and open a PR. Best-effort; null on failure. */
-function pushAndOpenPr(cwd: string, branch: string): string | null {
-  const pushed = git(["push", "-u", "origin", branch], cwd);
-  if (!pushed.ok) return null;
-  const pr = Bun.spawnSync(["gh", "pr", "create", "--fill", "--head", branch], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
+/** Shell seam for the push + PR/MR create steps, injectable for tests. */
+export type ShellRunner = (cmd: string[], cwd: string) => { ok: boolean; stdout: string; stderr: string };
+
+const realShell: ShellRunner = (cmd, cwd) => {
+  const r = Bun.spawnSync(cmd, { cwd, stdout: "pipe", stderr: "pipe" });
+  return { ok: r.exitCode === 0, stdout: r.stdout.toString().trim(), stderr: r.stderr.toString().trim() };
+};
+
+export interface PrAttempt {
+  url: string | null;
+  /** True when auto_pr couldn't complete — delivery degrades to branch_summary with `note`. */
+  fellBack: boolean;
+  note: string | null;
+}
+
+/**
+ * auto_pr finalization (§6.4.d), forge-aware: push the task branch, then open a PR
+ * (`gh pr create`) or MR (`glab mr create` ⚠ flags per glab docs) depending on the
+ * project's forge. Never hard-fails the delivery — a missing/unauthenticated CLI, an
+ * unknown forge or a failed push degrade to a branch-only delivery with a
+ * plain-language note for the task's context channel.
+ */
+export function openPrForProject(
+  project: { gitRemote: string | null; forgeOverride: ForgeKind | null } | null,
+  cwd: string,
+  branch: string,
+  deps: { shell?: ShellRunner; probeExec?: CliExec } = {},
+): PrAttempt {
+  const shell = deps.shell ?? realShell;
+  const status = projectForgeStatus(project?.gitRemote, project?.forgeOverride ?? null, {
+    exec: deps.probeExec,
   });
-  return pr.exitCode === 0 ? pr.stdout.toString().trim() : null;
+  if (!status.remote?.forge) {
+    return {
+      url: null,
+      fellBack: true,
+      note: "auto_pr: no GitHub/GitLab remote detected on the project — delivered the branch without a PR/MR.",
+    };
+  }
+  const forge = status.remote.forge;
+  const cliName = forge === "github" ? "gh" : "glab";
+  const kind = forge === "github" ? "PR" : "MR";
+  if (!status.cli?.installed) {
+    return {
+      url: null,
+      fellBack: true,
+      note: `auto_pr: ${cliName} is not installed (brew install ${cliName}, then ${cliName} auth login) — delivered the branch without a ${kind}.`,
+    };
+  }
+  if (!status.cli.authenticated) {
+    return {
+      url: null,
+      fellBack: true,
+      note: `auto_pr: ${cliName} is not signed in (${cliName} auth login) — delivered the branch without a ${kind}.`,
+    };
+  }
+  const pushed = shell(["git", "push", "-u", "origin", branch], cwd);
+  if (!pushed.ok) {
+    return { url: null, fellBack: true, note: `auto_pr: push failed — ${pushed.stderr.slice(0, 200)}` };
+  }
+  const create =
+    forge === "github"
+      ? ["gh", "pr", "create", "--fill", "--head", branch]
+      : ["glab", "mr", "create", "--fill", "--yes", "--source-branch", branch];
+  const created = shell(create, cwd);
+  if (!created.ok) {
+    return {
+      url: null,
+      fellBack: true,
+      note: `auto_pr: ${cliName} create failed — ${created.stderr.slice(0, 200)}`,
+    };
+  }
+  const url = created.stdout.match(/https?:\/\/\S+/)?.[0] ?? null;
+  return url
+    ? { url, fellBack: false, note: null }
+    : { url: null, fellBack: true, note: `auto_pr: ${cliName} did not return a ${kind} URL.` };
 }
 
 export function buildDeliveryPrompt(
@@ -101,6 +169,19 @@ export async function runDelivery(
 
   let branch: string | null = null;
   let prUrl: string | null = null;
+  let effectiveMode = mode;
+  const project = task.projectId ? getProjectById(db, task.projectId) : null;
+  const attemptPr = (cwd: string): void => {
+    const attempt = openPrForProject(project, cwd, branch as string);
+    if (attempt.url) {
+      prUrl = attempt.url;
+      setTaskPrUrl(db, taskId, attempt.url); // persisted on the task (frontmatter + index, §6.4.d)
+    } else if (attempt.fellBack) {
+      // Honest degrade: report what actually happened, and say why on the context channel.
+      effectiveMode = "branch_summary";
+      if (attempt.note) appendContext(taskId, attempt.note);
+    }
+  };
   if (mode !== "apply_in_place") {
     branch = branchName({ id: task.id, title: task.title });
     if (target.worktreePath) {
@@ -113,14 +194,14 @@ export async function runDelivery(
         git(["add", "-A"], target.worktreePath);
         git(["commit", "-m", `cadence: ${task.title}`], target.worktreePath);
       }
-      if (mode === "auto_pr") prUrl = pushAndOpenPr(target.worktreePath, branch);
+      if (mode === "auto_pr") attemptPr(target.worktreePath);
     } else if (target.inPlace && target.branch) {
       // In-place execution (worktrees disabled): commit tracked changes + NEW untracked files
       // onto the task branch — the pre-execution untracked snapshot (.env, scratch files)
       // never gets swallowed — then restore the base branch so the working dir is back to
       // normal for the user and the queued read stages.
       commitInPlaceChanges(target.cwd, taskId, `cadence: ${task.title}`);
-      if (mode === "auto_pr") prUrl = pushAndOpenPr(target.cwd, branch);
+      if (mode === "auto_pr") attemptPr(target.cwd);
       const fin = finalizeInPlaceExecution(db, taskId);
       if (!fin.restored) {
         appendContext(
@@ -131,7 +212,7 @@ export async function runDelivery(
     }
   }
 
-  const delivery: DeliveryResult = { mode, summary, branch, prUrl };
+  const delivery: DeliveryResult = { mode: effectiveMode, summary, branch, prUrl };
   writeDelivery(taskId, delivery);
-  return { ran: true, mode, branch, prUrl };
+  return { ran: true, mode: effectiveMode, branch, prUrl };
 }

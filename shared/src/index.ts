@@ -122,6 +122,8 @@ export interface Task {
   estimate: number | null;
   deliveryMode: string | null;
   permissionMode: string | null; // explicit override (null = inherit project ?? global)
+  /** The PR/MR opened by an auto_pr delivery (6.4.d). Server-managed. */
+  prUrl: string | null;
   parentTaskId: string | null;
   createdAt: number;
   updatedAt: number;
