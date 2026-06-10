@@ -1,4 +1,5 @@
-import { modelForRole } from "./runner";
+import type { AgentOverride } from "@cadence/shared";
+import { readSettings } from "../store/store";
 
 /**
  * The agent prompt registry (plan §6.3.a) — every pipeline stage's instructions as an
@@ -8,6 +9,26 @@ import { modelForRole } from "./runner";
  * overrides on top (Settings → Agents & Prompts); builders keep their signatures and
  * render through here.
  */
+
+/** Default model per agent role (spec §7; overridable per agent in Settings, 6.3.b). */
+export function modelForRole(role?: string): string | undefined {
+  switch (role) {
+    case "triage":
+    case "delivery":
+    case "reflector":
+      return "claude-haiku-4-5";
+    case "discovery":
+    case "questioner":
+    case "verifier":
+    case "worktree_check":
+      return "claude-sonnet-4-6";
+    case "planner":
+    case "implementer":
+      return "claude-opus-4-8";
+    default:
+      return undefined; // let claude pick its default
+  }
+}
 
 export interface AgentPromptVariable {
   name: string;
@@ -363,10 +384,27 @@ export const AGENT_PROMPTS: Record<string, AgentPromptDef> = {
   },
 };
 
+/** The user's override for a role, if any (settings.agents, §6.3.b). */
+export function getAgentOverride(role: string): AgentOverride | undefined {
+  try {
+    return readSettings().agents?.[role];
+  } catch {
+    return undefined; // unreadable settings must never break a spawn
+  }
+}
+
 /**
  * The template for a role — the user's override when one is set (6.3.b), else the
  * default above. Unknown roles render as an empty template (defensive).
  */
 export function getAgentPrompt(role: string): string {
-  return AGENT_PROMPTS[role]?.defaultTemplate ?? "";
+  const custom = getAgentOverride(role)?.prompt?.trim();
+  return custom || (AGENT_PROMPTS[role]?.defaultTemplate ?? "");
+}
+
+/** The model for a role's runs — override ?? registry default ?? role mapping. */
+export function getAgentModel(role?: string): string | undefined {
+  if (!role) return undefined;
+  const custom = getAgentOverride(role)?.model?.trim();
+  return custom || AGENT_PROMPTS[role]?.defaultModel || modelForRole(role);
 }

@@ -1295,3 +1295,41 @@ test("/api/attention surfaces a refining task with no live run as stalled (§6.1
   expect(item).toBeDefined();
   expect(item?.summary).toContain("Refinement interrupted");
 });
+
+test("PATCH /api/settings deep-merges per-agent overrides and clears them (§6.3.b)", async () => {
+  // set a prompt override
+  let res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agents: { discovery: { prompt: "DO IT for {{title}}" } } }),
+  });
+  expect(res.status).toBe(200);
+  let settings = (await res.json()) as { agents?: Record<string, { prompt?: string; model?: string }> };
+  expect(settings.agents?.discovery?.prompt).toBe("DO IT for {{title}}");
+
+  // merging a model keeps the prompt (deep-merge, not replace)
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agents: { discovery: { model: "claude-opus-4-8" } } }),
+  });
+  settings = (await res.json()) as typeof settings;
+  expect(settings.agents?.discovery).toEqual({ prompt: "DO IT for {{title}}", model: "claude-opus-4-8" });
+
+  // clearing the prompt keeps the model; clearing the model too removes the role entirely
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agents: { discovery: { prompt: null } } }),
+  });
+  settings = (await res.json()) as typeof settings;
+  expect(settings.agents?.discovery).toEqual({ model: "claude-opus-4-8" });
+
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agents: { discovery: null } }),
+  });
+  settings = (await res.json()) as typeof settings;
+  expect(settings.agents?.discovery).toBeUndefined();
+});

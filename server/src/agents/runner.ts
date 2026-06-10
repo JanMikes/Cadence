@@ -1,26 +1,11 @@
 import type { AgentResult, ClaudeEvent } from "@cadence/shared";
 import { spawn } from "node:child_process";
 import { killGroup } from "../liveness";
+import { getAgentModel } from "./prompts";
 
-/** Default model per agent role (spec §7; overridable per project/task). */
-export function modelForRole(role?: string): string | undefined {
-  switch (role) {
-    case "triage":
-    case "delivery":
-    case "reflector":
-      return "claude-haiku-4-5";
-    case "discovery":
-    case "questioner":
-    case "verifier":
-    case "worktree_check":
-      return "claude-sonnet-4-6";
-    case "planner":
-    case "implementer":
-      return "claude-opus-4-8";
-    default:
-      return undefined; // let claude pick its default
-  }
-}
+// modelForRole moved to prompts.ts (§6.3.b — it's a registry concern now); re-exported
+// so existing importers keep working.
+export { modelForRole } from "./prompts";
 
 /**
  * Hard per-run ceiling (§6.1.g) so no one-shot can burn tokens forever: read stages
@@ -113,7 +98,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
     "--permission-mode",
     opts.permissionMode ?? "plan",
   ];
-  const model = opts.model ?? modelForRole(opts.role);
+  // Per-call > per-agent override (Settings, §6.3.b) > role default.
+  const model = opts.model ?? getAgentModel(opts.role);
   if (model) args.push("--model", model);
   if (opts.appendSystemPrompt) args.push("--append-system-prompt", opts.appendSystemPrompt);
   if (opts.resumeSessionId) args.push("--resume", opts.resumeSessionId);

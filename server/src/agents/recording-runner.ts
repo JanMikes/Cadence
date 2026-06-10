@@ -5,7 +5,8 @@ import { sessions } from "../db/schema";
 import { getTask } from "../tasks";
 import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
-import { type AgentRunOptions, modelForRole, runAgent } from "./runner";
+import { getAgentModel } from "./prompts";
+import { type AgentRunOptions, runAgent } from "./runner";
 import { assertStageIdle } from "./stage-guard";
 import type { AgentRunner } from "./triage";
 
@@ -53,7 +54,7 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
           kind: "oneshot",
           status: "running",
           cwd: opts.cwd,
-          model: opts.model ?? modelForRole(role) ?? null,
+          model: opts.model ?? getAgentModel(role) ?? null,
           permissionMode: opts.permissionMode ?? null,
           costUsd: 0,
           startedAt: Date.now(),

@@ -852,6 +852,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         preferredTerminal?: string;
         claudeBinPath?: string;
         global?: Record<string, unknown>;
+        /** Per-agent overrides; a role mapped to null (or with all fields cleared) resets it. */
+        agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
       };
       try {
         patch = (await req.json()) as typeof patch;
@@ -859,6 +861,26 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         return badRequest("invalid JSON body");
       }
       const current = readSettings();
+      // Deep-merge agent overrides per role (§6.3.b): only customized fields persist;
+      // empty/null clears a field; a role with nothing left disappears entirely.
+      const agents = { ...(current.agents ?? {}) };
+      for (const [role, o] of Object.entries(patch.agents ?? {})) {
+        if (o == null) {
+          delete agents[role];
+          continue;
+        }
+        const merged = { ...(agents[role] ?? {}) };
+        if ("prompt" in o) {
+          if (o.prompt?.trim()) merged.prompt = o.prompt;
+          else delete merged.prompt;
+        }
+        if ("model" in o) {
+          if (o.model?.trim()) merged.model = o.model.trim();
+          else delete merged.model;
+        }
+        if (Object.keys(merged).length > 0) agents[role] = merged;
+        else delete agents[role];
+      }
       const next = {
         ...current,
         ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
@@ -866,6 +888,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
           ? { claudeBinPath: patch.claudeBinPath?.trim() || undefined }
           : {}),
         global: { ...current.global, ...(patch.global ?? {}) },
+        ...(patch.agents || current.agents ? { agents } : {}),
       };
       writeSettings(next);
       applyClaudeBinEnv(next); // export CADENCE_CLAUDE_BIN so agent spawns pick up the change

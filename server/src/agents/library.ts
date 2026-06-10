@@ -59,14 +59,23 @@ export interface NamedSubagent extends SubagentDef {
 }
 
 export function listAgents(): NamedSubagent[] {
-  return Object.entries(AGENT_LIBRARY).map(([name, def]) => ({ name, ...def }));
+  // Prompt resolved per call (not at module load) so a Settings override (§6.3.b)
+  // reaches the next spawn immediately.
+  return Object.entries(AGENT_LIBRARY).map(([name, def]) => ({
+    name,
+    ...def,
+    prompt: getAgentPrompt(`subagent:${name}`),
+  }));
 }
 
 /**
  * Serialize selected library agents to the `--agents` JSON (a name→def map). With
- * no `names`, includes the whole library; unknown names are ignored.
+ * no `names`, includes the whole library; unknown names are ignored. Prompts are
+ * resolved live so per-agent overrides apply (§6.3.b).
  */
 export function agentsJson(names?: string[]): string {
-  const entries = Object.entries(AGENT_LIBRARY).filter(([n]) => !names || names.includes(n));
+  const entries = Object.entries(AGENT_LIBRARY)
+    .filter(([n]) => !names || names.includes(n))
+    .map(([n, def]) => [n, { ...def, prompt: getAgentPrompt(`subagent:${n}`) }]);
   return JSON.stringify(Object.fromEntries(entries));
 }

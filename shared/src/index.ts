@@ -503,6 +503,14 @@ export interface AgentResult {
   raw: unknown;
 }
 
+/** Per-agent user override (6.3.b): only set fields persist; an absent field means default. */
+export interface AgentOverride {
+  /** Custom prompt template ({{var}} placeholders, see the agent's documented variables). */
+  prompt?: string;
+  /** Custom model id for this agent's runs. */
+  model?: string;
+}
+
 export interface GlobalSettings {
   version: number;
   global: {
@@ -517,6 +525,9 @@ export interface GlobalSettings {
   /** Optional explicit path to the `claude` binary; exported as CADENCE_CLAUDE_BIN for agent spawns.
    *  Useful when the app is launched from Finder (no shell PATH) and `claude` isn't auto-discovered. */
   claudeBinPath?: string;
+  /** Per-agent prompt/model overrides keyed by registry role (e.g. "discovery", "subagent:explorer").
+   *  Only customized agents appear here (6.3.b). */
+  agents?: Record<string, AgentOverride>;
 }
 
 /** Supported terminal apps for one-click handoff (macOS). */
