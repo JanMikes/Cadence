@@ -802,8 +802,6 @@ export interface GlobalSettings {
     maxConcurrentAgents?: number;
     /** Minutes a paused run waits for an answer/approval before proceeding without. */
     askWaitMinutes?: number;
-    /** One-shot engine: "sdk" (live ask-gate, default) or "cli" (raw claude -p). */
-    runnerBackend?: "sdk" | "cli";
   };
   /** Persisted UI state (server-side — the web app keeps nothing in localStorage). */
   ui?: {

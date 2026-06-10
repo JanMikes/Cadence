@@ -99,9 +99,12 @@ ignore it. The hard guarantee is the **tool-permission layer**: with the Agent S
 call MUST pass through the `canUseTool` callback before executing. No prompt wording can
 route around it.
 
-What runs now (`runnerBackend()` default `"sdk"`, override via Settings → Operations or
-`CADENCE_RUNNER_BACKEND`; automatic CLI fallback when the SDK can't start —
-`SdkUnavailableError`):
+Engine policy is **Cadence-internal, not a user setting** (`agents/backend.ts`): the SDK is
+primary (only its `canUseTool` gate can hold a run alive for an answer); the CLI is the
+always-available fallback — an SDK startup failure (`SdkUnavailableError`) transparently
+retries the run on the CLI and trips a 30-min cool-down breaker before the SDK is re-tried.
+Self-healing, no human decision. (`CADENCE_RUNNER_BACKEND` exists as an ops/debug lever
+only.) What runs:
 
 - **`sdk-runner.ts`** — `query()` with the same `AgentRunner` contract: forced `sessionId`
   (deterministic transcripts), `systemPrompt` preset+append, `agents` subagents, message

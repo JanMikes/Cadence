@@ -1344,9 +1344,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
         /** Date/time patterns (6.3.d); blank/null resets a key to the default. */
         formats?: { date?: string | null; dateTime?: string | null };
-        /** Operations knobs (6.3.e); null/invalid resets a key to the built-in default.
-         *  Numeric limits plus the string runnerBackend ("sdk" | "cli"). */
-        operations?: Record<string, number | string | null>;
+        /** Operations knobs (6.3.e); null/invalid resets a key to the built-in default. */
+        operations?: Record<string, number | null>;
         /** Review settings (6.5.h). */
         review?: { strictness?: string | null };
         /** Persisted UI flags (e.g. quickstartSeen); null/false clears a flag. */
@@ -1396,18 +1395,13 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         "maxConcurrentAgents",
         "askWaitMinutes",
       ] as const;
-      const operations = { ...(current.operations ?? {}) } as Record<string, number | string>;
+      const operations = { ...(current.operations ?? {}) } as Record<string, number>;
       for (const key of OPS_KEYS) {
         if (patch.operations && key in patch.operations) {
           const v = patch.operations[key];
           if (typeof v === "number" && Number.isFinite(v) && v > 0) operations[key] = v;
           else delete operations[key];
         }
-      }
-      // The one string knob: the agent engine. "cli" persists; anything else = default (sdk).
-      if (patch.operations && "runnerBackend" in patch.operations) {
-        if (patch.operations.runnerBackend === "cli") operations.runnerBackend = "cli";
-        else delete operations.runnerBackend;
       }
       // Review settings (§6.5.h): strictness allowlist; invalid/null clears to default.
       const review = { ...(current.review ?? {}) };

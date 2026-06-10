@@ -58,24 +58,6 @@ export function opsSettings(): OpsSettings {
   };
 }
 
-/**
- * Which engine runs one-shot agents. "sdk" (default) = the Agent SDK with the live
- * `canUseTool` ask-gate — questions reach the web UI and the run continues; "cli" =
- * the raw `claude -p` spawn (no mid-run answering; asks stop the run and become Q&A
- * cards). Env wins over settings so an incident can be steered without a UI deploy.
- */
-export function runnerBackend(): "sdk" | "cli" {
-  const env = process.env.CADENCE_RUNNER_BACKEND;
-  if (env === "sdk" || env === "cli") return env;
-  try {
-    const raw = (readSettings().operations as Record<string, unknown> | undefined)?.runnerBackend;
-    if (raw === "sdk" || raw === "cli") return raw;
-  } catch {
-    /* unreadable settings → default */
-  }
-  return "sdk";
-}
-
 /** Stuck threshold in ms — the CADENCE_SESSION_STUCK_MS env var stays the strongest override. */
 export function stuckIdleMs(): number {
   const env = Number(process.env.CADENCE_SESSION_STUCK_MS);

@@ -588,9 +588,8 @@ export function updateSettings(
     agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
     /** Date/time patterns (§6.3.d); blank/null resets a key to the default. */
     formats?: { date?: string | null; dateTime?: string | null };
-    /** Operations knobs (§6.3.e); null resets a key to the built-in default.
-     *  Numeric limits plus the string runnerBackend ("sdk" | "cli"). */
-    operations?: Record<string, number | string | null>;
+    /** Operations knobs (§6.3.e); null resets a key to the built-in default. */
+    operations?: Record<string, number | null>;
     /** Review settings (§6.5.h). */
     review?: { strictness?: string | null };
     /** Persisted UI flags; null clears a flag (re-opens Quickstart on next launch). */
