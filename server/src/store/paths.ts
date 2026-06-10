@@ -27,6 +27,9 @@ export const paths = {
   // Runtime state for an in-place execution (base branch + untracked snapshot) — JSON,
   // not markdown: machine state for crash-safe restore, not user-editable content.
   taskExecution: (id: string) => join(cadenceHome(), "tasks", id, "execution.json"),
+  // User-uploaded files passed to agents as context (referenced by absolute path).
+  taskAttachmentsDir: (id: string) => join(cadenceHome(), "tasks", id, "attachments"),
+  taskAttachment: (id: string, name: string) => join(cadenceHome(), "tasks", id, "attachments", name),
 
   projectsDir: () => join(cadenceHome(), "projects"),
   projectFile: (slug: string) => join(cadenceHome(), "projects", `${slug}.md`),

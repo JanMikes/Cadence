@@ -36,6 +36,7 @@ import type {
   SuggestionAction,
   SweepReport,
   Task,
+  TaskAttachment,
   TaskDepsView,
   TaskDetail,
   TaskDiff,
@@ -165,6 +166,29 @@ export function appendContext(id: string, text: string): Promise<ContextChannel>
     headers: JSON_HEADERS,
     body: JSON.stringify({ text }),
   }).then(json<ContextChannel>);
+}
+
+export function getAttachments(id: string): Promise<TaskAttachment[]> {
+  return fetch(`/api/tasks/${id}/attachments`).then(json<TaskAttachment[]>);
+}
+
+export function uploadAttachments(id: string, files: File[]): Promise<TaskAttachment[]> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f, f.name);
+  return fetch(`/api/tasks/${id}/attachments`, { method: "POST", body: form }).then(
+    json<TaskAttachment[]>,
+  );
+}
+
+export function deleteAttachment(id: string, name: string): Promise<TaskAttachment[]> {
+  return fetch(`/api/tasks/${id}/attachments/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  }).then(json<TaskAttachment[]>);
+}
+
+/** URL serving the attachment bytes (image previews, click-to-open). */
+export function attachmentUrl(id: string, name: string): string {
+  return `/api/tasks/${id}/attachments/${encodeURIComponent(name)}`;
 }
 
 export function getQa(taskId: string): Promise<QAChannel> {

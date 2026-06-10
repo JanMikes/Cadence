@@ -1,7 +1,7 @@
 import { DELIVERY_MODE_INFO, DELIVERY_MODES, deliveryModeLabel, PERMISSION_MODES, TASK_STATUSES } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, GitMerge, MessageSquarePlus, Play, RotateCcw, ShieldAlert, X } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type ClipboardEvent, type FormEvent, useState } from "react";
 
 const PERMISSION_LABELS: Record<string, string> = {
   auto: "Auto",
@@ -26,6 +26,7 @@ import {
 import { formatDate, formatDateTime, useDateFormats } from "../../lib/datetime";
 import { gitStateLabel, gitStateTone } from "../../lib/git";
 import { roleLabel, statusLabel } from "../../lib/status";
+import { AttachmentsSection, eventFiles, useAttachmentUpload } from "./Attachments";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { ReviewWorkspace } from "../review/ReviewWorkspace";
@@ -166,6 +167,17 @@ export function TaskDetail({
     e.preventDefault();
     const t = note.trim();
     if (t && !addNote.isPending) addNote.mutate(t);
+  };
+
+  // Pasting a screenshot/file into the note field attaches it (terminal parity:
+  // images dropped into claude become context — here via the attachments dir).
+  const uploadFiles = useAttachmentUpload(taskId);
+  const onNotePaste = (e: ClipboardEvent) => {
+    const files = eventFiles(e.clipboardData);
+    if (files.length) {
+      e.preventDefault();
+      uploadFiles.mutate(files);
+    }
   };
 
   const task = detail.data;
@@ -504,6 +516,8 @@ export function TaskDetail({
                 Add free-form context anytime — it’s appended to the task’s context channel.
               </p>
 
+              <AttachmentsSection taskId={taskId} />
+
               <div className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-card/50 p-3 text-xs text-muted-foreground">
                 {context.data?.content?.trim() ? context.data.content.trim() : "No context yet."}
               </div>
@@ -512,7 +526,8 @@ export function TaskDetail({
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="Add a context note…"
+                  onPaste={onNotePaste}
+                  placeholder="Add a context note… (paste an image to attach it)"
                   rows={3}
                   aria-label="Add a context note"
                   className="rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"

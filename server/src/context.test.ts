@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { composeContext } from "./context";
 import { migrateDb, openDb, type Db } from "./db/client";
 import { createProject } from "./projects";
-import { appendContext, bootstrap, DEFAULT_SETTINGS, writeSettings } from "./store/store";
+import { appendContext, bootstrap, DEFAULT_SETTINGS, saveAttachment, writeSettings } from "./store/store";
 import { createTask, getTask, updateTask } from "./tasks";
 
 let db: Db;
@@ -51,4 +51,14 @@ test("composeContext layers global → project → task context, most-general fi
 test("composeContext is empty when there's nothing to add", () => {
   const task = createTask(db, { title: "Bare" });
   expect(composeContext(db, { taskId: task.id, projectId: null })).toBe("");
+});
+
+test("composeContext lists attachments by absolute path so agents can Read them", () => {
+  const task = createTask(db, { title: "With files" });
+  const saved = saveAttachment(task.id, "screenshot.png", new Uint8Array([1, 2]));
+
+  const composed = composeContext(db, { taskId: task.id, projectId: null });
+  expect(composed).toContain("Task attachments");
+  expect(composed).toContain(saved.path); // absolute path, terminal-paste parity
+  expect(composed).toContain("image/png");
 });

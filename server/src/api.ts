@@ -90,7 +90,11 @@ import {
 import {
   appendContext,
   applyClaudeBinEnv,
+  attachmentPath,
+  deleteAttachment,
+  listAttachments,
   readContext,
+  saveAttachment,
   readDelivery,
   readPlan,
   readQa,
@@ -1512,6 +1516,54 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       appendContext(id, text);
       ctx.hub.broadcast({ type: "event", name: "task:context", payload: id });
       return Response.json({ content: readContext(id) }, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  // Attachments: files the user uploads as context for agents (multipart form,
+  // any field name). Stored under ~/.cadence/tasks/<id>/attachments/ and injected
+  // into every composed agent context as absolute paths (context.ts).
+  const attachListMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/attachments$/);
+  if (attachListMatch) {
+    const id = attachListMatch[1] as string;
+    if (!getTaskDetail(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") return Response.json(listAttachments(id));
+    if (method === "POST") {
+      // Structural file type: the global File and undici's (what req.formData()
+      // yields) disagree under bun-types, and we only need name + bytes anyway.
+      const files: Array<{ name: string; arrayBuffer(): Promise<ArrayBuffer> }> = [];
+      try {
+        const form = await req.formData();
+        for (const [, value] of form) {
+          if (typeof value !== "string" && value.size > 0) files.push(value);
+        }
+      } catch {
+        return badRequest("expected multipart/form-data with at least one file");
+      }
+      if (!files.length) return badRequest("no files in upload");
+      for (const file of files) {
+        saveAttachment(id, file.name || "pasted-file", new Uint8Array(await file.arrayBuffer()));
+      }
+      ctx.hub.broadcast({ type: "event", name: "task:attachments", payload: id });
+      return Response.json(listAttachments(id), { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const attachFileMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/attachments\/([^/]+)$/);
+  if (attachFileMatch) {
+    const id = attachFileMatch[1] as string;
+    const name = decodeURIComponent(attachFileMatch[2] as string);
+    if (!getTaskDetail(ctx.db, id)) return notFound(pathname);
+    if (method === "GET") {
+      const file = attachmentPath(id, name);
+      if (!file) return notFound(pathname);
+      return new Response(Bun.file(file));
+    }
+    if (method === "DELETE") {
+      if (!deleteAttachment(id, name)) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "task:attachments", payload: id });
+      return Response.json(listAttachments(id));
     }
     return methodNotAllowed();
   }

@@ -4,9 +4,19 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import type { DailyDigest, DeliveryResult, QAChannel, TaskPlan, VerifyReport } from "@cadence/shared";
+import { basename, extname } from "node:path";
+import type {
+  DailyDigest,
+  DeliveryResult,
+  QAChannel,
+  TaskAttachment,
+  TaskPlan,
+  VerifyReport,
+} from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fleets, projects, taskDeps, tasks } from "../db/schema";
@@ -114,6 +124,77 @@ export function readSpec(id: string): string {
 export function writeSpec(id: string, content: string): void {
   mkdirSync(paths.taskDir(id), { recursive: true });
   writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
+}
+
+// ------------------------------------------------- task attachments (files for Claude)
+
+/** Reduce an uploaded filename to one safe path segment: basename only, no control
+ *  chars, never empty/dot-only, length-capped with the extension preserved. */
+export function safeAttachmentName(raw: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping them is the point
+  let name = basename(raw.split(/[/\\]/).pop() ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  name = name.replace(/^\.+/, ""); // no hidden/".." names
+  if (!name) name = "file";
+  if (name.length > 120) {
+    const ext = extname(name).slice(0, 16);
+    name = name.slice(0, 120 - ext.length) + ext;
+  }
+  return name;
+}
+
+/** Resolve an attachment name to its on-disk path, or null when the name is not a
+ *  plain segment (traversal) or the file doesn't exist. */
+export function attachmentPath(id: string, name: string): string | null {
+  if (!name || name !== safeAttachmentName(name) || name.includes("/") || name.includes("\\")) {
+    return null;
+  }
+  const file = paths.taskAttachment(id, name);
+  return existsSync(file) ? file : null;
+}
+
+/** Save one uploaded file under the task's attachments/ dir. Filenames are sanitized
+ *  and deduped (`shot.png` → `shot-2.png`); returns the stored attachment. */
+export function saveAttachment(id: string, rawName: string, bytes: Uint8Array): TaskAttachment {
+  mkdirSync(paths.taskAttachmentsDir(id), { recursive: true });
+  const safe = safeAttachmentName(rawName);
+  const ext = extname(safe);
+  const stem = safe.slice(0, safe.length - ext.length);
+  let name = safe;
+  for (let n = 2; existsSync(paths.taskAttachment(id, name)); n++) {
+    name = `${stem}-${n}${ext}`;
+  }
+  const file = paths.taskAttachment(id, name);
+  writeFileSync(file, bytes);
+  return toAttachment(name, file);
+}
+
+/** List a task's attachments (newest last). */
+export function listAttachments(id: string): TaskAttachment[] {
+  const dir = paths.taskAttachmentsDir(id);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => statSync(paths.taskAttachment(id, name)).isFile())
+    .map((name) => toAttachment(name, paths.taskAttachment(id, name)))
+    .sort((a, b) => a.addedAt - b.addedAt || a.name.localeCompare(b.name));
+}
+
+/** Delete one attachment; false when it didn't exist (or the name was unsafe). */
+export function deleteAttachment(id: string, name: string): boolean {
+  const file = attachmentPath(id, name);
+  if (!file) return false;
+  rmSync(file);
+  return true;
+}
+
+function toAttachment(name: string, file: string): TaskAttachment {
+  const stat = statSync(file);
+  return {
+    name,
+    path: file,
+    size: stat.size,
+    mimeType: Bun.file(file).type.split(";")[0] ?? "",
+    addedAt: Math.round(stat.mtimeMs),
+  };
 }
 
 // ------------------------------------------------- agent run reports (append-only)

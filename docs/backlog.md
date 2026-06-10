@@ -138,6 +138,13 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       GitChip on review/done cards (green merged / amber done-but-unmerged honest alarm), task
       detail Git row + Re-check button + merged-externally banner, DeliveryRecord closes the
       "done task shows no git outcome" gap; `POST /api/tasks/:id/git-context/check`; migration 0011
+- [x] **6.7 File attachments as agent context** — **DONE 2026-06-10**: upload files (incl.
+      pasted screenshots) to a task — capture modal (pending until create) + task detail Context
+      section (drop zone, paste-into-note, Attach picker, image thumbnails, remove); stored under
+      `~/.cadence/tasks/<id>/attachments/` (sanitized + deduped names) and injected into every
+      composed agent context as absolute paths — terminal parity with pasting a path/image into
+      `claude` (the Read tool renders images); REST: GET/POST `/api/tasks/:id/attachments`,
+      GET/DELETE `…/attachments/:name` (traversal-safe)
 
 ---
 

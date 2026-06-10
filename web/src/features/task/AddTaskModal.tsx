@@ -1,11 +1,21 @@
 import type { PermissionMode, ReviewDirection, ReviewInspectResult } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitPullRequest, Plus, X } from "lucide-react";
-import { type FormEvent, type KeyboardEvent, useEffect, useState } from "react";
+import { GitPullRequest, Paperclip, Plus, X } from "lucide-react";
+import {
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ChipSelect } from "../../components/ChipSelect";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { createTask, getFleets, getProjects, getTasks, inspectReviewUrl } from "../../lib/api";
+import { toast } from "../../components/Toaster";
+import { createTask, getFleets, getProjects, getTasks, inspectReviewUrl, uploadAttachments } from "../../lib/api";
 import { isTauri } from "../../lib/tauri";
+import { eventFiles, formatBytes } from "./Attachments";
 
 /** First PR/MR-looking URL in the text (cheap client check; the server parses properly). */
 export function firstPrUrl(text: string): string | null {
@@ -108,6 +118,10 @@ export function AddTaskModal({
   const [fleetChip, setFleetChip] = useState<string>("none"); // none | <slug>
   const [parentChip, setParentChip] = useState<string>("none"); // none | <taskId>
   const [blockedBy, setBlockedBy] = useState<string[]>([]);
+  // Files attached at capture (drop/paste/pick) — uploaded right after the task is
+  // created, so they're already agent context when triage/refinement runs.
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
   // Review detection (§6.5.a, propose-don't-impose): a pasted PR/MR URL proposes a
   // code-review task with inferred direction + matched project — all editable chips.
   const [reviewEnabled, setReviewEnabled] = useState(true);
@@ -207,6 +221,7 @@ export function AddTaskModal({
       setBlockedBy([]);
       setReviewEnabled(true);
       setDirection("perform");
+      setPendingFiles([]);
     }
   }, [open]);
 
@@ -217,8 +232,8 @@ export function AddTaskModal({
   // refinement agent names the task automatically. Chip keys are sent only when
   // off-Auto: key presence pins the field server-side.
   const create = useMutation({
-    mutationFn: () =>
-      createTask({
+    mutationFn: async () => {
+      const task = await createTask({
         title: title.trim() || undefined,
         body: body.trim() || undefined,
         ...(review?.ref && reviewEnabled
@@ -237,7 +252,17 @@ export function AddTaskModal({
         ...(fleetChip !== "none" ? { fleet: fleetChip } : {}),
         ...(parentChip !== "none" ? { parentTask: parentChip } : {}),
         ...(blockedBy.length ? { blockedBy } : {}),
-      }),
+      });
+      if (pendingFiles.length) {
+        // The task exists either way — a failed upload shouldn't lose the capture.
+        try {
+          await uploadAttachments(task.id, pendingFiles);
+        } catch {
+          toast("Task added, but the attachments didn’t upload — re-add them from the task.");
+        }
+      }
+      return task;
+    },
     onSuccess: (task) => {
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       onOpenChange(false);
@@ -257,6 +282,26 @@ export function AddTaskModal({
   // ⌘/Ctrl+Enter submits from the description field (plain Enter inserts a newline).
   const onBodyKey = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+  };
+
+  // Terminal parity: paste a screenshot or drop files onto the description and they
+  // ride along as task attachments (context for the agents).
+  const addFiles = (files: File[]) => {
+    if (files.length) setPendingFiles((cur) => [...cur, ...files]);
+  };
+  const onBodyPaste = (e: ClipboardEvent) => {
+    const files = eventFiles(e.clipboardData);
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+    }
+  };
+  const onBodyDrop = (e: DragEvent) => {
+    const files = eventFiles(e.dataTransfer);
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+    }
   };
 
   return (
@@ -443,12 +488,53 @@ export function AddTaskModal({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               onKeyDown={onBodyKey}
+              onPaste={onBodyPaste}
+              onDrop={onBodyDrop}
+              onDragOver={(e) => e.preventDefault()}
               autoFocus
-              placeholder="Describe the task — what, where, why. Paste anything…"
+              placeholder="Describe the task — what, where, why. Paste anything (files & screenshots too)…"
               aria-label="Description"
               rows={4}
               className="w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
             />
+            <div className="flex flex-wrap items-center gap-1.5">
+              <LabeledIconButton
+                icon={<Paperclip />}
+                label="Attach files"
+                variant="outline"
+                size="sm"
+                onClick={() => fileInput.current?.click()}
+                title="Attached files are passed to Claude as context (images included)."
+              />
+              <input
+                ref={fileInput}
+                type="file"
+                multiple
+                onChange={(e) => {
+                  addFiles(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+                className="hidden"
+                aria-label="Attach files"
+              />
+              {pendingFiles.map((f, i) => (
+                <span
+                  key={`${f.name}-${i}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+                >
+                  <Paperclip className="size-3 text-muted-foreground" aria-hidden />
+                  {f.name} · {formatBytes(f.size)}
+                  <button
+                    type="button"
+                    aria-label={`Remove attachment ${f.name}`}
+                    onClick={() => setPendingFiles((cur) => cur.filter((_, j) => j !== i))}
+                    className="rounded-full text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
             {review?.ref ? (
               <div className="flex flex-col gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
                 <div className="flex items-center gap-2">

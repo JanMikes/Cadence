@@ -951,6 +951,22 @@ export interface AppendContextInput {
   text: string;
 }
 
+/** A file the user attached to a task (stored under ~/.cadence/tasks/<id>/attachments/).
+ *  Agents receive the absolute `path` in their composed context — Claude Code reads
+ *  files (including images) by path, exactly like pasting a path into the terminal. */
+export interface TaskAttachment {
+  /** Stored filename (sanitized, unique within the task). */
+  name: string;
+  /** Absolute path on disk — what agent prompts reference. */
+  path: string;
+  /** Size in bytes. */
+  size: number;
+  /** MIME type derived from the extension ("" when unknown). */
+  mimeType: string;
+  /** Upload time (epoch ms, file mtime). */
+  addedAt: number;
+}
+
 // ------------------------------------------------------------- Daily Digest (§10.3)
 // The morning planning ritual: a deadline-first shortlist Claude proposes and I
 // commit as today's goal. Each day persists to ~/.cadence/digests/<date>.md.

@@ -1312,6 +1312,48 @@ test("task context channel: POST appends, GET reads", async () => {
   expect(ctx.content).toContain("a fresh context note");
 });
 
+test("task attachments: upload (multipart), list, fetch bytes, delete", async () => {
+  const task = await createViaApi("With attachments");
+
+  expect(await fetch(`${gw.url}/api/tasks/${task.id}/attachments`).then((r) => r.json())).toEqual([]);
+
+  const form = new FormData();
+  form.append("files", new File([new Uint8Array([137, 80, 78, 71])], "shot.png", { type: "image/png" }));
+  form.append("files", new File(["console.log('hi')"], "snippet.ts"));
+  const post = await fetch(`${gw.url}/api/tasks/${task.id}/attachments`, {
+    method: "POST",
+    body: form,
+  });
+  expect(post.status).toBe(201);
+  const listed = (await post.json()) as Array<{ name: string; path: string; size: number }>;
+  expect(listed.map((a) => a.name).sort()).toEqual(["shot.png", "snippet.ts"]);
+  // absolute paths — what agent contexts reference
+  expect(listed.every((a) => a.path.includes(`tasks/${task.id}/attachments/`))).toBe(true);
+
+  const bytes = await fetch(`${gw.url}/api/tasks/${task.id}/attachments/snippet.ts`).then((r) =>
+    r.text(),
+  );
+  expect(bytes).toBe("console.log('hi')");
+
+  // traversal-shaped names never resolve
+  const evil = await fetch(`${gw.url}/api/tasks/${task.id}/attachments/${encodeURIComponent("../task.md")}`);
+  expect(evil.status).toBe(404);
+
+  const del = await fetch(`${gw.url}/api/tasks/${task.id}/attachments/shot.png`, {
+    method: "DELETE",
+  });
+  expect(del.status).toBe(200);
+  const remaining = (await del.json()) as Array<{ name: string }>;
+  expect(remaining.map((a) => a.name)).toEqual(["snippet.ts"]);
+
+  // empty upload is a 400, not a silent no-op
+  const empty = await fetch(`${gw.url}/api/tasks/${task.id}/attachments`, {
+    method: "POST",
+    body: new FormData(),
+  });
+  expect(empty.status).toBe(400);
+});
+
 test("serves the built web app with SPA fallback", async () => {
   const root = await fetch(`${gw.url}/`).then((r) => r.text());
   expect(root).toContain("cadence-spa");

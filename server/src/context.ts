@@ -4,7 +4,7 @@ import { fleets } from "./db/schema";
 import { projectForgeStatus } from "./forge";
 import { readGlobalMemory, readProjectMemory } from "./memory";
 import { getProjectById } from "./projects";
-import { readContext, readSettings, readSpec } from "./store/store";
+import { listAttachments, readContext, readSettings, readSpec } from "./store/store";
 
 export interface ContextScope {
   taskId?: string | null;
@@ -76,6 +76,19 @@ export function composeContext(db: Db, scope: ContextScope): string {
     if (spec.trim()) sections.push(section("Task spec & acceptance criteria", spec));
     const ctx = readContext(scope.taskId);
     if (ctx.trim()) sections.push(section("Task context (free-form notes)", ctx));
+    // Attached files travel as absolute paths — the same way a path pasted into the
+    // claude terminal works. The Read tool renders images, so screenshots "just work".
+    const attachments = listAttachments(scope.taskId);
+    if (attachments.length) {
+      sections.push(
+        section(
+          "Task attachments (files from the user)",
+          "The user attached these files as context for this task. Read them before starting — " +
+            "the Read tool renders images (screenshots, mockups) as well as text:\n\n" +
+            attachments.map((a) => `- ${a.path}${a.mimeType ? ` (${a.mimeType})` : ""}`).join("\n"),
+        ),
+      );
+    }
   }
 
   return sections.join("\n\n");
