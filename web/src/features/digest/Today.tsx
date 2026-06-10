@@ -8,12 +8,16 @@ import {
   Flame,
   ListChecks,
   Moon,
+  Pencil,
   Plus,
   Sparkles,
+  Target,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { toast } from "../../components/Toaster";
 import { commitDigest, getDigest, getTasks, recapDigest } from "../../lib/api";
 import { formatDayKey, useDateFormats } from "../../lib/datetime";
 import { cn } from "../../lib/utils";
@@ -49,7 +53,8 @@ const RITUAL_STEPS = [
 ] as const;
 
 const SUBTITLE: Record<string, string> = {
-  planning: "Review the proposed shortlist below, make it yours, then commit today's plan.",
+  planning:
+    "Two minutes now sets up the whole day: review the shortlist, add what's missing, commit.",
   committed: "Plan committed — work the list. Come back this evening for the recap.",
   recapped: "Day closed. Tomorrow's proposal will pick up anything that rolled over.",
 };
@@ -67,6 +72,8 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
   const [picks, setPicks] = useState<DigestPick[]>([]);
   const [goal, setGoal] = useState("");
   const [constraints, setConstraints] = useState("");
+  // After commit the focus inputs collapse into a banner; this re-opens them.
+  const [editFocus, setEditFocus] = useState(false);
   const loadedKey = useRef<string | null>(null);
 
   // Seed local edits from the server proposal/committed plan — re-seed when the
@@ -82,15 +89,33 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
     setConstraints(d.constraints ?? "");
   }, [digest.data]);
 
+  const status = digest.data?.status;
+  const committed = status === "committed" || status === "recapped";
+  const recapped = status === "recapped";
+  const progress = digest.data?.progress;
+  const streak = digest.data?.streak ?? 0;
+
   const commit = useMutation({
     mutationFn: () =>
       commitDigest({ picks: picks.map((p) => p.taskId), goal: goal || null, constraints: constraints || null }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["digest"] });
+      setEditFocus(false);
+      // `committed` still holds the pre-mutation status here: first commit vs update.
+      toast(
+        committed
+          ? "Plan updated."
+          : `Plan committed — ${picks.length} task${picks.length === 1 ? "" : "s"} for today. Go get it 🔥`,
+      );
+    },
   });
 
   const recap = useMutation({
     mutationFn: () => recapDigest(),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["digest"] });
+      toast("Recap saved — day closed 🌙");
+    },
   });
 
   const move = (i: number, dir: -1 | 1) => {
@@ -101,12 +126,6 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
     setPicks(next);
   };
   const remove = (i: number) => setPicks(picks.filter((_, k) => k !== i));
-
-  const status = digest.data?.status;
-  const committed = status === "committed" || status === "recapped";
-  const recapped = status === "recapped";
-  const progress = digest.data?.progress;
-  const streak = digest.data?.streak ?? 0;
 
   // Candidates for "Add to plan": open tasks not already picked, most urgent first.
   const tasks = useQuery({ queryKey: ["tasks", "urgency"], queryFn: () => getTasks({ sort: "urgency" }) });
@@ -146,8 +165,8 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
                 <CalendarCheck className="size-3.5" /> Committed
               </span>
             ) : (
-              <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                Planning
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-400">
+                <TriangleAlert className="size-3.5" /> Planning — not committed yet
               </span>
             )}
           </div>
@@ -230,27 +249,79 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
 
       <SweepPanel onOpen={onOpen} />
 
-      <label className="mt-5 text-xs font-medium text-muted-foreground" htmlFor="digest-goal">
-        What matters most today?
-      </label>
-      <input
-        id="digest-goal"
-        value={goal}
-        onChange={(e) => setGoal(e.target.value)}
-        placeholder="e.g. Ship the deadline-critical fix"
-        className="mt-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      />
-
-      <label className="mt-3 text-xs font-medium text-muted-foreground" htmlFor="digest-constraints">
-        Constraints (meetings, energy…)
-      </label>
-      <input
-        id="digest-constraints"
-        value={constraints}
-        onChange={(e) => setConstraints(e.target.value)}
-        placeholder="e.g. 2 meetings this afternoon"
-        className="mt-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      />
+      {/* Focus is optional by design: the plan alone is a valid commit. While planning the
+          inputs are grouped in one light card; once committed they collapse into a banner
+          so the day's intent stays visible without inviting constant re-editing. */}
+      {!committed || editFocus ? (
+        <div className="mt-5 rounded-lg border border-border bg-card/40 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Target className="size-4 text-primary" /> Set your focus
+            <span className="text-xs font-normal text-muted-foreground">
+              optional — the plan alone is enough to commit
+            </span>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="digest-goal">
+                What matters most today?
+              </label>
+              <input
+                id="digest-goal"
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                placeholder="e.g. Ship the deadline-critical fix"
+                className="mt-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+            <div className="flex flex-col">
+              <label
+                className="text-xs font-medium text-muted-foreground"
+                htmlFor="digest-constraints"
+              >
+                Constraints (meetings, energy…)
+              </label>
+              <input
+                id="digest-constraints"
+                value={constraints}
+                onChange={(e) => setConstraints(e.target.value)}
+                placeholder="e.g. 2 meetings this afternoon"
+                className="mt-1 rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            One honest line beats a perfect plan — skip it freely on busy mornings.
+          </p>
+          {committed ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Changes here are saved when you press “Update plan” below.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+          <span className="inline-flex items-center gap-1.5 font-medium text-primary">
+            <Target className="size-4" /> Focus
+          </span>
+          {goal ? (
+            <span>{goal}</span>
+          ) : (
+            <span className="text-muted-foreground">No focus set for today.</span>
+          )}
+          {constraints ? <span className="text-muted-foreground">· {constraints}</span> : null}
+          {!recapped ? (
+            <span className="ml-auto">
+              <LabeledIconButton
+                icon={<Pencil />}
+                label={goal || constraints ? "Edit focus" : "Add a focus"}
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditFocus(true)}
+              />
+            </span>
+          ) : null}
+        </div>
+      )}
 
       <h2 className="mt-6 text-sm font-medium">
         Plan <span className="text-muted-foreground">({picks.length})</span>
@@ -327,9 +398,11 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
       </ol>
 
       {!recapped && addable.length > 0 ? (
-        <details className="mt-3">
+        // Default-open while planning so nothing urgent hides behind a fold during
+        // the "did I miss anything?" pass; folded once the plan is committed.
+        <details className="mt-3" open={!committed || undefined}>
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            More open tasks ({addable.length}) — add to today’s plan
+            More open tasks ({addable.length}) — add anything that belongs in today
           </summary>
           <ul className="mt-2 flex flex-col gap-1.5">
             {addable.map((t) => (
@@ -357,14 +430,50 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
         </details>
       ) : null}
 
-      <div className="mt-5 flex items-center gap-3">
-        <LabeledIconButton
-          icon={committed ? <Check /> : <CalendarCheck />}
-          label={committed ? "Update plan" : "Commit today’s plan"}
-          onClick={() => commit.mutate()}
-          disabled={commit.isPending}
-        />
-        {committed ? (
+      {!committed ? (
+        /* The capture check: one deliberate beat between "shortlist looks fine" and
+           commit — is everything that today actually demands on the list yet? */
+        <div className="mt-6 rounded-lg border border-primary/40 bg-primary/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <CalendarCheck className="size-4 text-primary" /> Ready to commit?
+          </div>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+            Last look: is everything today demands on this list — meetings to prep, reviews you
+            promised, the small thing you keep postponing? Capture it now and the plan is honest.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <LabeledIconButton
+              icon={<CalendarCheck />}
+              label="Commit today’s plan"
+              onClick={() => commit.mutate()}
+              disabled={commit.isPending || picks.length === 0}
+            />
+            {onAddTask ? (
+              <LabeledIconButton
+                icon={<Plus />}
+                label="Something’s missing — add a task"
+                variant="ghost"
+                onClick={onAddTask}
+              />
+            ) : null}
+          </div>
+          {picks.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Add at least one task to commit — an empty plan isn’t a plan yet.
+            </p>
+          ) : null}
+          {commit.isError ? (
+            <p className="mt-2 text-xs text-red-400">Couldn’t save.</p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 flex items-center gap-3">
+          <LabeledIconButton
+            icon={<Check />}
+            label="Update plan"
+            onClick={() => commit.mutate()}
+            disabled={commit.isPending || picks.length === 0}
+          />
           <LabeledIconButton
             icon={<Moon />}
             label={recapped ? "Refresh recap" : "Evening recap"}
@@ -372,14 +481,11 @@ export function Today({ onOpen, onAddTask }: { onOpen: (id: string) => void; onA
             onClick={() => recap.mutate()}
             disabled={recap.isPending}
           />
-        ) : null}
-        {commit.isSuccess && !commit.isPending ? (
-          <span className="text-xs text-green-400">Saved.</span>
-        ) : null}
-        {commit.isError || recap.isError ? (
-          <span className="text-xs text-red-400">Couldn’t save.</span>
-        ) : null}
-      </div>
+          {commit.isError || recap.isError ? (
+            <span className="text-xs text-red-400">Couldn’t save.</span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

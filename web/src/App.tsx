@@ -24,7 +24,7 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
-import { getSettings, updateSettings } from "./lib/api";
+import { getDigest, getSettings, updateSettings } from "./lib/api";
 import { useHashRoute } from "./lib/hashRoute";
 import { ATTENTION_SHORTCUT } from "./lib/shortcuts";
 import { useTauriBridge } from "./lib/tauri";
@@ -101,6 +101,15 @@ export function App() {
     if (msg.type === "event" && ATTENTION_EVENTS.has(msg.name)) {
       void qc.invalidateQueries({ queryKey: ["attention"] });
       void qc.invalidateQueries({ queryKey: ["tasks"] });
+      // Task status changes move today's progress ring — keep the digest live too.
+      void qc.invalidateQueries({ queryKey: ["digest"] });
+    }
+    // Committing/recapping the day clears the nav nudge instantly, wherever it happened.
+    if (
+      msg.type === "event" &&
+      (msg.name === "digest:committed" || msg.name === "digest:recapped")
+    ) {
+      void qc.invalidateQueries({ queryKey: ["digest"] });
     }
     // Recurring templates: edits and scheduler triggers refresh the Recurring view
     // (next-run countdowns, "last created" links) wherever it's open.
@@ -150,6 +159,31 @@ export function App() {
     };
   }, []);
 
+  // The daily-ritual nav nudge: amber "Plan your day" until today's plan is committed,
+  // then an indigo "Recap" from the evening on until the day is closed. Shares the
+  // ["digest","today"] cache with the Today view; the interval also catches the date
+  // rolling over at midnight (a new day starts back at "planning").
+  const digest = useQuery({
+    queryKey: ["digest", "today"],
+    queryFn: () => getDigest(),
+    refetchInterval: 60_000,
+  });
+  const evening = new Date().getHours() >= 17;
+  const todayAlert =
+    digest.data?.status === "planning"
+      ? {
+          label: "Plan your day",
+          title: "Today's plan isn't committed yet — two minutes on Today sets up the whole day.",
+          tone: "warning" as const,
+        }
+      : digest.data?.status === "committed" && evening
+        ? {
+            label: "Recap",
+            title: "The day is winding down — close it with an evening recap.",
+            tone: "info" as const,
+          }
+        : undefined;
+
   const dot = conn === "online" ? "bg-green-500" : conn === "offline" ? "bg-red-500" : "bg-yellow-500";
   const statusText =
     conn === "online" && health
@@ -172,6 +206,7 @@ export function App() {
           </div>
         }
         navBadges={{ notifications: unread }}
+        navAlerts={{ today: todayAlert }}
         primaryAction={<AddTaskButton onClick={() => setAddTaskOpen(true)} />}
         status={
           <span className="inline-flex items-center gap-1.5">

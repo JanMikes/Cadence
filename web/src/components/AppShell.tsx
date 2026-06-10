@@ -7,10 +7,12 @@ import {
   CalendarDays,
   FolderGit2,
   LayoutGrid,
+  Moon,
   Repeat,
   Rocket,
   Settings,
   Sparkles,
+  TriangleAlert,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { cn } from "../lib/utils";
@@ -55,6 +57,16 @@ const NAV: NavItem[] = [
 // Pinned to the bottom of the sidebar: the re-openable first-launch guide.
 const NAV_BOTTOM: NavItem[] = [{ id: "quickstart", label: "How it works", icon: Rocket }];
 
+/** A labeled nudge chip on a nav item (e.g. "Plan your day" while today's plan is
+ *  uncommitted). Always icon + text per the UX-clarity rules — never icon-only. */
+export interface NavAlert {
+  label: string;
+  /** Fuller one-line explanation, shown on hover. */
+  title?: string;
+  /** warning = amber triangle (something needs doing) · info = indigo moon (gentle ritual nudge). */
+  tone?: "warning" | "info";
+}
+
 export interface AppShellProps {
   children: ReactNode;
   activeView: ViewId;
@@ -65,6 +77,9 @@ export interface AppShellProps {
   topBar?: ReactNode;
   /** Unread-count badges per nav item (e.g. notifications). */
   navBadges?: Partial<Record<ViewId, number>>;
+  /** Labeled nudge chips per nav item (e.g. uncommitted daily plan). A numeric
+   *  badge on the same item wins — one signal per row, never two. */
+  navAlerts?: Partial<Record<ViewId, NavAlert>>;
   /** Prominent action pinned under the logo, above the nav (e.g. "Add task"). */
   primaryAction?: ReactNode;
 }
@@ -76,10 +91,14 @@ export function AppShell({
   status,
   topBar,
   navBadges,
+  navAlerts,
   primaryAction,
 }: AppShellProps) {
   const renderItem = (item: NavItem) => {
     const active = item.id === activeView;
+    const badge = navBadges?.[item.id];
+    const alert = badge ? undefined : navAlerts?.[item.id];
+    const AlertIcon = alert?.tone === "info" ? Moon : TriangleAlert;
     return (
       <button
         key={item.id}
@@ -95,9 +114,22 @@ export function AppShell({
       >
         <item.icon className="size-4" />
         <span>{item.label}</span>
-        {navBadges?.[item.id] ? (
+        {badge ? (
           <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-            {navBadges[item.id]}
+            {badge}
+          </span>
+        ) : alert ? (
+          <span
+            title={alert.title}
+            className={cn(
+              "ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+              alert.tone === "info"
+                ? "bg-indigo-500/15 text-indigo-300"
+                : "bg-amber-500/15 text-amber-400",
+            )}
+          >
+            <AlertIcon className="size-3" />
+            {alert.label}
           </span>
         ) : null}
       </button>
