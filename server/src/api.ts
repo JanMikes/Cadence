@@ -34,7 +34,7 @@ import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
 import { runReflector } from "./agents/reflector";
 import { AGENT_PROMPTS } from "./agents/prompts";
-import { findLiveStage } from "./agents/stage-guard";
+import { findLiveStage, StageConflictError } from "./agents/stage-guard";
 import { inferDirection, lookupPrAuthor, parsePrUrl, parseRemote, probeCli, projectForgeStatus } from "./forge";
 import { type ForgeReviewApi, forgeReviewApi } from "./forge-review";
 import { runReviewer } from "./agents/reviewer";
@@ -52,7 +52,7 @@ import { searchTaskHits } from "./db/search";
 import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents, recordEvent } from "./events";
 import { projectLocks } from "./project-locks";
-import { executionLockTarget } from "./worktree";
+import { clearExecutionState, executionLockTarget } from "./worktree";
 import { runWorktreeCheck } from "./agents/worktree-check";
 import { createFleet, getFleet, getFleetById, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
@@ -275,13 +275,25 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     void ctx.activity
       .track(taskId, "planner", () => runPlanner(ctx.db, taskId, ctx.runAgent))
       .then((p) => {
-        if (!p.ran) return;
+        if (!p.ran) {
+          // No plan came back (agent produced no JSON): don't strand the task in
+          // Implementing with nothing running — put it back on PLAY and say why.
+          recoverFailedPlay(ctx, taskId, "the Planner produced no plan");
+          return;
+        }
         const planned = updateTask(ctx.db, taskId, { status: "plan_review" });
         ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
         ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         if (planned) notifyOnTransition(ctx.hub, "implementing", planned);
       })
-      .catch((err) => console.error(`[cadence] planner failed for ${taskId}:`, err));
+      .catch((err) => {
+        console.error(`[cadence] planner failed for ${taskId}:`, err);
+        // Another live run owns this task → leave it alone; anything else (cap
+        // full, runner crash) → same visible recovery as the no-plan path.
+        if (!(err instanceof StageConflictError)) {
+          recoverFailedPlay(ctx, taskId, `the Planner failed: ${(err as Error).message}`);
+        }
+      });
     return Response.json(updated);
   }
 
@@ -343,6 +355,10 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     }
     const result = mergeTask(ctx.db, taskId);
     if (!result.ok) return conflict(result.message, { merged: false });
+    // Done = no execution leftovers: clear execution.json on every successful merge
+    // (mergeTask only clears it for the in-place-branch path; apply_in_place runs
+    // whose delivery couldn't finalize would otherwise leak a stale baseBranch).
+    clearExecutionState(taskId);
     const updated = updateTask(ctx.db, taskId, { status: "done" });
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     return Response.json({ merged: true, message: result.message, task: updated });
@@ -364,6 +380,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (body?.note?.trim()) appendContext(taskId, `Requested changes: ${body.note.trim()}`);
     const updated = updateTask(ctx.db, taskId, { status: "implementing" });
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    // Re-run the execution chain — without this the task would park in Implementing
+    // forever (the plan is already approved, so the Approve→run path is gone). The
+    // implementer sees the "Requested changes: …" note via the composed context
+    // layers; the recording runner's stage dedupe guards double-POSTs.
+    if (task.taskType !== "code_review") void runExecutionChain(ctx, taskId);
     return Response.json(updated);
   }
 
@@ -392,6 +413,12 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     // and the recording runner's stage dedupe backstops any race.
     if (task.status === "implementing" && ctx.activity.isActive(taskId)) {
       return conflict("implementation is already running for this task", { status: task.status });
+    }
+    // An empty plan must not be approvable: readPlan returns a truthy empty default
+    // for a missing plan.md, and approving it would run the Implementer with
+    // "(no steps)" — unplanned free-running work (same family as the stale-panel bugs).
+    if (readPlan(taskId).steps.length === 0) {
+      return conflict("there's no plan to approve yet — the Planner hasn't written steps", { steps: 0 });
     }
     const plan = approvePlan(taskId);
     ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
@@ -1503,6 +1530,25 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
  * repo is back on its base branch before the lock is released. Worktree-isolated
  * executions skip the lock entirely and stay fully parallel.
  */
+/**
+ * A PLAY whose Planner never delivered (no JSON, cap full, runner crash) must not
+ * strand the task in Implementing — move it back to Ready (PLAY reappears), note
+ * why on the context channel, and notify. Never silent (§10).
+ */
+function recoverFailedPlay(ctx: ApiContext, taskId: string, reason: string): void {
+  appendContext(taskId, `PLAY didn't start: ${reason} — task moved back to Ready; press PLAY to retry.`);
+  const reverted = updateTask(ctx.db, taskId, { status: "ready" });
+  ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
+  ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+  if (reverted) {
+    ctx.hub.broadcast({
+      type: "event",
+      name: "notify",
+      payload: { kind: "stalled", title: "PLAY didn't start", message: reverted.title, taskId },
+    });
+  }
+}
+
 async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void> {
   let release: (() => void) | null = null;
   try {
@@ -1556,7 +1602,24 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
           runDelivery(ctx.db, taskId, ctx.runAgent),
         );
         if (d.ran) ctx.hub.broadcast({ type: "event", name: "task:delivered", payload: taskId });
+      } else {
+        // Failed → ALSO Review (applyVerify routes it there with the red badge), but
+        // with its own message — "Ready to merge" would lie about state (§10).
+        const failed = getTask(ctx.db, taskId);
+        if (failed) {
+          ctx.hub.broadcast({
+            type: "event",
+            name: "notify",
+            payload: { kind: "review", title: "Verification failed — review needed", message: failed.title, taskId },
+          });
+        }
       }
+    } else if (v.reason) {
+      // Verifier bail (no JSON, missing worktree…) must be visible, not a silent
+      // stall in Verifying — same contract as the implementer bail above.
+      appendContext(taskId, `Verifier didn't run: ${v.reason}`);
+      ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     }
   } catch (err) {
     console.error(`[cadence] execution failed for ${taskId}:`, err);
@@ -1611,9 +1674,21 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
     }
     session = prep;
 
-    const outcome = await ctx.activity.track(taskId, "review_responder", () =>
-      runReviewResponderApply(ctx.db, taskId, cwd, ctx.runAgent),
-    );
+    let outcome: Awaited<ReturnType<typeof runReviewResponderApply>>;
+    try {
+      outcome = await ctx.activity.track(taskId, "review_responder", () =>
+        runReviewResponderApply(ctx.db, taskId, cwd, ctx.runAgent),
+      );
+    } catch (err) {
+      // The spawn/track crashed (cap full, stage conflict, runner error). NEVER leave
+      // the user's checkout parked on the PR branch — restore it, then re-arm the
+      // approval so "Approve & apply" can be retried.
+      finalizeReviewBranch(cwd, branch, session.previousBranch ?? branch);
+      appendContext(taskId, `Review apply failed: ${(err as Error).message} — branch restored; re-approve to retry.`);
+      updateTask(ctx.db, taskId, { status: "plan_review" });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      throw err; // outer catch logs
+    }
     const fin = finalizeReviewBranch(cwd, branch, session.previousBranch ?? branch);
     if (!fin.pushed && outcome.status === "review") {
       appendContext(taskId, `Review apply: changes committed but ${fin.reason ?? "push failed"} — push manually.`);

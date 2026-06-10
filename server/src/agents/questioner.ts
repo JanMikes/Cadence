@@ -105,7 +105,7 @@ function fmtAnswer(a: string | string[]): string {
 }
 
 /**
- * Record answers to a task's Q&A. Answered questions are appended to the context
+ * Record answers to a task's Q&A. New/changed answers are appended to the context
  * channel (so they compose into later runs). When every question is answered, the
  * task advances to Ready; otherwise it stays in Needs-Feedback.
  */
@@ -120,7 +120,12 @@ export function answerQuestions(
 
   for (const q of qa.questions) {
     const a = merged[q.id];
-    if (a != null && a !== "" && !(Array.isArray(a) && a.length === 0)) {
+    const prev = qa.answers[q.id];
+    const given = a != null && a !== "" && !(Array.isArray(a) && a.length === 0);
+    // Only NEW or CHANGED answers land on the context channel — re-submitting the
+    // card (it stays editable in Needs-Feedback) must not duplicate Q&A pairs into
+    // every later agent run.
+    if (given && (prev == null || fmtAnswer(a) !== fmtAnswer(prev))) {
       appendContext(taskId, `Q: ${q.text}\nA: ${fmtAnswer(a)}`);
     }
   }
@@ -129,7 +134,14 @@ export function answerQuestions(
     const a = merged[q.id];
     return a != null && a !== "" && !(Array.isArray(a) && a.length === 0);
   });
-  const status = allAnswered && qa.questions.length > 0 ? "ready" : "needs_feedback";
-  updateTask(db, taskId, { status });
-  return { status };
+  // Only the explicit waiting state advances via answers — answering from any other
+  // status (editing answers while refining/blocked, …) records them but never yanks
+  // the lifecycle sideways.
+  const current = getTaskDetail(db, taskId)?.status;
+  if (current === "needs_feedback") {
+    const status = allAnswered && qa.questions.length > 0 ? "ready" : "needs_feedback";
+    updateTask(db, taskId, { status });
+    return { status };
+  }
+  return { status: current ?? "needs_feedback" };
 }

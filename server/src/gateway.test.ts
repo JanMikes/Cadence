@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { migrateDb, openDb, type Db } from "./db/client";
 import { sessions, tasks as tasksTable } from "./db/schema";
 import { startGateway, type Gateway } from "./gateway";
-import { bootstrap } from "./store/store";
+import { bootstrap, writeQa } from "./store/store";
 
 let gw: Gateway;
 let db: Db;
@@ -1653,4 +1653,121 @@ test("PATCH /api/settings stores review strictness; invalid clears (§6.5.h)", a
   });
   s = (await res.json()) as typeof s;
   expect(s.review?.strictness).toBeUndefined(); // invalid → back to default
+});
+
+// ---------------------------------------------------------------- lifecycle gap fixes
+
+test("request-changes re-runs the implementation chain → task returns to Review", async () => {
+  // A real repo-backed project so the chain actually runs (a project-less task bails).
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-reqch-"));
+  const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@e.com"]);
+  g(["config", "user.name", "T"]);
+  writeFileSync(join(repo, "README.md"), "# x\n");
+  g(["add", "."]);
+  g(["commit", "-q", "-m", "init"]);
+
+  let implementerRuns = 0;
+  implementerSideEffect = async () => {
+    implementerRuns += 1;
+  };
+  const pollStatus = async (id: string, want: string, tries = 200): Promise<string> => {
+    let status = "";
+    for (let i = 0; i < tries && status !== want; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      status = ((await fetch(`${gw.url}/api/tasks/${id}`).then((r) => r.json())) as Task).status;
+    }
+    return status;
+  };
+  try {
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Request Changes Repo", rootPath: repo, worktreesEnabled: true }),
+    }).then((r) => r.json())) as { slug: string };
+    const task = await createViaApi("Iterate on review feedback");
+    await fetch(`${gw.url}/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project: project.slug, status: "ready" }),
+    });
+    await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+    expect(await pollStatus(task.id, "plan_review")).toBe("plan_review");
+    await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
+    expect(await pollStatus(task.id, "review")).toBe("review"); // chain #1: implement → verify(pass) → review
+    expect(implementerRuns).toBe(1);
+
+    const res = await fetch(`${gw.url}/api/tasks/${task.id}/review/request-changes`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ note: "tighten the validation" }),
+    });
+    expect(res.status).toBe(200);
+
+    // The fix: the chain re-runs (it used to park in Implementing forever) and the
+    // task lands back in Review with the note on the context channel.
+    expect(await pollStatus(task.id, "review")).toBe("review");
+    expect(implementerRuns).toBe(2);
+    const ctx = (await fetch(`${gw.url}/api/tasks/${task.id}/context`).then((r) => r.json())) as {
+      content: string;
+    };
+    expect(ctx.content).toContain("Requested changes: tighten the validation");
+  } finally {
+    implementerSideEffect = null;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("plan-approve refuses an empty plan (409) — no unplanned free-running implementer", async () => {
+  const task = await createViaApi("Approve nothing");
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "plan_review" }),
+  });
+  const res = await fetch(`${gw.url}/api/tasks/${task.id}/plan/approve`, { method: "POST" });
+  expect(res.status).toBe(409);
+  // and the task did not move into implementing
+  const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
+  expect(after.status).toBe("plan_review");
+});
+
+test("re-submitting answers neither duplicates context nor yanks the status", async () => {
+  const task = await createViaApi("Answer dedupe");
+  writeQa(task.id, {
+    questions: [{ id: "q1", rank: 1, type: "text", text: "Which auth provider?" }],
+    answers: {},
+  });
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "needs_feedback" }),
+  });
+
+  const submit = (answers: Record<string, string>) =>
+    fetch(`${gw.url}/api/tasks/${task.id}/qa/answers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answers }),
+    }).then((r) => r.json()) as Promise<{ status: string }>;
+  const contextNow = async () =>
+    ((await fetch(`${gw.url}/api/tasks/${task.id}/context`).then((r) => r.json())) as { content: string })
+      .content;
+  const count = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+
+  // first submit: answers recorded once, task advances to Ready
+  expect((await submit({ q1: "GitHub OAuth" })).status).toBe("ready");
+  expect(count(await contextNow(), "A: GitHub OAuth")).toBe(1);
+
+  // identical re-submit (the card stays editable in Needs-Feedback): no duplicate
+  // context entry, and the lifecycle is not yanked around
+  expect((await submit({ q1: "GitHub OAuth" })).status).toBe("ready");
+  expect(count(await contextNow(), "A: GitHub OAuth")).toBe(1);
+
+  // a CHANGED answer is recorded (that's new information), status still untouched
+  expect((await submit({ q1: "SAML" })).status).toBe("ready");
+  const ctx = await contextNow();
+  expect(count(ctx, "A: GitHub OAuth")).toBe(1);
+  expect(count(ctx, "A: SAML")).toBe(1);
 });

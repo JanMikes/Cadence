@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { createProject } from "../projects";
-import { bootstrap, readVerify } from "../store/store";
+import { bootstrap, readContext, readVerify } from "../store/store";
 import { createTask, getTask, updateTask } from "../tasks";
 import { applyPlan } from "./planner";
 import { buildVerifierPrompt, normalizeReport, runVerifier } from "./verifier";
@@ -89,12 +89,17 @@ test("runVerifier pass → review; writes verify.md", async () => {
   expect(readVerify(task.id)?.passed).toBe(true);
 });
 
-test("runVerifier fail → back to implementing; records issues", async () => {
+test("runVerifier fail → Review (red badge, human decides); failure noted on context", async () => {
   const task = verifyingTask();
   const outcome = await runVerifier(db, task.id, () =>
     resultWith({ passed: false, issues: [{ severity: "high", detail: "tests fail", file: "x.ts" }] }),
   );
-  expect(outcome).toMatchObject({ ran: true, passed: false, status: "implementing" });
-  expect(getTask(db, task.id)?.status).toBe("implementing");
+  // Fail no longer parks in Implementing (nothing re-enters it once the plan is
+  // approved — a dead end); the failed report + diff land in Review instead.
+  expect(outcome).toMatchObject({ ran: true, passed: false, status: "review" });
+  expect(getTask(db, task.id)?.status).toBe("review");
   expect(readVerify(task.id)?.issues[0]?.detail).toBe("tests fail");
+  // the failure composes into the next implementer run (request-changes loop)
+  expect(readContext(task.id)).toContain("Verification FAILED");
+  expect(readContext(task.id)).toContain("tests fail (x.ts)");
 });

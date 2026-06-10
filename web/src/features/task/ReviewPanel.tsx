@@ -24,12 +24,16 @@ export function ReviewPanel({
   taskId,
   onChanged,
   onMerged,
+  onRequestedChanges,
 }: {
   taskId: string;
   onChanged: () => void;
   /** Fired after a successful merge (on top of onChanged) — lets the host close
    *  the modal / celebrate. */
   onMerged?: () => void;
+  /** Fired after changes were requested (on top of onChanged) — the task went back
+   *  to In progress and the implementer is re-running with the note. */
+  onRequestedChanges?: () => void;
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
@@ -52,7 +56,10 @@ export function ReviewPanel({
   });
   const reqChanges = useMutation({
     mutationFn: () => requestChanges(taskId, note.trim()),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate();
+      onRequestedChanges?.();
+    },
   });
 
   const diffLines = (diff.data?.diff ?? "").split("\n");

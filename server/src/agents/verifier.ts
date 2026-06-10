@@ -1,6 +1,6 @@
 import type { TaskPlan, VerifyCheck, VerifyCriterion, VerifyIssue, VerifyReport } from "@cadence/shared";
 import type { Db } from "../db/client";
-import { readPlan, readSpec, writeVerify } from "../store/store";
+import { appendContext, readPlan, readSpec, writeVerify } from "../store/store";
 import { getTaskDetail, updateTask } from "../tasks";
 import { resolveExecutionCwd } from "../worktree";
 import { agentsJson } from "./library";
@@ -76,10 +76,21 @@ export function normalizeReport(j: VerifierJson): VerifyReport {
 export function applyVerify(db: Db, taskId: string, j: VerifierJson): VerifierOutcome {
   const report = normalizeReport(j);
   writeVerify(taskId, report);
-  // Pass → Review (the human merges, 3.7). Fail → back to Implementing.
-  const status = report.passed ? "review" : "implementing";
-  updateTask(db, taskId, { status });
-  return { ran: true, passed: report.passed, status };
+  // Pass OR fail → Review. A failed verify used to park in Implementing, but nothing
+  // re-enters an approved-plan task there (the Approve button is gone) — a silent
+  // dead end. Review is the surface built for it: the red "Verify failed" badge +
+  // diff, with Merge-anyway or Request-changes (which re-runs the implementer) as
+  // the human calls. The failure detail goes on the context channel so a re-run
+  // composes it into the next Implementer prompt.
+  if (!report.passed) {
+    const issues = report.issues.map((i) => `- [${i.severity}] ${i.detail}${i.file ? ` (${i.file})` : ""}`);
+    appendContext(
+      taskId,
+      `Verification FAILED:\n${issues.length ? issues.join("\n") : "- no specific issues reported — see verify checks"}`,
+    );
+  }
+  updateTask(db, taskId, { status: "review" });
+  return { ran: true, passed: report.passed, status: "review" };
 }
 
 /**

@@ -204,6 +204,10 @@ export function TaskDetail({
                       toast(`🎉 “${task.title}” merged — task done. Nice ship!`);
                       if (!flow) onClose();
                     }}
+                    onRequestedChanges={() => {
+                      toast("Changes requested — re-implementing with your note.");
+                      if (!flow) onClose();
+                    }}
                   />
                 ) : null}
 

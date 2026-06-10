@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, HelpCircle } from "lucide-react";
 import { useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { toast } from "../../components/Toaster";
 import { getQa, submitAnswers } from "../../lib/api";
 
 type Answer = string | string[];
@@ -36,7 +37,8 @@ export function QACards({
 
   const submit = useMutation({
     mutationFn: () => submitAnswers(taskId, draft),
-    onSuccess: () => {
+    onSuccess: (r) => {
+      toast(r.status === "ready" ? "Answers saved — task is Ready ✓" : "Answers saved ✓");
       void qc.invalidateQueries({ queryKey: ["task", taskId] });
       void qc.invalidateQueries({ queryKey: ["tasks"] });
       onResolved?.();
