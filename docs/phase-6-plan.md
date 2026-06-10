@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.3.e (operations knobs in settings).
+- **Current step:** 6.3.f (composed context for one-shot agents) — the last 6.3 step.
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -232,11 +232,12 @@ global→project→fleet→task context, violating the “compose into every age
   - Verify: formatter unit tests (incl. `10.06.2026 14:05:09`); all five UI spots render the Czech
     format by default. ✓ 2026-06-10 (`a03fa24`, 374 tests; grep proves zero date `toLocale*` calls
     remain outside the formatter).
-- [ ] **6.3.e Operations knobs.** Settings + Operations section UI (plain-language labels + help
+- [x] **6.3.e Operations knobs.** Settings + Operations section UI (plain-language labels + help
   text): `stuckThresholdMinutes` (default 10; watchdog reads it, env var stays as override),
   `stageTimeoutMinutes` {read, implement} (wires 6.1.g), `maxStageAttemptsPer24h` (default 3; wires
   6.1.c), `maxConcurrentAgents` (default 4; enforced at spawn).
   - Verify: watchdog/budget/runner read live settings (tests); UI saves and broadcasts.
+    ✓ 2026-06-10 (`242dfc2`, 381 tests; + a NEW global concurrent-agent cap at the spawn choke point).
 - [ ] **6.3.f Composed context for one-shot agents.** Pass `composeContext` output as
   `--append-system-prompt` to **every** pipeline stage run (`runner.ts:102` already accepts it);
   stage template remains the prompt body. Mind token economy: context layers only (no transcript
@@ -602,3 +603,10 @@ yourself.
   short token strings, journal-noted as a future nicety; only customizations persist (`formats.date`
   equal to the default is cleared on save, same honesty rule as agent overrides). Presets: Czech
   (default) · ISO · US · System locale.
+- **2026-06-10 — 6.3.e done** (`242dfc2`). `server/src/ops.ts` = sanitized live knobs (invalid/≤0
+  ignored — a hand-edited settings.json can never disable a safety net); env var beats the stuck
+  knob (debug escape hatch). **Addition beyond plan text:** `assertConcurrencyCapacity` — the
+  global max-concurrent-agents cap (default 4) enforced at the recording-runner choke point,
+  counting only honestly-alive rows; refusal = StageConcurrencyError (never a silent queue —
+  visible failure per the §6.1 philosophy; a queued-spawn upgrade is a future nicety).
+  STUCK_IDLE_MS const removed (was watchdog-internal only) in favor of live `stuckIdleMs()`.
