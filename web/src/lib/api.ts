@@ -7,6 +7,7 @@ import type {
   ContextChannel,
   CreateFleetInput,
   CreateProjectInput,
+  CreateRecurringInput,
   CreateTaskInput,
   DailyDigest,
   DeliveryResult,
@@ -21,6 +22,7 @@ import type {
   OpenTerminalResult,
   Project,
   ProjectForgeStatus,
+  RecurringTask,
   ReviewFindings,
   ReviewInspectResult,
   ReviewProposal,
@@ -47,6 +49,7 @@ import type {
   TranscriptEntry,
   TranscriptHit,
   UpdateFleetInput,
+  UpdateRecurringInput,
   VerifyReport,
   UpdateProjectInput,
   UpdateSessionInput,
@@ -308,6 +311,39 @@ export function submitAnswers(
     headers: JSON_HEADERS,
     body: JSON.stringify({ answers }),
   }).then(json<{ status: string }>);
+}
+
+// ------------------------------------------------------------ recurring tasks
+
+export function getRecurring(): Promise<RecurringTask[]> {
+  return fetch("/api/recurring").then(json<RecurringTask[]>);
+}
+
+export function createRecurring(input: CreateRecurringInput): Promise<RecurringTask> {
+  return fetch("/api/recurring", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  }).then(json<RecurringTask>);
+}
+
+export function updateRecurring(id: string, patch: UpdateRecurringInput): Promise<RecurringTask> {
+  return fetch(`/api/recurring/${id}`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(patch),
+  }).then(json<RecurringTask>);
+}
+
+export function deleteRecurring(id: string): Promise<{ deleted: boolean }> {
+  return fetch(`/api/recurring/${id}`, { method: "DELETE" }).then(json<{ deleted: boolean }>);
+}
+
+/** Fire the template now; the created task flows through triage like a capture. */
+export function runRecurringNow(id: string): Promise<{ task: Task; recurring: RecurringTask }> {
+  return fetch(`/api/recurring/${id}/run`, { method: "POST" }).then(
+    json<{ task: Task; recurring: RecurringTask }>,
+  );
 }
 
 export function getProjects(): Promise<Project[]> {

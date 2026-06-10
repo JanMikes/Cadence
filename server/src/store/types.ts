@@ -33,6 +33,23 @@ export interface TaskFrontmatter {
   fixedFields?: string[];
 }
 
+/** Recurring task template (`recurring/<id>.md`). The markdown BODY is the
+ *  description template that becomes each created task's body. */
+export interface RecurringFrontmatter {
+  id: string;
+  title: string;
+  cadence: string; // daily | weekly | monthly
+  dayOfWeek?: number | null; // 0–6 (weekly)
+  dayOfMonth?: number | null; // 1–31 (monthly)
+  time: string; // "HH:MM", gateway-local
+  project?: string | null; // project slug
+  priority?: string | null;
+  paused?: boolean;
+  lastTriggeredAt?: string | number | Date | null; // ISO in markdown (server-managed)
+  lastTaskId?: string | null; // server-managed
+  createdAt?: string | number | Date; // ISO in markdown
+}
+
 export interface ProjectFrontmatter {
   id: string;
   name: string;

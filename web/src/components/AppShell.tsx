@@ -7,6 +7,7 @@ import {
   CalendarDays,
   FolderGit2,
   LayoutGrid,
+  Repeat,
   Rocket,
   Settings,
   Sparkles,
@@ -18,6 +19,7 @@ export type ViewId =
   | "today"
   | "board"
   | "calendar"
+  | "recurring"
   | "projects"
   | "fleets"
   | "sessions"
@@ -40,6 +42,7 @@ const NAV: NavItem[] = [
   { id: "today", label: "Today", icon: Sparkles },
   { id: "board", label: "Board", icon: LayoutGrid },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
+  { id: "recurring", label: "Recurring tasks", icon: Repeat },
   { id: "projects", label: "Projects", icon: FolderGit2 },
   { id: "fleets", label: "Fleets", icon: Boxes },
   { id: "sessions", label: "Sessions", icon: Activity },

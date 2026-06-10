@@ -145,6 +145,18 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       composed agent context as absolute paths — terminal parity with pasting a path/image into
       `claude` (the Read tool renders images); REST: GET/POST `/api/tasks/:id/attachments`,
       GET/DELETE `…/attachments/:name` (traversal-safe)
+- [x] **6.8 Recurring tasks** — **DONE 2026-06-10**: task *templates* + schedule (daily / weekly
+      day-of-week / monthly day-of-month with short-month clamping, "HH:MM" gateway-local) that a
+      background scheduler turns into real inbox tasks (same `createTask` + triage-on-capture path
+      as manual capture, with an attribution note in context.md); markdown truth under
+      `~/.cadence/recurring/<id>.md` + `recurring_tasks` index (migration 0012, derived
+      `nextRunAt`), watcher backstop, 30 s tick (CADENCE_RECURRING_MS) with a boot catch-up pass —
+      downtime collapses to one run, never a backlog flood; pause/resume, Run now; REST
+      GET/POST `/api/recurring`, GET/PATCH/DELETE `…/:id` (post-merge schedule validation),
+      POST `…/:id/run`; dedicated "Recurring tasks" nav view (plain-language schedule sentence,
+      live next-run countdown, last-created task link, two-step delete) + editor modal with a
+      live "first/next task will be created …" preview; schedule math shared (`computeNextRun`
+      in @cadence/shared) so server and UI preview can never disagree
 
 ---
 

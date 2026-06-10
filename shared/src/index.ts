@@ -174,6 +174,147 @@ export interface CreateTaskInput {
   blockedBy?: string[];
 }
 
+// ------------------------------------------------------------ recurring tasks
+// A recurring task is a *template* + a schedule. The background scheduler
+// creates a real task from it at each trigger (the same path as capture, so
+// triage/refinement treat the result like any captured task).
+
+export const RECURRING_CADENCES = ["daily", "weekly", "monthly"] as const;
+export type RecurringCadence = (typeof RECURRING_CADENCES)[number];
+
+export interface RecurringSchedule {
+  cadence: RecurringCadence;
+  /** Day of week 0–6 (JS `Date.getDay()`: 0 = Sunday). Weekly cadence only. */
+  dayOfWeek?: number | null;
+  /** Day of month 1–31. Monthly cadence only — months with fewer days run on
+   *  their last day (a "31st" template still fires in February). */
+  dayOfMonth?: number | null;
+  /** Time of day, 24h `"HH:MM"`, in the gateway's local timezone. */
+  time: string;
+}
+
+export interface RecurringTask extends RecurringSchedule {
+  id: string;
+  title: string;
+  /** The description template — becomes each created task's body. */
+  body: string;
+  projectId: string | null;
+  priority: string | null;
+  paused: boolean;
+  /** When the schedule last fired (epoch ms; null = never). */
+  lastTriggeredAt: number | null;
+  /** The most recently created task (null until the first run). */
+  lastTaskId: string | null;
+  /** The scheduled next occurrence (epoch ms); null while paused. A value in
+   *  the past means it's due — the scheduler fires it once on its next tick
+   *  (missed occurrences while the app was off collapse into one catch-up). */
+  nextRunAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateRecurringInput {
+  /** Optional — when omitted, derived from the description (like capture). */
+  title?: string;
+  /** The description template. At least one of title/body is required. */
+  body?: string;
+  cadence: RecurringCadence;
+  dayOfWeek?: number; // required when weekly
+  dayOfMonth?: number; // required when monthly
+  time: string; // "HH:MM"
+  project?: string | null; // project slug
+  priority?: string | null; // P0..P3
+}
+
+export interface UpdateRecurringInput {
+  title?: string;
+  body?: string;
+  cadence?: RecurringCadence;
+  dayOfWeek?: number | null;
+  dayOfMonth?: number | null;
+  time?: string;
+  project?: string | null; // slug; null = no project
+  priority?: string | null;
+  paused?: boolean;
+}
+
+/** Parse a 24h `"HH:MM"` time-of-day; null when malformed or out of range. */
+export function parseTimeOfDay(time: string): [hours: number, minutes: number] | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h <= 23 && min <= 59 ? [h, min] : null;
+}
+
+/**
+ * The next occurrence of a schedule strictly AFTER `after` (epoch ms), in local
+ * time. Pure — the scheduler anchors `after` at the last trigger (or creation),
+ * so a template never fires for moments before it existed, and downtime yields
+ * exactly one catch-up run. A malformed time falls back to 09:00 rather than
+ * throwing (hand-edited markdown must never break reindexing).
+ */
+export function computeNextRun(s: RecurringSchedule, after: number): number {
+  const [h, min] = parseTimeOfDay(s.time) ?? [9, 0];
+  const base = new Date(after);
+
+  if (s.cadence === "daily") {
+    const c = new Date(base);
+    c.setHours(h, min, 0, 0);
+    if (c.getTime() <= after) c.setDate(c.getDate() + 1);
+    return c.getTime();
+  }
+
+  if (s.cadence === "weekly") {
+    const dow = clamp(s.dayOfWeek ?? 1, 0, 6);
+    const c = new Date(base);
+    c.setHours(h, min, 0, 0);
+    c.setDate(c.getDate() + ((dow - c.getDay() + 7) % 7));
+    if (c.getTime() <= after) c.setDate(c.getDate() + 7);
+    return c.getTime();
+  }
+
+  // monthly — clamp to each month's length, scan forward until strictly after.
+  const dom = clamp(s.dayOfMonth ?? 1, 1, 31);
+  for (let i = 0; ; i++) {
+    const lastDay = new Date(base.getFullYear(), base.getMonth() + i + 1, 0).getDate();
+    const c = new Date(base.getFullYear(), base.getMonth() + i, Math.min(dom, lastDay), h, min, 0, 0);
+    if (c.getTime() > after) return c.getTime();
+  }
+}
+
+export const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+function ordinal(n: number): string {
+  const rem10 = n % 10;
+  const rem100 = n % 100;
+  if (rem10 === 1 && rem100 !== 11) return `${n}st`;
+  if (rem10 === 2 && rem100 !== 12) return `${n}nd`;
+  if (rem10 === 3 && rem100 !== 13) return `${n}rd`;
+  return `${n}th`;
+}
+
+/** Human sentence for a schedule: "Every Monday at 09:00" / "Monthly on the 15th at 08:30". */
+export function describeSchedule(s: RecurringSchedule): string {
+  if (s.cadence === "daily") return `Every day at ${s.time}`;
+  if (s.cadence === "weekly") {
+    return `Every ${WEEKDAY_NAMES[clamp(s.dayOfWeek ?? 1, 0, 6)]} at ${s.time}`;
+  }
+  return `Monthly on the ${ordinal(clamp(s.dayOfMonth ?? 1, 1, 31))} at ${s.time}`;
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, Math.round(n)));
+}
+
 /** A ranked search result (FTS5 over task text). */
 export interface SearchHit {
   taskId: string;

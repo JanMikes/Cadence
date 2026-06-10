@@ -17,6 +17,7 @@ import { SessionPanel } from "./features/session/SessionPanel";
 import { NotificationsView } from "./features/notifications/NotificationsView";
 import { useNotifications } from "./features/notifications/store";
 import { Quickstart } from "./features/quickstart/Quickstart";
+import { RecurringView } from "./features/recurring/RecurringView";
 import { CommandPalette } from "./features/search/CommandPalette";
 import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
@@ -35,6 +36,7 @@ type Conn = "connecting" | "online" | "offline";
 // Server events that change what's waiting on the user → refresh the "needs you" feed
 // (and the board). Keeps the top-bar pill and the Attention Center live.
 const ATTENTION_EVENTS = new Set([
+  "task:created", // background captures too (recurring scheduler) — keep the board live
   "task:updated",
   "task:play",
   "task:plan",
@@ -99,6 +101,14 @@ export function App() {
     if (msg.type === "event" && ATTENTION_EVENTS.has(msg.name)) {
       void qc.invalidateQueries({ queryKey: ["attention"] });
       void qc.invalidateQueries({ queryKey: ["tasks"] });
+    }
+    // Recurring templates: edits and scheduler triggers refresh the Recurring view
+    // (next-run countdowns, "last created" links) wherever it's open.
+    if (
+      msg.type === "event" &&
+      (msg.name === "recurring:updated" || msg.name === "recurring:triggered")
+    ) {
+      void qc.invalidateQueries({ queryKey: ["recurring"] });
     }
     // Project changes (edits, worktree-readiness verdicts) → refresh the projects list
     // so open views (e.g. the project drawer) show the new state live.
@@ -175,6 +185,7 @@ export function App() {
         ) : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
         {view === "calendar" ? <Calendar onOpenTask={setSelectedId} /> : null}
+        {view === "recurring" ? <RecurringView onOpenTask={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}
         {view === "fleets" ? <Fleets /> : null}
         {view === "sessions" ? <SessionsView onOpenSessionDetail={setSessionDetailId} /> : null}

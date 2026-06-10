@@ -17,15 +17,17 @@ import type {
   TaskPlan,
   VerifyReport,
 } from "@cadence/shared";
+import { computeNextRun, type RecurringCadence } from "@cadence/shared";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { fleets, projects, taskDeps, tasks } from "../db/schema";
+import { fleets, projects, recurringTasks, taskDeps, tasks } from "../db/schema";
 import { parseMarkdown, stringifyMarkdown } from "./markdown";
 import { paths } from "./paths";
 import type {
   FleetFrontmatter,
   GlobalSettings,
   ProjectFrontmatter,
+  RecurringFrontmatter,
   TaskFrontmatter,
 } from "./types";
 
@@ -46,6 +48,7 @@ export function bootstrap(): void {
   for (const dir of [
     paths.home(),
     paths.tasksDir(),
+    paths.recurringDir(),
     paths.projectsDir(),
     paths.fleetsDir(),
     paths.memoryDir(),
@@ -86,6 +89,15 @@ export function writeTask(fm: TaskFrontmatter, body: string): void {
 
 export function readTask(id: string) {
   return parseMarkdown<TaskFrontmatter>(readFileSync(paths.taskFile(id), "utf8"));
+}
+
+export function writeRecurring(fm: RecurringFrontmatter, body: string): void {
+  mkdirSync(paths.recurringDir(), { recursive: true });
+  writeFileSync(paths.recurringFile(fm.id), stringifyMarkdown({ ...fm }, body));
+}
+
+export function readRecurring(id: string) {
+  return parseMarkdown<RecurringFrontmatter>(readFileSync(paths.recurringFile(id), "utf8"));
 }
 
 export function writeProject(fm: ProjectFrontmatter, systemPrompt = ""): void {
@@ -620,12 +632,58 @@ export function reindexTask(db: Db, id: string): void {
   }
 }
 
+/** Reindex one recurring template's markdown into the index (body = the task
+ *  description template). nextRunAt is derived here: the next occurrence after
+ *  the last trigger (or creation), null while paused — so the scheduler's
+ *  due-check is a plain indexed comparison. */
+export function reindexRecurring(db: Db, id: string): void {
+  const { data, body } = readRecurring(id);
+
+  const projectId = data.project
+    ? (db.select({ id: projects.id }).from(projects).where(eq(projects.slug, data.project)).get()
+        ?.id ?? null)
+    : null;
+  const lastTriggeredAt = toEpochMs(data.lastTriggeredAt);
+  const createdAt = toEpochMs(data.createdAt) ?? Date.now();
+  const paused = data.paused ?? false;
+  const schedule = {
+    cadence: (data.cadence ?? "daily") as RecurringCadence,
+    dayOfWeek: data.dayOfWeek ?? null,
+    dayOfMonth: data.dayOfMonth ?? null,
+    time: data.time ?? "09:00",
+  };
+
+  const row = {
+    id: data.id,
+    title: data.title,
+    body,
+    cadence: schedule.cadence,
+    dayOfWeek: schedule.dayOfWeek,
+    dayOfMonth: schedule.dayOfMonth,
+    time: schedule.time,
+    projectId,
+    priority: data.priority ?? null,
+    paused,
+    lastTriggeredAt,
+    lastTaskId: data.lastTaskId ?? null,
+    nextRunAt: paused ? null : computeNextRun(schedule, lastTriggeredAt ?? createdAt),
+    createdAt,
+    updatedAt: Date.now(),
+  };
+  db.insert(recurringTasks)
+    .values(row)
+    .onConflictDoUpdate({ target: recurringTasks.id, set: row })
+    .run();
+}
+
 /** Full reindex from disk: projects + fleets first (so task links resolve), then
- *  tasks. Recovers the entire index from the markdown source of truth. */
+ *  tasks + recurring templates. Recovers the entire index from the markdown
+ *  source of truth. */
 export function reindexAll(db: Db): void {
   for (const file of listMarkdown(paths.projectsDir())) reindexProject(db, basenameNoExt(file));
   for (const file of listMarkdown(paths.fleetsDir())) reindexFleet(db, basenameNoExt(file));
   for (const id of listTaskIds()) reindexTask(db, id);
+  for (const id of listRecurringIds()) reindexRecurring(db, id);
 }
 
 function listMarkdown(dir: string): string[] {
@@ -643,4 +701,8 @@ export function listTaskIds(): string[] {
   return readdirSync(dir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(paths.taskFile(e.name)))
     .map((e) => e.name);
+}
+
+export function listRecurringIds(): string[] {
+  return listMarkdown(paths.recurringDir()).map(basenameNoExt);
 }

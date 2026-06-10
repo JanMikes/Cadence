@@ -2,17 +2,26 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client";
-import { fleets, projects, tasks } from "../db/schema";
+import { fleets, projects, recurringTasks, tasks } from "../db/schema";
 import { paths } from "./paths";
-import { listTaskIds, reindexFleet, reindexProject, reindexTask } from "./store";
+import {
+  listRecurringIds,
+  listTaskIds,
+  reindexFleet,
+  reindexProject,
+  reindexRecurring,
+  reindexTask,
+} from "./store";
 
-export type ChangeKind = "task" | "project" | "fleet" | "ignored";
+export type ChangeKind = "task" | "recurring" | "project" | "fleet" | "ignored";
 
 /** Map a path relative to ~/.cadence to the entity it represents. */
 export function classifyPath(relPath: string): { kind: ChangeKind; key?: string } {
   const norm = relPath.split(sep).join("/");
   let m = norm.match(/^tasks\/([^/]+)\/task\.md$/);
   if (m?.[1]) return { kind: "task", key: m[1] };
+  m = norm.match(/^recurring\/([^/]+)\.md$/);
+  if (m?.[1]) return { kind: "recurring", key: m[1] };
   m = norm.match(/^projects\/([^/]+)\.md$/);
   if (m?.[1]) return { kind: "project", key: m[1] };
   m = norm.match(/^fleets\/([^/]+)\.md$/);
@@ -35,6 +44,10 @@ export function dispatchChange(db: Db, relPath: string): ChangeKind {
       if (existsSync(paths.taskFile(key))) reindexTask(db, key);
       else db.delete(tasks).where(eq(tasks.id, key)).run();
       return "task";
+    case "recurring":
+      if (existsSync(paths.recurringFile(key))) reindexRecurring(db, key);
+      else db.delete(recurringTasks).where(eq(recurringTasks.id, key)).run();
+      return "recurring";
     case "project":
       if (existsSync(paths.projectFile(key))) reindexProject(db, key);
       else db.delete(projects).where(eq(projects.slug, key)).run();
@@ -86,6 +99,7 @@ export function startWatcher(db: Db, opts: WatcherOptions = {}): WatcherHandle {
       }
     };
     for (const id of listTaskIds()) add(`tasks/${id}/task.md`, paths.taskFile(id));
+    for (const id of listRecurringIds()) add(`recurring/${id}.md`, paths.recurringFile(id));
     for (const f of listMd(paths.projectsDir())) add(`projects/${f}`, join(paths.projectsDir(), f));
     for (const f of listMd(paths.fleetsDir())) add(`fleets/${f}`, join(paths.fleetsDir(), f));
     return files;

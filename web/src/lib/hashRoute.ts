@@ -18,6 +18,7 @@ const VIEW_IDS: ReadonlySet<string> = new Set<ViewId>([
   "today",
   "board",
   "calendar",
+  "recurring",
   "projects",
   "fleets",
   "sessions",

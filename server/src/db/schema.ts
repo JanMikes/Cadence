@@ -98,6 +98,30 @@ export const tasks = sqliteTable("tasks", {
   updatedAt: integer("updated_at").notNull().default(now),
 });
 
+/** Recurring task — a task *template* + schedule. The markdown under
+ *  `~/.cadence/recurring/` is the source of truth; the background scheduler
+ *  creates a real task at each trigger (next_run_at <= now). */
+export const recurringTasks = sqliteTable("recurring_tasks", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  // daily | weekly | monthly
+  cadence: text("cadence").notNull(),
+  dayOfWeek: integer("day_of_week"), // 0–6 (JS getDay; weekly only)
+  dayOfMonth: integer("day_of_month"), // 1–31, clamped to month length (monthly only)
+  time: text("time").notNull(), // "HH:MM", gateway-local
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  priority: text("priority"),
+  paused: integer("paused", { mode: "boolean" }).notNull().default(false),
+  lastTriggeredAt: integer("last_triggered_at"),
+  lastTaskId: text("last_task_id"), // most recently created task (no FK — survives task deletion)
+  // Derived at reindex: next occurrence after (lastTriggeredAt ?? createdAt);
+  // null while paused. A past value = due (fires on the scheduler's next tick).
+  nextRunAt: integer("next_run_at"),
+  createdAt: integer("created_at").notNull().default(now),
+  updatedAt: integer("updated_at").notNull().default(now),
+});
+
 /** Task dependency edge: `blocker` blocks `blocked` (i.e. `blocked` is blockedBy
  *  `blocker`). The blocks[]/blockedBy[] graph from spec §4. */
 export const taskDeps = sqliteTable(
@@ -168,6 +192,7 @@ export const schema = {
   projects,
   fleets,
   tasks,
+  recurringTasks,
   taskDeps,
   sessions,
   events,

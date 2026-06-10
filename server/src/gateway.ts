@@ -12,7 +12,8 @@ import { ApprovalRegistry } from "./approvals";
 import { emitProposals } from "./proposals";
 import { startSweep } from "./sweep";
 import type { AgentRunner } from "./agents/triage";
-import { handleApi } from "./api";
+import { handleApi, maybeTriageOnCapture } from "./api";
+import { startRecurringScheduler } from "./recurring";
 import { cadenceHome, type Db, openAndMigrate } from "./db/client";
 import { claudeEnrich } from "./import";
 import { SpawnManager } from "./sessions";
@@ -103,6 +104,17 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     opts.startWatcher === false
       ? { close() {} }
       : startSweep(db, hub, { onTick: () => emitProposals(db, hub, emittedProposals) });
+
+  // Recurring-task scheduler: fires due templates (creating real tasks) every 30 s,
+  // with a boot catch-up pass so a template due while the app was off fires once now.
+  // Created tasks enter the same triage-on-capture chain as manual captures.
+  const recurring =
+    opts.startWatcher === false
+      ? { close() {} }
+      : startRecurringScheduler(db, hub, {
+          onTaskCreated: (taskId) =>
+            maybeTriageOnCapture({ db, hub, activity, runAgent: runAgentImpl }, taskId),
+        });
 
   // Reconcile orphaned runs from a previous process — always, even with autonomy off (a
   // correctness concern, not autonomy): end sessions whose process died with the old gateway,
@@ -205,6 +217,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
     stop: async () => {
       watcher?.close();
       sweep.close();
+      recurring.close();
       watchdog.close();
       gitSweep.close();
       for (const id of spawnManager.liveIds()) spawnManager.kill(id);

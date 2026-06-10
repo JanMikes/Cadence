@@ -8,11 +8,14 @@ import {
   type CommitDigestInput,
   type CreateFleetInput,
   type CreateProjectInput,
+  type CreateRecurringInput,
   type CreateSavedSearchInput,
   type CreateSuggestionInput,
   type CreateTaskInput,
   type HealthStatus,
+  parseTimeOfDay,
   PERMISSION_MODES,
+  RECURRING_CADENCES,
   type PrRef,
   type ProjectForgeStatus,
   type RecapDigestInput,
@@ -24,6 +27,7 @@ import {
   type SpawnSessionInput,
   type UpdateFleetInput,
   type UpdateProjectInput,
+  type UpdateRecurringInput,
   type UpdateSessionInput,
   type UpdateTaskInput,
 } from "@cadence/shared";
@@ -71,6 +75,14 @@ import {
   writeMemoryFile,
   writeProjectMemory,
 } from "./memory";
+import {
+  createRecurring,
+  deleteRecurring,
+  getRecurring,
+  listRecurring,
+  triggerRecurring,
+  updateRecurring,
+} from "./recurring";
 import { createSavedSearch, deleteSavedSearch, listSavedSearches } from "./searches";
 import { buildProposals } from "./proposals";
 import { computeSelfMonitor } from "./selfmonitor";
@@ -1652,6 +1664,102 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     return Response.json({ started: true }, { status: 202 });
   }
 
+  // -------------------------------------------------- recurring tasks (templates)
+
+  if (pathname === "/api/recurring") {
+    if (method === "GET") return Response.json(listRecurring(ctx.db));
+    if (method === "POST") {
+      let input: CreateRecurringInput;
+      try {
+        input = (await req.json()) as CreateRecurringInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const title = typeof input?.title === "string" ? input.title.trim() : "";
+      const body = typeof input?.body === "string" ? input.body.trim() : "";
+      if (!title && !body) return badRequest("a description (or title) is required");
+      const scheduleError = validateRecurringSchedule(input);
+      if (scheduleError) return badRequest(scheduleError);
+      if (input.priority != null && !/^P[0-3]$/.test(String(input.priority))) {
+        return badRequest("priority must be P0..P3");
+      }
+      if (input.project != null && (typeof input.project !== "string" || !input.project)) {
+        return badRequest("project must be a slug or null");
+      }
+      const created = createRecurring(ctx.db, {
+        title: title || undefined,
+        body: body || undefined,
+        cadence: input.cadence,
+        dayOfWeek: input.dayOfWeek,
+        dayOfMonth: input.dayOfMonth,
+        time: input.time,
+        ...(input.project ? { project: input.project } : {}),
+        ...(input.priority ? { priority: input.priority } : {}),
+      });
+      ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: created.id });
+      return Response.json(created, { status: 201 });
+    }
+    return methodNotAllowed();
+  }
+
+  const recurringMatch = pathname.match(/^\/api\/recurring\/([^/]+)$/);
+  if (recurringMatch) {
+    const id = recurringMatch[1] as string;
+    if (method === "GET") {
+      const rec = getRecurring(ctx.db, id);
+      return rec ? Response.json(rec) : notFound(pathname);
+    }
+    if (method === "PATCH") {
+      let patch: UpdateRecurringInput;
+      try {
+        patch = (await req.json()) as UpdateRecurringInput;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      const existing = getRecurring(ctx.db, id);
+      if (!existing) return notFound(pathname);
+      if (typeof patch?.title === "string" && !patch.title.trim()) {
+        return badRequest("title cannot be blank");
+      }
+      // Validate the schedule as it will be after the merge, so a partial patch
+      // (e.g. cadence → weekly without a dayOfWeek) can't produce a broken template.
+      const merged = {
+        cadence: patch.cadence ?? existing.cadence,
+        dayOfWeek: patch.dayOfWeek !== undefined ? patch.dayOfWeek : existing.dayOfWeek,
+        dayOfMonth: patch.dayOfMonth !== undefined ? patch.dayOfMonth : existing.dayOfMonth,
+        time: patch.time ?? existing.time,
+      };
+      const scheduleError = validateRecurringSchedule(merged);
+      if (scheduleError) return badRequest(scheduleError);
+      if (patch.priority != null && !/^P[0-3]$/.test(String(patch.priority))) {
+        return badRequest("priority must be P0..P3");
+      }
+      const updated = updateRecurring(ctx.db, id, patch);
+      if (!updated) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: id });
+      return Response.json(updated);
+    }
+    if (method === "DELETE") {
+      if (!deleteRecurring(ctx.db, id)) return notFound(pathname);
+      ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: id });
+      return Response.json({ deleted: true });
+    }
+    return methodNotAllowed();
+  }
+
+  // "Run now": fire the template immediately. Counts as a trigger — the next
+  // run re-anchors at now, and the created task flows through triage like capture.
+  const recurringRunMatch = pathname.match(/^\/api\/recurring\/([^/]+)\/run$/);
+  if (recurringRunMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const fired = triggerRecurring(ctx.db, recurringRunMatch[1] as string);
+    if (!fired) return notFound(pathname);
+    ctx.hub.broadcast({ type: "event", name: "task:created", payload: fired.task.id });
+    ctx.hub.broadcast({ type: "event", name: "recurring:updated", payload: fired.recurring.id });
+    maybeTriageOnCapture(ctx, fired.task.id); // background; no-op unless autonomy is on
+    return Response.json(fired, { status: 201 });
+  }
+
   if (pathname === "/api/fleets") {
     if (method === "GET") return Response.json(listFleets(ctx.db));
     if (method === "POST") {
@@ -1909,12 +2017,45 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
   }
 }
 
+/** Validate a recurring schedule (used for create and for the post-merge state of
+ *  a patch). Returns a human-readable problem, or null when the schedule is sound. */
+function validateRecurringSchedule(s: {
+  cadence?: unknown;
+  dayOfWeek?: unknown;
+  dayOfMonth?: unknown;
+  time?: unknown;
+}): string | null {
+  if (!RECURRING_CADENCES.includes(s.cadence as never)) {
+    return `cadence must be one of ${RECURRING_CADENCES.join("|")}`;
+  }
+  if (typeof s.time !== "string" || !parseTimeOfDay(s.time)) {
+    return 'time must be "HH:MM" (24h)';
+  }
+  if (s.cadence === "weekly") {
+    const d = s.dayOfWeek;
+    if (typeof d !== "number" || !Number.isInteger(d) || d < 0 || d > 6) {
+      return "dayOfWeek must be an integer 0–6 (0 = Sunday) for a weekly schedule";
+    }
+  }
+  if (s.cadence === "monthly") {
+    const d = s.dayOfMonth;
+    if (typeof d !== "number" || !Number.isInteger(d) || d < 1 || d > 31) {
+      return "dayOfMonth must be an integer 1–31 for a monthly schedule";
+    }
+  }
+  return null;
+}
+
+/** The slice of ApiContext the autonomy pipeline needs — also satisfiable by the
+ *  gateway's recurring scheduler, which triages its created tasks like captures. */
+export type AutonomyContext = Pick<ApiContext, "db" | "hub" | "activity" | "runAgent">;
+
 /**
  * Phase 2 autonomy: when the master switch is on, triage a freshly-captured task
  * in the background (fire-and-forget) and broadcast the result. No-op when off,
  * so the default install never spawns claude on capture.
  */
-function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
+export function maybeTriageOnCapture(ctx: AutonomyContext, taskId: string): void {
   if (!readSettings().global.autonomy) return;
   void ctx.activity
     .track(taskId, "triage", () => runTriage(ctx.db, taskId, ctx.runAgent))
@@ -1936,7 +2077,7 @@ function maybeTriageOnCapture(ctx: ApiContext, taskId: string): void {
  * spec has unknowns) the Questioner. Shared by triage-on-capture and the resume
  * after the user answers triage's "which project?" card.
  */
-async function continueRefinement(ctx: ApiContext, taskId: string): Promise<void> {
+async function continueRefinement(ctx: AutonomyContext, taskId: string): Promise<void> {
   // Auto-continue into Discovery — unless the assigned project opted out of
   // autonomy (§9.1: per-project enable/disable, falls back to the global switch).
   ctx.hub.broadcast({ type: "event", name: "task:triaged", payload: taskId });

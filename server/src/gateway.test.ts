@@ -2078,3 +2078,70 @@ test("POST /api/tasks/:id/git-context/check re-checks and persists the git outco
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// ------------------------------------------------------ recurring tasks (API)
+
+test("recurring API: create → list → patch (validated post-merge) → run now → delete", async () => {
+  const created = await fetch(`${gw.url}/api/recurring`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ body: "Weekly review of open PRs", cadence: "weekly", dayOfWeek: 5, time: "16:00" }),
+  });
+  expect(created.status).toBe(201);
+  const rec = (await created.json()) as { id: string; title: string; nextRunAt: number | null };
+  expect(rec.title).toBe("Weekly review of open PRs"); // description-first, like capture
+  expect(rec.nextRunAt).toBeGreaterThan(Date.now());
+
+  const list = (await fetch(`${gw.url}/api/recurring`).then((r) => r.json())) as Array<{ id: string }>;
+  expect(list.map((r) => r.id)).toContain(rec.id);
+
+  // A partial patch is validated AFTER the merge: monthly needs a dayOfMonth.
+  const badPatch = await fetch(`${gw.url}/api/recurring/${rec.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cadence: "monthly" }),
+  });
+  expect(badPatch.status).toBe(400);
+
+  const okPatch = await fetch(`${gw.url}/api/recurring/${rec.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cadence: "monthly", dayOfMonth: 1, paused: true }),
+  });
+  expect(okPatch.status).toBe(200);
+  const patched = (await okPatch.json()) as { cadence: string; paused: boolean; nextRunAt: number | null };
+  expect(patched).toMatchObject({ cadence: "monthly", paused: true, nextRunAt: null });
+
+  // "Run now" creates a real inbox task even while paused (explicit beats schedule).
+  const ran = await fetch(`${gw.url}/api/recurring/${rec.id}/run`, { method: "POST" });
+  expect(ran.status).toBe(201);
+  const fired = (await ran.json()) as { task: Task; recurring: { lastTaskId: string | null } };
+  expect(fired.task.status).toBe("inbox");
+  expect(fired.recurring.lastTaskId).toBe(fired.task.id);
+  const task = (await fetch(`${gw.url}/api/tasks/${fired.task.id}`).then((r) => r.json())) as Task;
+  expect(task.title).toBe("Weekly review of open PRs");
+
+  const del = await fetch(`${gw.url}/api/recurring/${rec.id}`, { method: "DELETE" });
+  expect(del.status).toBe(200);
+  expect((await fetch(`${gw.url}/api/recurring/${rec.id}`)).status).toBe(404);
+});
+
+test("recurring API rejects unsound schedules with actionable messages", async () => {
+  const cases: Array<Record<string, unknown>> = [
+    { body: "x", cadence: "hourly", time: "09:00" }, // unknown cadence
+    { body: "x", cadence: "daily", time: "25:00" }, // impossible time
+    { body: "x", cadence: "weekly", time: "09:00" }, // weekly without a day
+    { body: "x", cadence: "monthly", dayOfMonth: 32, time: "09:00" }, // impossible day
+    { cadence: "daily", time: "09:00" }, // no description/title at all
+  ];
+  for (const payload of cases) {
+    const res = await fetch(`${gw.url}/api/recurring`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { message?: string };
+    expect(body.message).toBeTruthy(); // the UI surfaces this string verbatim
+  }
+});
