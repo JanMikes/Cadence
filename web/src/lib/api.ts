@@ -20,6 +20,7 @@ import type {
   MemoryFile,
   OpenTerminalResult,
   Project,
+  ProjectForgeStatus,
   Proposal,
   QAChannel,
   SavedSearch,
@@ -486,6 +487,13 @@ export function updateSettings(
 /** The agent prompt registry + current overrides (Settings → Agents & Prompts, §6.3.c). */
 export function getAgentPrompts(): Promise<AgentPromptInfo[]> {
   return fetch("/api/agents/prompts").then(json<AgentPromptInfo[]>);
+}
+
+/** A project's forge status: parsed remote + matching CLI capability (§6.4). */
+export function getProjectForge(slug: string, refresh = false): Promise<ProjectForgeStatus> {
+  return fetch(`/api/projects/${slug}/forge${refresh ? "?refresh=1" : ""}`).then(
+    json<ProjectForgeStatus>,
+  );
 }
 
 export function sendSessionMessage(sessionId: string, text: string): Promise<{ ok: boolean }> {

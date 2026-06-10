@@ -2,6 +2,7 @@ import {
   DELIVERY_MODES,
   PERMISSION_MODES,
   type Project,
+  type ProjectForgeStatus,
   type UpdateProjectInput,
   type WorktreeCheck,
 } from "@cadence/shared";
@@ -9,7 +10,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FolderGit2, Plus, Save, Sparkles, TriangleAlert, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { checkWorktreeReadiness, createProject, getProjects, updateProject } from "../../lib/api";
+import {
+  checkWorktreeReadiness,
+  createProject,
+  getProjectForge,
+  getProjects,
+  updateProject,
+} from "../../lib/api";
 import { formatDateTime, useDateFormats } from "../../lib/datetime";
 import { useServerMessages } from "../../lib/ws";
 import { ImportProjects } from "./ImportProjects";
@@ -184,8 +191,182 @@ function EditDrawer({ project, onClose }: { project: Project; onClose: () => voi
         />
         {save.isError ? <p className="mt-2 text-xs text-red-400">Couldn’t save changes.</p> : null}
 
+        <RepositoryCard project={project} />
         <WorktreeReadiness project={project} />
       </aside>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Repository / forge (§6.4.c)
+
+/** Pure presenter for the forge status lines — unit-testable without DOM plumbing. */
+export function forgeSummary(status: ProjectForgeStatus | undefined): {
+  badge: string | null;
+  webUrl: string | null;
+  cliLine: string | null;
+  hint: string | null;
+} {
+  if (!status?.remote) return { badge: null, webUrl: null, cliLine: null, hint: null };
+  const { remote, cli } = status;
+  const badge = remote.forge
+    ? `${remote.forge === "github" ? "GitHub" : "GitLab"} · ${remote.owner}/${remote.repo}`
+    : `${remote.host} · ${remote.owner}/${remote.repo}`;
+  if (!remote.forge) {
+    return {
+      badge,
+      webUrl: status.remote.webUrl,
+      cliLine: null,
+      hint: "Host not recognized — pick GitHub or GitLab below if this is a self-hosted instance.",
+    };
+  }
+  if (!cli) return { badge, webUrl: remote.webUrl, cliLine: null, hint: null };
+  const name = cli.cli;
+  if (!cli.installed) {
+    return {
+      badge,
+      webUrl: remote.webUrl,
+      cliLine: `✗ ${name} is not installed`,
+      hint: `brew install ${name}, then ${name} auth login — enables PR/MR features.`,
+    };
+  }
+  if (!cli.authenticated) {
+    return {
+      badge,
+      webUrl: remote.webUrl,
+      cliLine: `✗ ${name} installed but not signed in`,
+      hint: `${name} auth login — enables PR/MR features.`,
+    };
+  }
+  return {
+    badge,
+    webUrl: remote.webUrl,
+    cliLine: `✓ ${name} authenticated${cli.account ? ` as @${cli.account}` : ""}`,
+    hint: null,
+  };
+}
+
+/**
+ * Repository card (§6.4.c): editable git remote + forge override, the detected forge
+ * badge, and the matching CLI's capability with plain-language fix-it hints.
+ */
+function RepositoryCard({ project }: { project: Project }) {
+  const qc = useQueryClient();
+  const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const live = projects.data?.find((p) => p.slug === project.slug) ?? project;
+
+  const [remote, setRemote] = useState(live.gitRemote ?? "");
+  const [override, setOverride] = useState<string>(live.forgeOverride ?? "");
+  const dirty = remote.trim() !== (live.gitRemote ?? "") || (override || "") !== (live.forgeOverride ?? "");
+
+  const forge = useQuery({
+    queryKey: ["project-forge", project.slug, live.gitRemote, live.forgeOverride],
+    queryFn: () => getProjectForge(project.slug),
+    enabled: Boolean(live.gitRemote),
+  });
+
+  const saveRemote = useMutation({
+    mutationFn: () =>
+      updateProject(project.slug, {
+        gitRemote: remote.trim() || null,
+        forgeOverride: (override || null) as Project["forgeOverride"],
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["project-forge", project.slug] });
+    },
+  });
+
+  const refresh = useMutation({
+    mutationFn: () => getProjectForge(project.slug, true),
+    onSuccess: (data) =>
+      qc.setQueryData(["project-forge", project.slug, live.gitRemote, live.forgeOverride], data),
+  });
+
+  const summary = forgeSummary(forge.data);
+
+  return (
+    <div className="mt-6 rounded-lg border border-border bg-card/40 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">Repository</h3>
+        {live.gitRemote ? (
+          <button
+            type="button"
+            onClick={() => refresh.mutate()}
+            disabled={refresh.isPending}
+            className="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 disabled:opacity-50"
+          >
+            {refresh.isPending ? "Refreshing…" : "↻ Refresh status"}
+          </button>
+        ) : null}
+      </div>
+
+      <label className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+        Git remote
+        <input
+          value={remote}
+          onChange={(e) => setRemote(e.target.value)}
+          placeholder="git@github.com:acme/app.git"
+          className="rounded-md border border-border bg-card px-3 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      </label>
+
+      <label className="mt-2 flex flex-col gap-1 text-xs text-muted-foreground">
+        Forge (for self-hosted instances the host heuristic can’t classify)
+        <select
+          value={override}
+          onChange={(e) => setOverride(e.target.value)}
+          className="rounded-md border border-border bg-card px-3 py-2 text-xs outline-none"
+        >
+          <option value="">Auto-detect from host</option>
+          <option value="github">GitHub</option>
+          <option value="gitlab">GitLab</option>
+        </select>
+      </label>
+
+      {dirty ? (
+        <div className="mt-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => saveRemote.mutate()}
+            disabled={saveRemote.isPending}
+            className="rounded-md border border-primary/50 bg-primary/10 px-2 py-1 text-xs disabled:opacity-50"
+          >
+            {saveRemote.isPending ? "Saving…" : "Save repository"}
+          </button>
+        </div>
+      ) : null}
+
+      {live.gitRemote ? (
+        <div className="mt-3 flex flex-col gap-1 text-xs">
+          {forge.isLoading ? <span className="text-muted-foreground">Checking forge…</span> : null}
+          {summary.badge ? (
+            <span className="flex items-center gap-2">
+              <span className="rounded bg-muted px-1.5 py-0.5 font-medium">{summary.badge}</span>
+              {summary.webUrl ? (
+                <a
+                  href={summary.webUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  Open ↗
+                </a>
+              ) : null}
+            </span>
+          ) : null}
+          {summary.cliLine ? (
+            <span className={summary.cliLine.startsWith("✓") ? "text-emerald-400" : "text-amber-400"}>
+              {summary.cliLine}
+            </span>
+          ) : null}
+          {summary.hint ? <span className="text-muted-foreground">{summary.hint}</span> : null}
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-muted-foreground">
+          No git remote yet — add one to enable GitHub/GitLab features (PRs, reviews).
+        </p>
+      )}
     </div>
   );
 }
