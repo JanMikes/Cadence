@@ -8,9 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.2 (remove the Inbox view). **§6.1 is COMPLETE** — the runaway-spawn class of
-  bug is closed end-to-end (dedupe → budget → honest liveness → kill-at-boot → endpoint guards →
-  timeouts/kill-UX → live acceptance).
+- **Current step:** 6.3.a (prompt registry). §6.1 ✓ and §6.2 ✓ complete.
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -176,16 +174,17 @@ global AddTaskModal (`web/src/features/task/AddTaskModal.tsx`, openable via side
 bare `c`, and the Tauri global hotkey), and `status=inbox` tasks already appear as the Board’s inbox
 column. Nothing unique lives there (`web/src/features/inbox/Inbox.tsx`).
 
-- [ ] **6.2.a Remove view + nav.** Drop `"inbox"` from `ViewId` (`web/src/App.tsx:17-28` union /
+- [x] **6.2.a Remove view + nav.** Drop `"inbox"` from `ViewId` (`web/src/App.tsx:17-28` union /
   `AppShell.tsx:37-49` nav), delete `features/inbox/`, remap any stored/default view of `inbox` →
   `board` (check persisted last-view state, ⌘K palette entries, keyboard shortcuts, Tauri tray menu
   items if any reference it). Grep for `"inbox"` view references (do NOT touch the `inbox` **task
   status** — that stays).
   - Verify: typecheck/build/tests green; grep shows no dangling view refs; app boots to a valid view
-    when the previously-persisted view was `inbox`.
-- [ ] **6.2.b Docs touch-up.** Note the removal in `platform-definition.md` §10/UX nav list if it
+    when the previously-persisted view was `inbox`. ✓ 2026-06-10 (`2f4b38c`, 333 bun + 10 rust tests).
+- [x] **6.2.b Docs touch-up.** Note the removal in `platform-definition.md` §10/UX nav list if it
   enumerates views; one Journal line.
-  - Verify: docs consistent; commit.
+  - Verify: docs consistent; commit. ✓ 2026-06-10 — spec enumerates no nav views; all its “Inbox”
+    mentions are the lifecycle status (kept). Journal entry below.
 
 ---
 
@@ -558,3 +557,10 @@ yourself.
   new `clear-finished` endpoint (27 rows — incl. the original incident's residue); probe task
   cancelled. Caveat for the user: the dev gateway now runs as this session's background child — if
   it vanishes after the session closes, `bun run dev` (or Cadence.app) restarts it.
+- **2026-06-10 — 6.2 done → §6.2 COMPLETE** (`2f4b38c`). Inbox view removed: nav item, ViewId,
+  ⌘K “Go to Inbox”, view render, `features/inbox/` (incl. its tests), and the Tauri tray “Inbox”
+  item (TRAY_ITEMS 5→4, match arm, rust test — `cargo test --lib` 10/10). No persisted-view state
+  exists (no localStorage), so no migration needed. AddTaskModal copy → “Lands on the Board (Inbox
+  column)”. Two web tests asserted the removed copy/nav — updated (AppShell test now asserts Inbox
+  is ABSENT). Found: the tray `tray-navigate` emit has no web listener (pre-existing dead wire) —
+  left as-is, noted for a future wire-up. The `inbox` task status and Board column are untouched.

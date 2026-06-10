@@ -113,7 +113,8 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       signature), kill-at-boot reconcile + process-group kills, plan-approve idempotency,
       per-stage activity tracking, stage timeouts (15m/60m), Stop/Kill/Kill&retry + bulk-clear UX,
       refining-stalled attention items; verified by a zero-cost live incident replay
-- [ ] **6.2 Remove Inbox view** — capture modal + board inbox column cover it; nav simplification
+- [x] **6.2 Remove Inbox view** — **DONE 2026-06-10**: nav/view/palette/tray entries removed;
+      capture modal + board inbox column cover it
 - [ ] **6.3 Settings expansion** — per-agent editable prompts + per-agent model (registry +
       overrides), Czech `d.m.Y H:i:s` date/time format setting + central formatter, operations
       knobs (stuck threshold, timeouts, attempt caps, concurrency), composed context wired into
