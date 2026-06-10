@@ -9,7 +9,6 @@ import { Board } from "./features/board/Board";
 import { Calendar } from "./features/calendar/Calendar";
 import { Today } from "./features/digest/Today";
 import { Fleets } from "./features/fleets/Fleets";
-import { Inbox } from "./features/inbox/Inbox";
 import { Memory } from "./features/memory/Memory";
 import { Projects } from "./features/projects/Projects";
 import { SessionDetail } from "./features/session/SessionDetail";
@@ -150,7 +149,6 @@ export function App() {
         }
       >
         {view === "today" ? <Today onOpen={setSelectedId} /> : null}
-        {view === "inbox" ? <Inbox onOpen={setSelectedId} /> : null}
         {view === "board" ? <Board onOpen={setSelectedId} /> : null}
         {view === "calendar" ? <Calendar onOpenTask={setSelectedId} /> : null}
         {view === "projects" ? <Projects /> : null}

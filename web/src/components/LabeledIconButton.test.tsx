@@ -13,12 +13,12 @@ test("LabeledIconButton renders an icon AND a text label (never icon-only)", () 
 
 test("AppShell renders the themed shell with a labeled left-nav + content", () => {
   const html = renderToStaticMarkup(
-    <AppShell status="ok" activeView="inbox" onNavigate={() => {}}>
+    <AppShell status="ok" activeView="board" onNavigate={() => {}}>
       <div>main-content-here</div>
     </AppShell>,
   );
   expect(html).toContain("Cadence");
-  expect(html).toContain("Inbox");
+  expect(html).not.toContain("Inbox"); // the Inbox view was removed in 6.2
   expect(html).toContain("Board");
   expect(html).toContain("Settings");
   expect(html).toContain("main-content-here");

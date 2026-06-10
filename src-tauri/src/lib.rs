@@ -121,15 +121,15 @@ fn resolve_login_path() -> String {
 }
 
 /// Tray menu item ids — shared by the builder and the click handler so they can't drift.
-const TRAY_ITEMS: [(&str, &str); 5] = [
+/// ("inbox" was removed in 6.2 along with the Inbox view — capture + the Board cover it.)
+const TRAY_ITEMS: [(&str, &str); 4] = [
     ("open", "Open Cadence"),
     ("quick_capture", "Quick capture"),
     ("today", "Today"),
-    ("inbox", "Inbox"),
     ("quit", "Quit Cadence"),
 ];
 
-/// Build the tray menu (Open · Quick capture · Today · Inbox · — · Quit) with a separator before Quit.
+/// Build the tray menu (Open · Quick capture · Today · — · Quit) with a separator before Quit.
 /// Factored out so a mock-runtime test can assert the items without constructing a real tray icon.
 fn build_tray_menu<R: Runtime, M: Manager<R>>(app: &M) -> tauri::Result<Menu<R>> {
     let mut items = Vec::new();
@@ -164,7 +164,7 @@ fn setup_tray(app: &AppHandle<impl Runtime>) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_main(app),
-            "today" | "inbox" => {
+            "today" => {
                 show_main(app);
                 let _ = app.emit("tray-navigate", event.id().as_ref().to_string());
             }
@@ -486,7 +486,7 @@ mod tests {
         // constructed on the macOS main thread (which the test harness can't guarantee), so the menu
         // *structure* is the deterministic check and the live tray is a §Visual confirmation.
         let ids: Vec<&str> = TRAY_ITEMS.iter().map(|(id, _)| *id).collect();
-        assert_eq!(ids, ["open", "quick_capture", "today", "inbox", "quit"]);
+        assert_eq!(ids, ["open", "quick_capture", "today", "quit"]);
     }
 
     #[cfg(desktop)]

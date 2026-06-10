@@ -35,7 +35,7 @@ export function AddTaskButton({ onClick }: { onClick: () => void }) {
 }
 
 /** Quick-add modal openable from anywhere — the sidebar button, the ⌘K palette, or
- *  the global `c` shortcut. New tasks land in the Inbox to be refined later. */
+ *  the global `c` shortcut. New tasks land in the Board's Inbox column to be refined later. */
 export function AddTaskModal({
   open,
   onOpenChange,
@@ -156,7 +156,7 @@ export function AddTaskModal({
 
           <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
             <span className="text-xs text-muted-foreground">
-              Lands in your Inbox ·{" "}
+              Lands on the Board (Inbox column) ·{" "}
               <kbd className="rounded border border-border px-1 font-mono text-[10px]">⌘↵</kbd> to
               add ·{" "}
               <kbd className="rounded border border-border px-1 font-mono text-[10px]">Esc</kbd> to

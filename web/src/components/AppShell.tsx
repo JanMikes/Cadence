@@ -6,7 +6,6 @@ import {
   BrainCircuit,
   CalendarDays,
   FolderGit2,
-  Inbox,
   LayoutGrid,
   Settings,
   Sparkles,
@@ -16,7 +15,6 @@ import { cn } from "../lib/utils";
 
 export type ViewId =
   | "today"
-  | "inbox"
   | "board"
   | "calendar"
   | "projects"
@@ -34,9 +32,10 @@ interface NavItem {
 }
 
 // Left-nav. Every item is labeled (icon + text), per the UX-clarity rules (§10.1).
+// The Inbox view was removed in 6.2: capture lives in the global AddTaskModal and
+// inbox-status tasks appear as the Board's first column — one place to look.
 const NAV: NavItem[] = [
   { id: "today", label: "Today", icon: Sparkles },
-  { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "board", label: "Board", icon: LayoutGrid },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "projects", label: "Projects", icon: FolderGit2 },

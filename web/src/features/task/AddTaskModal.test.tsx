@@ -18,7 +18,7 @@ test("AddTaskModal is description-first: required description + optional title",
   expect(html).toContain("Add task");
   expect(html).toContain("Describe the task"); // the primary capture field
   expect(html).toContain("Title (optional"); // auto-named by the refinement agent when left empty
-  expect(html).toContain("Lands in your Inbox");
+  expect(html).toContain("Lands on the Board (Inbox column)");
   expect(html).toContain("<textarea"); // description
   expect(html).toContain("<input"); // optional title
   // The description textarea comes first (it's the default field).

@@ -15,7 +15,6 @@ interface PaletteItem {
 
 const NAV: Array<{ id: ViewId; label: string }> = [
   { id: "today", label: "Go to Today" },
-  { id: "inbox", label: "Go to Inbox" },
   { id: "board", label: "Go to Board" },
   { id: "calendar", label: "Go to Calendar" },
   { id: "projects", label: "Go to Projects" },
