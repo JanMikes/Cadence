@@ -559,6 +559,8 @@ export interface GlobalSettings {
   /** Date/time display patterns (PHP-style tokens, 6.3.d). Absent = the defaults
    *  (`d.m.Y` / `d.m.Y H:i:s`); the literal "SYSTEM" defers to the browser locale. */
   formats?: { date?: string; dateTime?: string };
+  /** Code-review settings (6.5.h). */
+  review?: { strictness?: "lenient" | "standard" | "strict" };
   /** Operations knobs (6.3.e) — §6.1 safety limits; absent keys use the built-in defaults. */
   operations?: {
     stuckThresholdMinutes?: number;
@@ -645,6 +647,55 @@ export interface ReviewDraftComment {
 
 export const REVIEW_VERDICTS = ["comment", "approve", "request_changes"] as const;
 export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
+export const FINDING_SEVERITIES = ["blocker", "major", "minor", "nit"] as const;
+
+/** One reviewer finding (6.5.c), with the human's workspace triage layered on (6.5.e). */
+export interface ReviewFinding {
+  severity: string;
+  file: string;
+  line: number;
+  title: string;
+  body: string;
+  evidence?: string;
+  suggestedPatch?: string | null;
+  /** Workspace decision: include (default) or dismiss. */
+  decision?: "include" | "dismiss";
+  /** Body as edited by the user before publishing. */
+  editedBody?: string;
+}
+
+/** The reviewer agent's output artifact (findings.json). */
+export interface ReviewFindings {
+  summary: string;
+  verdictSuggestion: ReviewVerdict;
+  findings: ReviewFinding[];
+  generatedAt: number;
+  /** Set once published to the forge (6.5.e). */
+  published?: { at: number; url: string | null; verdict: ReviewVerdict };
+}
+
+export const THREAD_CLASSIFICATIONS = ["must_fix", "question", "preference", "pushback"] as const;
+
+/** The responder's per-thread proposal (6.5.d), with workspace decisions layered on (6.5.f). */
+export interface ReviewThreadProposal {
+  threadId: string;
+  classification: string;
+  reply: string;
+  patch?: string | null;
+  resolves: boolean;
+  decision?: "apply" | "skip";
+  editedReply?: string;
+}
+
+/** The responder agent's proposal artifact (review-proposal.json). */
+export interface ReviewProposal {
+  threads: ReviewThreadProposal[];
+  overallNote: string;
+  generatedAt: number;
+  appliedAt?: number;
+  repliedAt?: number;
+}
 
 /** Git forge kinds Cadence understands (6.4). */
 export type ForgeKind = "github" | "gitlab";

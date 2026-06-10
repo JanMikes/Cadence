@@ -36,6 +36,10 @@ import { runReflector } from "./agents/reflector";
 import { AGENT_PROMPTS } from "./agents/prompts";
 import { findLiveStage } from "./agents/stage-guard";
 import { inferDirection, lookupPrAuthor, parsePrUrl, parseRemote, probeCli, projectForgeStatus } from "./forge";
+import { type ForgeReviewApi, forgeReviewApi } from "./forge-review";
+import { runReviewer } from "./agents/reviewer";
+import { runReviewResponderApply, runReviewResponderPropose } from "./agents/review-responder";
+import { finalizeReviewBranch, prepareReviewBranch } from "./review-branch";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
 import { type AgentRunner, runTriage } from "./agents/triage";
@@ -132,6 +136,8 @@ export interface ApiContext {
   approvals: ApprovalRegistry;
   /** PR/MR author lookup for review-direction inference (injectable; default = CLI, 6.5.a). */
   prAuthor?: (ref: PrRef) => string | null;
+  /** Forge review data layer factory (injectable for tests; default = real CLIs, 6.5.b). */
+  reviewApi?: (forge: "github" | "gitlab") => ForgeReviewApi;
 }
 
 /** Handle a REST request under /api/*. Always returns a Response. */
@@ -237,6 +243,26 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     ctx.hub.broadcast({ type: "event", name: "task:play", payload: taskId });
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     notifyOnTransition(ctx.hub, "ready", updated);
+    // Review tasks (§6.5) route to their own agents instead of the planner chain:
+    // perform → reviewer (findings → review); address → responder propose (→ plan_review).
+    if (task.taskType === "code_review") {
+      const direction = task.reviewDirection === "address" ? "address" : "perform";
+      const role = direction === "perform" ? "reviewer" : "review_responder";
+      void ctx.activity
+        .track(taskId, role, () =>
+          direction === "perform"
+            ? runReviewer(ctx.db, taskId, ctx.runAgent, ctx.reviewApi)
+            : runReviewResponderPropose(ctx.db, taskId, ctx.runAgent, ctx.reviewApi),
+        )
+        .then((outcome) => {
+          if (!outcome.ran) return;
+          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+          const after = getTask(ctx.db, taskId);
+          if (after) notifyOnTransition(ctx.hub, "implementing", after);
+        })
+        .catch((err) => console.error(`[cadence] review ${direction} failed for ${taskId}:`, err));
+      return Response.json(updated);
+    }
     // Kick off the Planner (read-only, plan mode) in the background; it writes an
     // approvable plan.md, then the task parks in Plan review — a distinct, visible
     // "waiting on you" state rather than sitting silently in "In progress".
@@ -343,6 +369,19 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const taskId = planApproveMatch[1] as string;
     const task = getTask(ctx.db, taskId);
     if (!task) return notFound(pathname);
+    // Review-address tasks (§6.5.d): approving the proposal triggers the APPLY chain
+    // (write lock + deterministic branch switch + agent) instead of the planner chain.
+    if (task.taskType === "code_review" && task.reviewDirection === "address") {
+      if (task.status !== "plan_review") {
+        return conflict(`the review proposal isn't awaiting approval (currently ${task.status})`, {
+          status: task.status,
+        });
+      }
+      updateTask(ctx.db, taskId, { status: "implementing" });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      void runReviewApplyChain(ctx, taskId);
+      return Response.json({ approved: true });
+    }
     // Idempotency guard (§6.1.f): approving while a chain is actually running must not
     // start a second one (double-click, double-POST). A task *stranded* in implementing
     // with no live chain (e.g. after a restart) may still re-approve — that's recovery,
@@ -1370,6 +1409,69 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
     }
   } catch (err) {
     console.error(`[cadence] execution failed for ${taskId}:`, err);
+  } finally {
+    release?.();
+  }
+}
+
+/**
+ * The review-apply chain (§6.5.d): hold the project write lock, check out the PR/MR
+ * head branch deterministically, run the apply agent on it, then push + restore the
+ * previous branch. Replies are NOT posted here — that stays an explicit workspace
+ * action (6.5.f).
+ */
+async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<void> {
+  let release: (() => void) | null = null;
+  let session: { previousBranch?: string } = {};
+  const task = getTask(ctx.db, taskId);
+  const ref = task?.reviewRef ? parsePrUrl(task.reviewRef) : null;
+  const cwd = resolveTaskCwd(ctx.db, taskId);
+  try {
+    const lockTarget = executionLockTarget(ctx.db, taskId);
+    if (lockTarget) {
+      release = await projectLocks.acquireWrite(lockTarget.projectId, {
+        guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId },
+        onQueued: () => {
+          ctx.activity.start(taskId, "queued");
+          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+        },
+      });
+      ctx.activity.end(taskId, "queued");
+    }
+
+    let branch: string | null = null;
+    try {
+      branch = ref ? (ctx.reviewApi ?? forgeReviewApi)(ref.forge).fetchMeta(ref).headBranch : null;
+    } catch {
+      branch = null;
+    }
+    if (!ref || !branch) {
+      appendContext(taskId, "Review apply: couldn't determine the PR/MR head branch — fix the link and re-approve.");
+      updateTask(ctx.db, taskId, { status: "plan_review" });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      return;
+    }
+    const prep = prepareReviewBranch(cwd, branch);
+    if (!prep.ok) {
+      appendContext(taskId, `Review apply: ${prep.reason}.`);
+      updateTask(ctx.db, taskId, { status: "plan_review" });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      return;
+    }
+    session = prep;
+
+    const outcome = await ctx.activity.track(taskId, "review_responder", () =>
+      runReviewResponderApply(ctx.db, taskId, cwd, ctx.runAgent),
+    );
+    const fin = finalizeReviewBranch(cwd, branch, session.previousBranch ?? branch);
+    if (!fin.pushed && outcome.status === "review") {
+      appendContext(taskId, `Review apply: changes committed but ${fin.reason ?? "push failed"} — push manually.`);
+    }
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    const after = getTask(ctx.db, taskId);
+    if (after) notifyOnTransition(ctx.hub, "implementing", after);
+  } catch (err) {
+    console.error(`[cadence] review apply failed for ${taskId}:`, err);
   } finally {
     release?.();
   }

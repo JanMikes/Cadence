@@ -6,9 +6,10 @@ import { buildDiscoveryPrompt } from "./discovery";
 import { buildImplementerPrompt } from "./implementer";
 import { AGENT_LIBRARY } from "./library";
 import { buildPlannerPrompt } from "./planner";
-import { AGENT_PROMPTS, renderTemplate } from "./prompts";
+import { AGENT_PROMPTS, getAgentPrompt, renderTemplate } from "./prompts";
 import { buildQuestionerPrompt } from "./questioner";
 import { buildReflectorPrompt } from "./reflector";
+import { buildReviewerPrompt } from "./reviewer";
 import { buildTriagePrompt } from "./triage";
 import { buildVerifierPrompt } from "./verifier";
 import { buildWorktreeCheckPrompt } from "./worktree-check";
@@ -76,6 +77,21 @@ const RENDERED: Record<string, string> = {
   ]),
   "reflector:none": buildReflectorPrompt([]),
   "worktree_check:static": buildWorktreeCheckPrompt(),
+  "reviewer:full": buildReviewerPrompt({
+    prKind: "PR",
+    reviewRef: "https://github.com/acme/widget/pull/42",
+    taskDescription: "Stabilize the login flake.",
+    strictness: "standard",
+    prMeta: "Title: Fix login\nAuthor: octocat · State: open",
+    prDiff: "diff --git a/login.ts b/login.ts\n+fixed",
+  }),
+  "review_responder:full": renderTemplate(getAgentPrompt("review_responder"), {
+    me: "janmikes",
+    prKind: "MR",
+    reviewRef: "https://gitlab.com/grp/app/-/merge_requests/7",
+    taskDescription: "Add SSO.",
+    threadsJson: '[{"id":"disc1"}]',
+  }),
   ...Object.fromEntries(
     Object.entries(AGENT_LIBRARY).map(([name, def]) => [`subagent:${name}`, def.prompt]),
   ),

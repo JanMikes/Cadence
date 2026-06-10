@@ -7,7 +7,9 @@ import { buildDiscoveryPrompt } from "../src/agents/discovery";
 import { buildImplementerPrompt } from "../src/agents/implementer";
 import { AGENT_LIBRARY } from "../src/agents/library";
 import { buildPlannerPrompt } from "../src/agents/planner";
+import { getAgentPrompt, renderTemplate } from "../src/agents/prompts";
 import { buildQuestionerPrompt } from "../src/agents/questioner";
+import { buildReviewerPrompt } from "../src/agents/reviewer";
 import { buildReflectorPrompt } from "../src/agents/reflector";
 import { buildTriagePrompt } from "../src/agents/triage";
 import { buildVerifierPrompt } from "../src/agents/verifier";
@@ -64,6 +66,21 @@ const snapshots: Record<string, string> = {
   "reflector:signals": buildReflectorPrompt(["accepted task.priority = P1", "edited task.deadline = 2026-01-01"]),
   "reflector:none": buildReflectorPrompt([]),
   "worktree_check:static": buildWorktreeCheckPrompt(),
+  "reviewer:full": buildReviewerPrompt({
+    prKind: "PR",
+    reviewRef: "https://github.com/acme/widget/pull/42",
+    taskDescription: "Stabilize the login flake.",
+    strictness: "standard",
+    prMeta: "Title: Fix login\nAuthor: octocat · State: open",
+    prDiff: "diff --git a/login.ts b/login.ts\n+fixed",
+  }),
+  "review_responder:full": renderTemplate(getAgentPrompt("review_responder"), {
+    me: "janmikes",
+    prKind: "MR",
+    reviewRef: "https://gitlab.com/grp/app/-/merge_requests/7",
+    taskDescription: "Add SSO.",
+    threadsJson: '[{"id":"disc1"}]',
+  }),
   ...Object.fromEntries(
     Object.entries(AGENT_LIBRARY).map(([name, def]) => [`subagent:${name}`, def.prompt]),
   ),

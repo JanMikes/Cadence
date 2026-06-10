@@ -116,6 +116,40 @@ export function writeSpec(id: string, content: string): void {
   writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
 }
 
+// ---------------------------------------------- review artifacts (6.5.c/d, JSON)
+
+/** Read the reviewer's findings artifact; null when no review ran yet. */
+export function readReviewFindings(id: string): import("@cadence/shared").ReviewFindings | null {
+  const file = paths.taskReviewFindings(id);
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as import("@cadence/shared").ReviewFindings;
+  } catch {
+    return null;
+  }
+}
+
+export function writeReviewFindings(id: string, findings: import("@cadence/shared").ReviewFindings): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(paths.taskReviewFindings(id), `${JSON.stringify(findings, null, 2)}\n`);
+}
+
+/** Read the responder's proposal artifact; null when none yet. */
+export function readReviewProposal(id: string): import("@cadence/shared").ReviewProposal | null {
+  const file = paths.taskReviewProposal(id);
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as import("@cadence/shared").ReviewProposal;
+  } catch {
+    return null;
+  }
+}
+
+export function writeReviewProposal(id: string, proposal: import("@cadence/shared").ReviewProposal): void {
+  mkdirSync(paths.taskDir(id), { recursive: true });
+  writeFileSync(paths.taskReviewProposal(id), `${JSON.stringify(proposal, null, 2)}\n`);
+}
+
 // ------------------------------------------------- task execution plan (plan.md)
 
 /** Read a task's implementation plan (plan.md frontmatter); empty if none yet. */

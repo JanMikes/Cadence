@@ -36,6 +36,8 @@ export interface GatewayOptions {
   enrich?: (cwd: string) => Promise<import("@cadence/shared").EnrichResult>;
   /** Override the PR/MR author lookup (tests avoid real gh/glab calls, 6.5.a). */
   prAuthor?: (ref: import("@cadence/shared").PrRef) => string | null;
+  /** Override the forge review data layer (tests avoid real gh/glab calls, 6.5.b). */
+  reviewApi?: (forge: "github" | "gitlab") => import("./forge-review").ForgeReviewApi;
   /** Override the one-shot agent runner (tests pass a mock; default real claude). */
   runAgent?: AgentRunner;
 }
@@ -139,6 +141,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
           openTerminal: opts.openTerminal ?? openInTerminal,
           enrich: opts.enrich ?? claudeEnrich,
           prAuthor: opts.prAuthor,
+          reviewApi: opts.reviewApi,
           runAgent: runAgentImpl,
           approvals,
         });

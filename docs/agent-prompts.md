@@ -139,3 +139,21 @@ stage re-runs. Bias: **when genuinely unsure, ask — don't fabricate scope.**
 ```json
 { "summary": "markdown", "branch": "string|null", "prUrl": "string|null" }
 ```
+
+---
+
+## §8 Reviewer agent (6.5.c — perform direction)
+
+Registered in the prompt registry as `reviewer` (editable in Settings → Agents & Prompts;
+default model opus). Cadence pre-fetches the PR/MR meta + diff deterministically via the
+forge data layer — the agent reviews against the live repo read-only and never publishes;
+findings land in the Review Workspace for human triage. See `AGENT_PROMPTS.reviewer` in
+`server/src/agents/prompts.ts` for the authoritative default template.
+
+## §9 Review responder agent (6.5.d — address direction)
+
+Registered as `review_responder` (default model opus). Propose phase classifies every
+unresolved thread (must_fix / question / preference / pushback — never blindly comply,
+never silently ignore) and drafts a fix/reply per thread; the human approves in the
+workspace; the apply phase then runs on the PR branch with Cadence handling the branch
+switching deterministically. See `AGENT_PROMPTS.review_responder` for the template.
