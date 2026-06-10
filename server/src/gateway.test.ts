@@ -579,6 +579,11 @@ test("execution slice (worktrees opted in): PLAY → plan → approve → Implem
   g(["add", "."]);
   g(["commit", "-q", "-m", "init"]);
 
+  // the work-product gate requires the run to leave real changes behind
+  implementerSideEffect = ({ cwd }) => {
+    writeFileSync(join(cwd, "feature.txt"), "made by the implementer\n");
+  };
+
   try {
     const project = (await fetch(`${gw.url}/api/projects`, {
       method: "POST",
@@ -652,6 +657,7 @@ test("execution slice (worktrees opted in): PLAY → plan → approve → Implem
     expect(merge.merged).toBe(true);
     expect(merge.task.status).toBe("done");
   } finally {
+    implementerSideEffect = null;
     delete process.env.CADENCE_WORKTREES;
     rmSync(repo, { recursive: true, force: true });
     rmSync(wtBase, { recursive: true, force: true });
@@ -1813,8 +1819,10 @@ test("request-changes re-runs the implementation chain → task returns to Revie
   g(["commit", "-q", "-m", "init"]);
 
   let implementerRuns = 0;
-  implementerSideEffect = async () => {
+  implementerSideEffect = async ({ cwd }) => {
     implementerRuns += 1;
+    // unique content per run — the work-product gate requires each run to change something
+    writeFileSync(join(cwd, "feature.txt"), `revision ${implementerRuns}\n`);
   };
   const pollStatus = async (id: string, want: string, tries = 200): Promise<string> => {
     let status = "";

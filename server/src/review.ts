@@ -9,6 +9,7 @@ import {
   clearExecutionState,
   isGitRepo,
   readExecutionState,
+  taskWorkEvidence,
   worktreePathFor,
 } from "./worktree";
 
@@ -39,7 +40,11 @@ export function taskDiff(db: Db, taskId: string): TaskDiff {
   if (!rootPath) return { mode, branch: null, diff: "" };
 
   if (mode === "apply_in_place") {
-    return { mode, branch: null, diff: git(["diff"], rootPath).stdout };
+    // Anchor at the run's fingerprint when one exists: "what changed since the run
+    // began" (commits + working tree) instead of whatever happens to be dirty —
+    // a shared tree may carry the user's unrelated WIP.
+    const anchor = readExecutionState(taskId)?.headShaBefore;
+    return { mode, branch: null, diff: git(anchor ? ["diff", anchor] : ["diff"], rootPath).stdout };
   }
   const branch = branchName(task);
   const wt = worktreePathFor(rootPath, task);
@@ -68,12 +73,25 @@ export interface MergeResult {
   message: string;
 }
 
-/** Merge the task's branch into the repo's base (the human "I merge" step). */
+/** Merge the task's branch into the repo's base (the human "I merge" step).
+ *  Done must mean delivered: a missing branch, an empty branch, or an
+ *  apply_in_place task with no attributable work refuses LOUDLY instead of
+ *  fabricating success (the route-state incident: a run killed mid-flight was
+ *  "merged" because the user's own dirty tree was credited to the task). */
 export function mergeTask(db: Db, taskId: string): MergeResult {
   const task = getTask(db, taskId);
   if (!task) return { ok: false, message: "task not found" };
   const mode = resolveDeliveryMode(db, taskId);
-  if (mode === "apply_in_place") return { ok: true, message: "changes already applied in place" };
+  if (mode === "apply_in_place") {
+    const evidence = taskWorkEvidence(db, taskId);
+    if (evidence.attributable && !evidence.hasWork) {
+      return {
+        ok: false,
+        message: `nothing was delivered — ${evidence.detail}; send the task back to implementation instead of marking it done`,
+      };
+    }
+    return { ok: true, message: "changes already applied in place" };
+  }
   const rootPath = repoRoot(db, taskId);
   if (!rootPath) return { ok: false, message: "no git repo to merge into" };
   const branch = branchName(task);
@@ -82,6 +100,18 @@ export function mergeTask(db: Db, taskId: string): MergeResult {
   const current = git(["rev-parse", "--abbrev-ref", "HEAD"], rootPath).stdout.trim();
   if (current === branch) {
     return { ok: false, message: `repo is still on ${branch} — switch back to the base branch first` };
+  }
+  const evidence = taskWorkEvidence(db, taskId);
+  if (evidence.attributable && !evidence.hasWork) {
+    return { ok: false, message: `nothing to merge — ${evidence.detail}` };
+  }
+  if (evidence.attributable && evidence.commitsAhead === 0 && evidence.dirty) {
+    // git would report "Already up to date" and the dirt would be lost from the
+    // task's record — make the half-finished state explicit instead.
+    return {
+      ok: false,
+      message: `the task's changes are uncommitted on ${branch} — the run didn't finish; request changes to re-run, or commit them manually`,
+    };
   }
   const r = git(["merge", "--no-ff", "-m", `Merge ${branch} (Cadence)`, branch], rootPath);
   if (!r.ok) return { ok: false, message: r.stderr.trim() };

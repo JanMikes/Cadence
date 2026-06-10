@@ -7,7 +7,7 @@ import { createProject } from "./projects";
 import { bootstrap } from "./store/store";
 import { createTask, updateTask } from "./tasks";
 import { mergeTask, taskDiff } from "./review";
-import { provisionWorktree } from "./worktree";
+import { beginInPlaceExecution, provisionWorktree } from "./worktree";
 
 let db: Db;
 let home: string;
@@ -76,15 +76,60 @@ test("mergeTask merges the branch into the repo's base", () => {
   expect(git(["branch", "--list", branch], repo)).toContain("cadence/");
 });
 
-test("apply_in_place diff reads the working tree; merge is a no-op", () => {
+test("apply_in_place diff reads the working tree; merge requires attributable work", () => {
   const project = createProject(db, { name: "InPlace", rootPath: repo });
   const task = createTask(db, { title: "Edit in place" });
   updateTask(db, task.id, { project: project.slug, deliveryMode: "apply_in_place", status: "review" });
-  writeFileSync(join(repo, "README.md"), "# r\nedited in place\n");
+
+  // No execution ever began → tree dirt is NOT the task's work; merging would
+  // fabricate a Done (the route-state incident).
+  writeFileSync(join(repo, "README.md"), "# r\nthe user's own WIP\n");
+  expect(mergeTask(db, task.id)).toMatchObject({ ok: false });
+  expect(mergeTask(db, task.id).message).toMatch(/nothing was delivered/);
+
+  // A recorded run that actually changed something merges fine — and the diff is
+  // anchored at the run's fingerprint.
+  git(["add", "."], repo);
+  git(["commit", "-q", "-m", "user wip committed"], repo);
+  beginInPlaceExecution(db, task.id);
+  writeFileSync(join(repo, "README.md"), "# r\nedited in place by the run\n");
 
   const d = taskDiff(db, task.id);
   expect(d.mode).toBe("apply_in_place");
   expect(d.branch).toBeNull();
-  expect(d.diff).toContain("edited in place");
+  expect(d.diff).toContain("edited in place by the run");
   expect(mergeTask(db, task.id)).toMatchObject({ ok: true });
+});
+
+test("mergeTask refuses a task branch that was never created (no work delivered)", () => {
+  const project = createProject(db, { name: "NoBranch", rootPath: repo });
+  const task = createTask(db, { title: "Never ran" });
+  updateTask(db, task.id, { project: project.slug, status: "review" });
+
+  const result = mergeTask(db, task.id);
+  expect(result.ok).toBe(false);
+  expect(result.message).toMatch(/never delivered/);
+});
+
+test("mergeTask refuses an empty task branch (zero commits ahead of base)", () => {
+  const project = createProject(db, { name: "EmptyBranch", rootPath: repo });
+  const task = createTask(db, { title: "Empty branch" });
+  updateTask(db, task.id, { project: project.slug, status: "review" });
+  provisionWorktree(db, task.id); // branch + worktree exist, but no commits, no edits
+
+  const result = mergeTask(db, task.id);
+  expect(result.ok).toBe(false);
+  expect(result.message).toMatch(/no commits and no changes/);
+});
+
+test("mergeTask refuses while the task's work sits uncommitted (run didn't finish)", () => {
+  const project = createProject(db, { name: "HalfDone", rootPath: repo });
+  const task = createTask(db, { title: "Half done" });
+  updateTask(db, task.id, { project: project.slug, status: "review" });
+  const wt = provisionWorktree(db, task.id);
+  writeFileSync(join(wt.path, "feature.txt"), "uncommitted\n"); // work exists but no commit
+
+  const result = mergeTask(db, task.id);
+  expect(result.ok).toBe(false);
+  expect(result.message).toMatch(/uncommitted/);
 });

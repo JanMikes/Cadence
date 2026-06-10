@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Db } from "./db/client";
 import { getProjectById } from "./projects";
@@ -167,11 +167,18 @@ export function executionLockTarget(
 
 /** Crash-safe runtime state for an in-place execution (execution.json): which
  *  branch to restore after delivery, and which untracked paths pre-existed (so a
- *  delivery commit never swallows the user's .env / scratch files). */
+ *  delivery commit never swallows the user's .env / scratch files). Also the
+ *  ATTRIBUTION FINGERPRINT: where HEAD and the tracked tree stood before the run,
+ *  so recovery/merge can tell the task's work apart from the user's (or another
+ *  actor's) changes in a shared working dir. */
 export interface InPlaceExecutionState {
   baseBranch: string | null;
   untrackedBefore: string[];
   startedAt: number;
+  /** HEAD sha when the run began — work exists iff the repo moved past it or new dirt appeared. */
+  headShaBefore?: string | null;
+  /** Tracked-dirty porcelain lines when the run began (apply_in_place runs in a possibly-dirty tree). */
+  dirtyBefore?: string[];
 }
 
 export function readExecutionState(taskId: string): InPlaceExecutionState | null {
@@ -195,7 +202,7 @@ export function clearExecutionState(taskId: string): void {
 
 /** Current branch name; falls back to the commit sha when detached (checkout of a
  *  sha restores the exact pre-execution state). */
-function currentBranch(rootPath: string): string {
+export function currentBranch(rootPath: string): string {
   const r = git(["rev-parse", "--abbrev-ref", "HEAD"], rootPath);
   if (r.ok && r.stdout && r.stdout !== "HEAD") return r.stdout;
   return git(["rev-parse", "HEAD"], rootPath).stdout;
@@ -228,11 +235,30 @@ function untrackedPaths(rootPath: string): string[] {
  */
 export function beginInPlaceExecution(db: Db, taskId: string): ExecutionTarget {
   const target = resolveExecutionCwd(db, taskId);
+
+  if (target.mode === "apply_in_place") {
+    // No checkout and no dirty-tree refusal (this mode's point is "work in my live
+    // tree"), but DO record the attribution fingerprint — without it, a dead run
+    // is indistinguishable from delivered work and the user's own dirt gets
+    // credited to the task (the route-state incident). Re-entry keeps the
+    // original snapshot: it still anchors what the task changed.
+    if (isGitRepo(target.cwd) && !readExecutionState(taskId)) {
+      writeExecutionState(taskId, {
+        baseBranch: null, // informational only — apply_in_place never switches branches
+        untrackedBefore: untrackedPaths(target.cwd),
+        startedAt: Date.now(),
+        headShaBefore: git(["rev-parse", "HEAD"], target.cwd).stdout || null,
+        dirtyBefore: statusLines(target.cwd, { tracked: true }),
+      });
+    }
+    return target;
+  }
   if (target.mode !== "in_place_branch" || !target.branch) return target;
   const root = target.cwd;
   const branch = target.branch;
 
-  if (currentBranch(root) === branch) {
+  const current = currentBranch(root);
+  if (current === branch) {
     // Re-entry (verify failed → re-approve, or a resumed run): keep the original
     // snapshot — it still describes the pre-execution tree.
     if (!readExecutionState(taskId)) {
@@ -240,9 +266,23 @@ export function beginInPlaceExecution(db: Db, taskId: string): ExecutionTarget {
         baseBranch: null, // unknown — a crash lost it; finalize will ask for a manual switch
         untrackedBefore: untrackedPaths(root),
         startedAt: Date.now(),
+        headShaBefore: null,
+        dirtyBefore: [],
       });
     }
     return target;
+  }
+
+  // Cross-task contamination guard: starting from another task's cadence/* branch
+  // would silently base this task's work (and its later merge) on unreviewed
+  // commits from that task. Restore the base first — boot does it automatically
+  // when safe (restoreAbandonedExecutions).
+  if (current.startsWith("cadence/")) {
+    throw new Error(
+      `in-place execution: ${root} is still on another task's branch (${current}) — ` +
+        "that execution didn't finish; restore the base branch first (Cadence does this " +
+        "automatically at startup when the tree is safe to move)",
+    );
   }
 
   const dirty = statusLines(root, { tracked: true });
@@ -258,7 +298,13 @@ export function beginInPlaceExecution(db: Db, taskId: string): ExecutionTarget {
   const branchExists = git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], root).ok;
   const r = git(branchExists ? ["checkout", branch] : ["checkout", "-b", branch], root);
   if (!r.ok) throw new Error(`in-place execution: git checkout failed: ${r.stderr}`);
-  writeExecutionState(taskId, { baseBranch: base, untrackedBefore, startedAt: Date.now() });
+  writeExecutionState(taskId, {
+    baseBranch: base,
+    untrackedBefore,
+    startedAt: Date.now(),
+    headShaBefore: git(["rev-parse", "HEAD"], root).stdout || null,
+    dirtyBefore: [],
+  });
   return target;
 }
 
@@ -315,4 +361,142 @@ export function finalizeInPlaceExecution(db: Db, taskId: string): FinalizeResult
   if (!r.ok) return { restored: false, reason: `git checkout ${state.baseBranch} failed: ${r.stderr}` };
   clearExecutionState(taskId);
   return { restored: true };
+}
+
+// ------------------------------------------------------- work-product evidence
+
+/**
+ * What we can honestly attribute to a task's execution. `hasWork` is the single
+ * verdict every consumer keys on: recovery promotes to Review only with it, merge
+ * refuses to mark Done without it, and the implementer doesn't advance an
+ * empty-handed run. `attributable: false` means the question is unanswerable
+ * (no git repo) — callers must not treat that as either delivered or empty.
+ */
+export interface WorkEvidence {
+  mode: ExecutionMode;
+  attributable: boolean;
+  hasWork: boolean;
+  /** Commits on the task branch ahead of its base (branch modes; 0 for apply_in_place). */
+  commitsAhead: number;
+  /** Uncommitted changes attributable to the task's run. */
+  dirty: boolean;
+  /** Human-readable explanation — goes on the task's context channel verbatim. */
+  detail: string;
+}
+
+function noEvidence(mode: ExecutionMode, attributable: boolean, detail: string): WorkEvidence {
+  return { mode, attributable, hasWork: false, commitsAhead: 0, dirty: false, detail };
+}
+
+/** Commits on `branch` not on `base`; 0 when either ref is unresolvable. */
+function commitsAhead(root: string, base: string, branch: string): number {
+  const r = git(["rev-list", "--count", `${base}..${branch}`], root);
+  return r.ok ? Number.parseInt(r.stdout, 10) || 0 : 0;
+}
+
+/**
+ * Inspect the repo for work attributable to this task. Read-only — never
+ * provisions a worktree or touches a branch.
+ *
+ * - worktree / in_place_branch: decisive — the task branch either has commits
+ *   ahead of base (or task-owned uncommitted changes) or it doesn't. Dirt in the
+ *   shared tree only counts while the repo is ON the task branch (the begin guard
+ *   refused pre-existing dirt, so on-branch dirt is the run's).
+ * - apply_in_place: anchored to the execution fingerprint (HEAD sha + dirty
+ *   snapshot recorded at begin). No fingerprint → no run ever began → no work.
+ *   Shared-tree caveat: changes made by the user DURING the run are
+ *   indistinguishable from the agent's — "changed since the run began" is the
+ *   honest best available.
+ */
+export function taskWorkEvidence(db: Db, taskId: string): WorkEvidence {
+  const task = getTask(db, taskId);
+  if (!task) return noEvidence("apply_in_place", false, "task not found");
+  const mode = executionMode(db, taskId);
+
+  if (mode === "apply_in_place") {
+    const cwd = resolveTaskCwd(db, taskId);
+    if (!isGitRepo(cwd)) {
+      return noEvidence(mode, false, "no git repo — work product can't be verified");
+    }
+    const state = readExecutionState(taskId);
+    if (!state?.headShaBefore) {
+      return noEvidence(mode, true, "no recorded execution for this task ever began — nothing attributable to it");
+    }
+    const headNow = git(["rev-parse", "HEAD"], cwd).stdout;
+    const moved = headNow !== state.headShaBefore;
+    const dirtyBefore = new Set(state.dirtyBefore ?? []);
+    const newDirt = statusLines(cwd, { tracked: true }).filter((l) => !dirtyBefore.has(l));
+    const untrackedBefore = new Set(state.untrackedBefore);
+    const newUntracked = untrackedPaths(cwd).filter((p) => !untrackedBefore.has(p));
+    const dirty = newDirt.length > 0 || newUntracked.length > 0;
+    if (!moved && !dirty) {
+      return noEvidence(mode, true, "the tree is unchanged since the run began — no work was delivered");
+    }
+    return {
+      mode,
+      attributable: true,
+      hasWork: true,
+      commitsAhead: 0,
+      dirty,
+      detail: moved
+        ? "the run committed work since it began"
+        : `the run changed ${newDirt.length + newUntracked.length} file(s) since it began`,
+    };
+  }
+
+  const rootPath = task.projectId ? getProjectById(db, task.projectId)?.rootPath : null;
+  if (!rootPath || !isGitRepo(rootPath)) {
+    return noEvidence(mode, false, "no git repo — work product can't be verified");
+  }
+  const branch = branchName(task);
+  const branchExists = git(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], rootPath).ok;
+  if (!branchExists) {
+    return noEvidence(mode, true, `the task branch ${branch} doesn't exist — the implementer never delivered any work`);
+  }
+  const current = currentBranch(rootPath);
+  const onBranch = current === branch;
+  const base = (onBranch ? readExecutionState(taskId)?.baseBranch : current) || "HEAD";
+  const ahead = commitsAhead(rootPath, base, branch);
+
+  let dirty = false;
+  const wt = worktreePathFor(rootPath, task);
+  if (existsSync(wt)) {
+    // An existing worktree is authoritative regardless of the project flag (it may
+    // have been toggled after provisioning — same rule as taskDiff). Isolated tree —
+    // any change in it is the task's.
+    dirty = statusLines(wt).length > 0;
+  } else if (onBranch) {
+    // On the task branch, tracked dirt is the run's (begin refused pre-existing dirt),
+    // and so are untracked files NOT in the pre-execution snapshot — exactly the set
+    // a delivery commit would pick up.
+    const untrackedBefore = new Set(readExecutionState(taskId)?.untrackedBefore ?? []);
+    dirty =
+      statusLines(rootPath, { tracked: true }).length > 0 ||
+      untrackedPaths(rootPath).some((p) => !untrackedBefore.has(p));
+  }
+
+  if (ahead === 0 && !dirty) {
+    return noEvidence(mode, true, `the task branch ${branch} has no commits and no changes — no work was delivered`);
+  }
+  return {
+    mode,
+    attributable: true,
+    hasWork: true,
+    commitsAhead: ahead,
+    dirty,
+    detail:
+      ahead > 0
+        ? `${branch} has ${ahead} commit(s) ahead of ${base}${dirty ? " plus uncommitted changes" : ""}`
+        : `${branch} has uncommitted changes (the run didn't finish committing)`,
+  };
+}
+
+/** Task ids with a persisted in-place execution state (execution.json) — the
+ *  crash-safe record of every run that may have left a repo on a task branch. */
+export function listExecutionStateTaskIds(): string[] {
+  try {
+    return readdirSync(paths.tasksDir()).filter((id) => existsSync(paths.taskExecution(id)));
+  } catch {
+    return [];
+  }
 }

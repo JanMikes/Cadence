@@ -204,3 +204,120 @@ test("reconcileOrphans KILLS an orphaned-but-alive one-shot — its result can n
     orphan.kill(9);
   }
 });
+
+// ------------------------------------------------ work attribution + boot repair
+
+import { mkdtempSync as mkd, writeFileSync as wf } from "node:fs";
+import { join as j } from "node:path";
+import { tmpdir as tmp } from "node:os";
+import { createProject } from "./projects";
+import { applyPlan } from "./agents/planner";
+import { restoreAbandonedExecutions } from "./watchdog";
+import { beginInPlaceExecution, branchName, readExecutionState } from "./worktree";
+
+function gitRepo(): string {
+  const repo = mkd(j(tmp(), "cadence-wd-repo-"));
+  const g = (args: string[]) => {
+    const r = Bun.spawnSync(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+    if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+    return r.stdout.toString().trim();
+  };
+  g(["init", "-q", "-b", "main"]);
+  g(["config", "user.email", "t@e.com"]);
+  g(["config", "user.name", "T"]);
+  wf(j(repo, "README.md"), "# r\n");
+  g(["add", "."]);
+  g(["commit", "-q", "-m", "init"]);
+  return repo;
+}
+
+function gitIn(repo: string, args: string[]): string {
+  const r = Bun.spawnSync(["git", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" });
+  return r.stdout.toString().trim();
+}
+
+test("INCIDENT REPLAY: a dead apply_in_place run is NOT promoted to review off the user's dirty tree", () => {
+  // The route-state incident (2026-06-10): implementer killed by a restart before
+  // doing anything; the user's own uncommitted work made taskDiff non-empty; the
+  // task sailed to review and was merged as done with zero delivered code.
+  const repo = gitRepo();
+  try {
+    const project = createProject(db, { name: "Shared", rootPath: repo });
+    const t = createTask(db, { title: "Preserve route state" });
+    updateTask(db, t.id, { project: project.slug, deliveryMode: "apply_in_place" });
+    applyPlan(t.id, { steps: [{ title: "implement it" }] }); // a plan exists
+    updateTask(db, t.id, { status: "ready" });
+    updateTask(db, t.id, { status: "implementing" });
+
+    wf(j(repo, "README.md"), "# r\nthe user's unrelated WIP\n"); // dirty tree ≠ task work
+
+    reconcileOrphans(db, new WsHub());
+
+    // honest recovery: no recorded run → plan_review (re-approve), NOT review
+    expect(getTask(db, t.id)?.status).toBe("plan_review");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a dead in-place run WITH committed branch work IS promoted to review", () => {
+  const repo = gitRepo();
+  try {
+    const project = createProject(db, { name: "InPlace", rootPath: repo });
+    const t = createTask(db, { title: "Real work" });
+    updateTask(db, t.id, { project: project.slug });
+    updateTask(db, t.id, { status: "ready" });
+    updateTask(db, t.id, { status: "implementing" });
+    beginInPlaceExecution(db, t.id); // checks out the task branch
+    wf(j(repo, "feature.txt"), "real\n");
+    gitIn(repo, ["add", "."]);
+    gitIn(repo, ["commit", "-q", "-m", "real work"]);
+
+    reconcileOrphans(db, new WsHub());
+
+    expect(getTask(db, t.id)?.status).toBe("review");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("restoreAbandonedExecutions secures interrupted work and restores the base branch", () => {
+  const repo = gitRepo();
+  try {
+    const project = createProject(db, { name: "Restore", rootPath: repo });
+    const t = createTask(db, { title: "Interrupted" });
+    updateTask(db, t.id, { project: project.slug });
+    wf(j(repo, ".env"), "SECRET=1\n"); // user's untracked file — must stay out
+    beginInPlaceExecution(db, t.id);
+    wf(j(repo, "half-done.txt"), "WIP from the dead run\n"); // uncommitted task work
+    expect(gitIn(repo, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(branchName(t));
+
+    const restored = restoreAbandonedExecutions(db, new WsHub());
+
+    expect(restored).toBe(1);
+    expect(gitIn(repo, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("main"); // base restored
+    expect(readExecutionState(t.id)).toBeNull(); // state cleared
+    // the WIP survived — committed on the task branch, not lost, not on main
+    const committed = gitIn(repo, ["show", "--name-only", "--pretty=format:", branchName(t)]);
+    expect(committed).toContain("half-done.txt");
+    expect(committed).not.toContain(".env");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("restoreAbandonedExecutions leaves a repo alone when a live run still owns the task", () => {
+  const repo = gitRepo();
+  try {
+    const project = createProject(db, { name: "Live", rootPath: repo });
+    const t = createTask(db, { title: "Still running" });
+    updateTask(db, t.id, { project: project.slug });
+    beginInPlaceExecution(db, t.id);
+    insertSession({ taskId: t.id, status: "running", pid: process.pid }); // genuinely alive
+
+    expect(restoreAbandonedExecutions(db, new WsHub())).toBe(0);
+    expect(gitIn(repo, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(branchName(t)); // untouched
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

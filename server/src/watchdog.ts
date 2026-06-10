@@ -5,11 +5,21 @@ import { sessions } from "./db/schema";
 import { isSessionRowAlive, killProcessTree, type LivenessProbe, REAL_PROBE } from "./liveness";
 import { notifyOnTransition } from "./notify";
 import { stuckIdleMs } from "./ops";
-import { taskDiff } from "./review";
+import { getProjectById } from "./projects";
 import { endSession, listSessions } from "./sessions";
 import { appendContext, readPlan } from "./store/store";
 import { getTask, listTasks, updateTask } from "./tasks";
 import { resolveTranscriptPath } from "./transcripts";
+import {
+  branchName,
+  commitInPlaceChanges,
+  currentBranch,
+  finalizeInPlaceExecution,
+  isGitRepo,
+  listExecutionStateTaskIds,
+  taskWorkEvidence,
+  type WorkEvidence,
+} from "./worktree";
 import type { WsHub } from "./ws";
 
 /**
@@ -64,26 +74,29 @@ function lastActivityMs(
 
 /**
  * Move a task stranded in an active-work state (implementing/verifying) to a visible,
- * actionable place: Review if the worktree has changes (inspect/merge), Plan review if a
- * plan exists (re-approve to retry), else Ready (re-PLAY). Always notifies. No-op if the
- * task isn't actually stranded. Returns true if it moved.
+ * actionable place: Review ONLY when there is work attributably the task's own
+ * (taskWorkEvidence — never raw tree dirt, which may be the user's or another
+ * actor's), Plan review if a plan exists (re-approve to retry), else Ready
+ * (re-PLAY). Always notifies. No-op if the task isn't actually stranded.
+ * Returns true if it moved.
  */
 export function recoverStrandedTask(db: Db, hub: WsHub, taskId: string, reason: string): boolean {
   const task = getTask(db, taskId);
   if (!task || !ACTIVE_WORK.has(task.status)) return false;
 
   let target = "ready";
-  let hasDiff = false;
+  let evidence: WorkEvidence | null = null;
   try {
-    hasDiff = (taskDiff(db, taskId).diff ?? "").trim().length > 0;
+    evidence = taskWorkEvidence(db, taskId);
   } catch {
-    hasDiff = false;
+    evidence = null;
   }
-  if (hasDiff) target = "review";
+  if (evidence?.attributable && evidence.hasWork) target = "review";
   else if (readPlan(taskId).steps.length > 0) target = "plan_review";
 
   try {
-    appendContext(taskId, `Auto-recovered: ${reason}. Moved ${task.status} → ${target}.`);
+    const why = evidence ? ` ${evidence.detail}.` : "";
+    appendContext(taskId, `Auto-recovered: ${reason}.${why} Moved ${task.status} → ${target}.`);
   } catch {
     // context is best-effort
   }
@@ -152,6 +165,60 @@ export function reconcileOrphans(db: Db, hub: WsHub, probe: LivenessProbe = REAL
     }
   }
   return ended;
+}
+
+/**
+ * Boot-time repo repair (runs AFTER reconcileOrphans, so no dead writer is still
+ * scribbling): every persisted in-place execution whose task branch still holds
+ * the project working dir gets its interrupted work SECURED (committed onto the
+ * task branch — the untracked-before snapshot keeps the user's files out) and the
+ * base branch RESTORED. Without this, the next task's run would refuse to start
+ * (contamination guard) or, worse before that guard existed, branch off the dead
+ * task's leftovers. Skips tasks that still have a genuinely live run (a warm chat
+ * working the task). Returns how many repos were restored.
+ */
+export function restoreAbandonedExecutions(db: Db, hub: WsHub): number {
+  const liveTaskIds = new Set(
+    listSessions(db)
+      .filter((s) => RUNNING.has(s.status) && s.taskId)
+      .map((s) => s.taskId as string),
+  );
+  let restored = 0;
+  for (const taskId of listExecutionStateTaskIds()) {
+    const task = getTask(db, taskId);
+    if (!task || liveTaskIds.has(taskId)) continue;
+    const rootPath = task.projectId ? getProjectById(db, task.projectId)?.rootPath : null;
+    if (!rootPath || !isGitRepo(rootPath)) continue;
+    const branch = branchName(task);
+    if (currentBranch(rootPath) !== branch) continue; // not holding the repo — nothing to repair
+
+    // Interrupted-but-real work must survive the restore: commit it onto the task
+    // branch (deterministic, snapshot-safe). A no-op when the run committed everything
+    // or never changed anything.
+    const secured = commitInPlaceChanges(rootPath, taskId, `cadence: secure interrupted work — ${task.title}`);
+    const fin = finalizeInPlaceExecution(db, taskId);
+    if (fin.restored) {
+      restored += 1;
+      appendContext(
+        taskId,
+        `Startup repair: ${secured.committed ? `interrupted work committed to ${branch} and ` : ""}` +
+          `the project dir restored to its base branch (was left on ${branch} by an interrupted run).`,
+      );
+      hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    } else {
+      hub.broadcast({
+        type: "event",
+        name: "notify",
+        payload: {
+          kind: "stalled",
+          title: "Project dir needs attention",
+          message: `${rootPath} is on ${branch} and couldn't be restored automatically: ${fin.reason}`,
+          taskId,
+        },
+      });
+    }
+  }
+  return restored;
 }
 
 /**

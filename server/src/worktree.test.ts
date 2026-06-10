@@ -204,3 +204,26 @@ test("finalizeInPlaceExecution refuses while tracked changes remain (nothing los
   expect(fin.reason).toMatch(/uncommitted/);
   expect(currentBranch()).toBe(branchName(task)); // left in place for inspection
 });
+
+test("contamination guard: a new in-place run refuses to start from another task's branch", () => {
+  const { task } = projectTask();
+  beginInPlaceExecution(db, task.id); // repo now on task A's branch (crash leaves it there)
+
+  const other = createTask(db, { title: "Another task" });
+  updateTask(db, other.id, { project: "repo" });
+  expect(() => beginInPlaceExecution(db, other.id)).toThrow(/another task's branch/);
+  expect(currentBranch()).toBe(branchName(task)); // untouched — no branch was created off A
+});
+
+test("apply_in_place begin records the attribution fingerprint (HEAD sha + dirty snapshot)", () => {
+  const { task } = projectTask();
+  writeFileSync(join(repo, "README.md"), "# pre-existing user dirt\n");
+  updateTask(db, task.id, { deliveryMode: "apply_in_place" });
+
+  beginInPlaceExecution(db, task.id);
+
+  expect(currentBranch()).toBe("main"); // never switches branches
+  const state = readExecutionState(task.id);
+  expect(state?.headShaBefore).toBeTruthy();
+  expect(state?.dirtyBefore?.length).toBe(1); // the user's dirt is snapshotted, not credited
+});

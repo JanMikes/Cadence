@@ -85,6 +85,10 @@ test("runImplementer runs in the worktree with full sandboxed access, → verify
   const calls: AgentRunOptions[] = [];
   const capture = (opts: AgentRunOptions): Promise<AgentResult> => {
     calls.push(opts);
+    // a real implementer leaves work behind — the work-product gate requires it
+    writeFileSync(join(opts.cwd, "feature.txt"), "done\n");
+    git(["add", "."], opts.cwd);
+    git(["commit", "-q", "-m", "feat"], opts.cwd);
     return ok();
   };
   const outcome = await runImplementer(db, task.id, capture);
@@ -120,6 +124,8 @@ test("worktrees disabled (default): runs in-place on the task branch with the re
   const calls: AgentRunOptions[] = [];
   const capture = (opts: AgentRunOptions): Promise<AgentResult> => {
     calls.push(opts);
+    // leave attributable work on the task branch (uncommitted is enough)
+    writeFileSync(join(opts.cwd, "README.md"), "# repo\nchanged\n");
     return ok();
   };
   const outcome = await runImplementer(db, task.id, capture);
@@ -168,4 +174,47 @@ test("Dangerous mode is refused without worktree isolation (apply_in_place)", as
   const outcome = await runImplementer(db, task.id, ok);
   expect(outcome.ran).toBe(false);
   expect(outcome.reason).toMatch(/Dangerous mode requires/);
+});
+
+test("work-product gate: an implementer that changes nothing does NOT advance to verifying", async () => {
+  const task = readyTask(); // worktree mode
+  applyPlan(task.id, { steps: [{ title: "Do the thing" }] });
+  approvePlan(task.id);
+
+  const outcome = await runImplementer(db, task.id, ok); // mock "succeeds" but writes nothing
+
+  expect(outcome.ran).toBe(false);
+  expect(outcome.reason).toMatch(/without delivering any changes/);
+  expect(getTask(db, task.id)?.status).toBe("implementing"); // the chain routes it onward, not the agent
+});
+
+test("work-product gate (apply_in_place): pre-existing user dirt is NOT credited as the task's work", async () => {
+  const project = createProject(db, { name: "Shared", rootPath: repo });
+  const task = createTask(db, { title: "In place no-op" });
+  updateTask(db, task.id, { project: project.slug, status: "implementing", deliveryMode: "apply_in_place" });
+  applyPlan(task.id, { steps: [{ title: "x" }] });
+  approvePlan(task.id);
+  writeFileSync(join(repo, "README.md"), "# the user's own WIP\n"); // dirt BEFORE the run
+
+  const outcome = await runImplementer(db, task.id, ok); // agent changes nothing further
+
+  expect(outcome.ran).toBe(false);
+  expect(outcome.reason).toMatch(/unchanged since the run began/);
+});
+
+test("work-product gate (apply_in_place): the run's own edits DO count", async () => {
+  const project = createProject(db, { name: "Shared2", rootPath: repo });
+  const task = createTask(db, { title: "In place real" });
+  updateTask(db, task.id, { project: project.slug, status: "implementing", deliveryMode: "apply_in_place" });
+  applyPlan(task.id, { steps: [{ title: "x" }] });
+  approvePlan(task.id);
+
+  const writeDuringRun = (opts: AgentRunOptions): Promise<AgentResult> => {
+    writeFileSync(join(opts.cwd, "README.md"), "# changed by the agent\n");
+    return ok();
+  };
+  const outcome = await runImplementer(db, task.id, writeDuringRun);
+
+  expect(outcome.ran).toBe(true);
+  expect(getTask(db, task.id)?.status).toBe("verifying");
 });

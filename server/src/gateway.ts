@@ -7,7 +7,7 @@ import { makeRecordingRunner } from "./agents/recording-runner";
 import { startGitContextSweep } from "./git-context";
 import { healStuckTasks } from "./heal";
 import { failStaleWorktreeCheckRuns } from "./projects";
-import { reconcileOrphans, startSessionWatchdog } from "./watchdog";
+import { reconcileOrphans, restoreAbandonedExecutions, startSessionWatchdog } from "./watchdog";
 import { ApprovalRegistry } from "./approvals";
 import { emitProposals } from "./proposals";
 import { startSweep } from "./sweep";
@@ -108,6 +108,11 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   if (opts.startWatcher !== false) {
     const orphans = reconcileOrphans(db, hub);
     if (orphans) console.log(`[cadence] reconciled ${orphans} orphaned session(s) from a previous run`);
+    // Repo repair AFTER the orphan kill (no dead writer still scribbling): secure
+    // interrupted in-place work onto its task branch and restore the base branch,
+    // so no project dir stays stranded on a cadence/* branch across restarts.
+    const repaired = restoreAbandonedExecutions(db, hub);
+    if (repaired) console.log(`[cadence] restored ${repaired} project dir(s) left on a task branch`);
     // A readiness check left "running" by the old process would show "Checking…" forever.
     const staleChecks = failStaleWorktreeCheckRuns(db);
     if (staleChecks) console.log(`[cadence] marked ${staleChecks} interrupted worktree check(s) failed`);

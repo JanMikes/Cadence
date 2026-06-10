@@ -3,7 +3,7 @@ import type { Db } from "../db/client";
 import { claudePermissionMode } from "../sessions";
 import { readPlan, readSpec } from "../store/store";
 import { getTaskDetail, resolvePermissionMode, updateTask } from "../tasks";
-import { beginInPlaceExecution, type ExecutionTarget } from "../worktree";
+import { beginInPlaceExecution, type ExecutionTarget, taskWorkEvidence } from "../worktree";
 import { getAgentPrompt, renderTemplate } from "./prompts";
 import { runAgent } from "./runner";
 import type { AgentRunner } from "./triage";
@@ -114,6 +114,21 @@ export async function runImplementer(
       reason: "implementer agent errored",
       branch: target.branch ?? undefined,
       worktreePath: target.worktreePath ?? undefined,
+    };
+  }
+
+  // Work-product gate: an agent that "succeeded" without changing anything must not
+  // advance — verifying nothing and reviewing nothing only fabricates a Done later.
+  // (An early bail — "too vague", "nothing to do" — is a legitimate agent outcome,
+  // but it belongs back with the human, not in the pipeline.)
+  const evidence = taskWorkEvidence(db, taskId);
+  if (evidence.attributable && !evidence.hasWork) {
+    return {
+      ran: false,
+      reason: `the implementer finished without delivering any changes (${evidence.detail})`,
+      branch: target.branch ?? undefined,
+      worktreePath: target.worktreePath ?? undefined,
+      costUsd: result.costUsd,
     };
   }
 

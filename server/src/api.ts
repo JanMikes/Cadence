@@ -1693,13 +1693,30 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
       runImplementer(ctx.db, taskId, ctx.runAgent),
     );
     if (!r.ran) {
-      // A graceful bail (dirty tree, unapproved plan, dangerous-without-worktree…) must
-      // be visible, not a silent stall: note the reason on the task's context channel.
+      // A graceful bail (dirty tree, no work product, dangerous-without-worktree…) must
+      // be visible AND actionable — not a silent stall in Implementing, which nothing
+      // re-enters. Note the reason, move the task back to Ready (PLAY reappears), notify.
       if (r.reason) {
-        appendContext(taskId, `Implementer didn't run: ${r.reason}`);
+        appendContext(taskId, `Implementer didn't deliver: ${r.reason}`);
         ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
-        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       }
+      const bailed = getTask(ctx.db, taskId);
+      if (bailed?.status === "implementing") {
+        const reverted = updateTask(ctx.db, taskId, { status: "ready" });
+        if (reverted) {
+          ctx.hub.broadcast({
+            type: "event",
+            name: "notify",
+            payload: {
+              kind: "stalled",
+              title: "Implementation didn't deliver",
+              message: `${reverted.title} — moved back to Ready${r.reason ? ` (${r.reason})` : ""}`,
+              taskId,
+            },
+          });
+        }
+      }
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       return;
     }
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
