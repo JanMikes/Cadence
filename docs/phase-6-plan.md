@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.5.b (forge review data layer).
+- **Current step:** 6.5.c (reviewer agent + prompt).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -338,7 +338,7 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
   propose-don’t-impose chips. Triage prompt updated to classify review tasks it recognizes.
   - Verify: paste a PR URL → proposed review task with inferred direction + matched project;
     frontmatter round-trip test. ✓ 2026-06-10 (403 tests).
-- [ ] **6.5.b Forge review data layer.** `server/src/forge-review.ts`, one interface, two impls:
+- [x] **6.5.b Forge review data layer.** `server/src/forge-review.ts`, one interface, two impls:
   fetch PR/MR meta + diff (`gh pr view --json …` / `gh pr diff`; `glab mr view` / `glab mr diff` ⚠
   verify flags); fetch review threads + comments (GitHub: `gh api repos/:o/:r/pulls/:n/comments` +
   reviews; thread resolution via GraphQL `resolveReviewThread` ⚠; GitLab: `glab api
@@ -346,7 +346,7 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
   inline comments (GitHub reviews API with `comments[]`; GitLab discussions with `position` ⚠);
   reply to a thread. Everything mockable; record fixtures for tests.
   - Verify: unit tests against recorded fixtures for both forges; real-API smoke is deferred to the
-    human acceptance run.
+    human acceptance run. ✓ 2026-06-10 (408 tests).
 - [ ] **6.5.c Reviewer agent.** Register `reviewer` in the prompt registry (template below, adapted
   to the codebase’s variable plumbing; also append both prompts to `docs/agent-prompts.md`). Runs in
   the repo with the PR branch available (read stage → read lock per worktree rules). Output: strict
@@ -654,3 +654,9 @@ yourself.
   opt) and best-effort in prod (CLI failure → direction defaults to perform). Triage's review
   classification never overrides a capture-time decision. Triage fixtures re-frozen (documented
   re-freeze flow) — first intentional template change since 6.3.a; all other agents byte-stable.
+- **2026-06-10 — 6.5.b done.** One ForgeReviewApi, gh/glab impls, all through the (now
+  stdin-capable) CliExec seam. **Decisions:** GitHub thread ids are GraphQL node ids → replies use
+  the addPullRequestReviewThreadReply mutation (REST replies need numeric ids we don't carry);
+  GitLab has no request-changes verdict → encoded as a bold note prefix + no approval; GitLab
+  inline comments resolve diff refs from the /versions endpoint per publish. ⚠ All payload shapes
+  doc-verified only — 6.5.i exercises the real CLIs.
