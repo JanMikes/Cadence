@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.5.e (Review Workspace UI — perform).
+- **Current step:** 6.5.g (board type filter + badges).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -358,7 +358,7 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
   (apply, after approval): implementer-style run on the PR branch (RW lock), commits fixes, runs
   relevant tests; replies stay queued for the workspace.
   - Verify: mock proposal round-trips; apply phase commits on a fixture repo branch (test).
-- [ ] **6.5.e Review Workspace UI — perform.** Header: PR title, `owner/repo`, `base ← head`,
+- [x] **6.5.e Review Workspace UI — perform.** Header: PR title, `owner/repo`, `base ← head`,
   author, CI chip, **Open on GitHub/GitLab** link. Findings list grouped by severity — 🔴 blocker /
   🟠 major / 🟡 minor / ⚪ nit — each card: `file:line`, title, explanation, code excerpt, suggested
   patch (diff-rendered), actions **Include · Edit · Dismiss** (labeled). Footer: verdict select
@@ -367,7 +367,7 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
   setup card; no `reviewRef` → input with validation.
   - Verify: seeded findings render; include/dismiss/edit persists to `reviewState`; publish confirm
     shows the exact payload; copy-markdown output is complete; gates green.
-- [ ] **6.5.f Review Workspace UI — address.** Threads pane (unresolved first; author, age,
+- [x] **6.5.f Review Workspace UI — address.** Threads pane (unresolved first; author, age,
   file:line, original comment). Per thread: classification chip (must-fix / question / preference /
   pushback), proposed diff (when code change), editable reply text, actions **Apply · Edit · Skip**.
   Footer, two explicit confirms: **Push fixes** (after apply phase) then **Post replies & resolve
@@ -673,3 +673,13 @@ yourself.
   artifacts + fixture-repo branch tests) + noted in docs/agent-prompts.md §8–9; fixtures re-frozen
   (26 snapshots). Note: artifacts are findings.json / review-proposal.json (review.md render
   folded into the workspace UI step, 6.5.e).
+- **2026-06-10 — 6.5.e+f done ✓ (423 tests).** Workspace lives in TaskDetail for review tasks
+  (PlanView/ReviewPanel machinery suppressed there — one clear surface per task type). Publish +
+  post-replies use the armed two-step confirm; the confirm label states the exact payload ("post N
+  comments + request changes"). Server-side publish filters dismissed findings (gateway test
+  proves they never leave the machine) and stamps `published` into the artifact; the replies
+  endpoint posts non-skipped replies, resolves marked threads, and tolerates per-thread failures
+  with a context note. Copy-as-Markdown via exported `findingsToMarkdown` (unit-tested: dismissed
+  excluded). Both flows end the task → done with the standard notification. Caught during
+  implementation: a python-generated escape produced an invalid template literal (`\\\``) — fixed
+  to `\\``; gates were red until then, honest catch by the test run.
