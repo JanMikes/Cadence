@@ -1106,6 +1106,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         operations?: Record<string, number | null>;
         /** Review settings (6.5.h). */
         review?: { strictness?: string | null };
+        /** Persisted UI flags (e.g. quickstartSeen); null/false clears a flag. */
+        ui?: { quickstartSeen?: boolean | null };
       };
       try {
         patch = (await req.json()) as typeof patch;
@@ -1165,6 +1167,12 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         if (v === "lenient" || v === "standard" || v === "strict") review.strictness = v;
         else delete review.strictness;
       }
+      // UI flags: true sets; null/false clears (clearing re-opens Quickstart on next launch).
+      const ui = { ...(current.ui ?? {}) };
+      if (patch.ui && "quickstartSeen" in patch.ui) {
+        if (patch.ui.quickstartSeen === true) ui.quickstartSeen = true;
+        else delete ui.quickstartSeen;
+      }
       const next = {
         ...current,
         ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
@@ -1176,6 +1184,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         ...(patch.formats || current.formats ? { formats } : {}),
         ...(patch.operations || current.operations ? { operations } : {}),
         ...(patch.review || current.review ? { review } : {}),
+        ...(patch.ui || current.ui ? { ui } : {}),
       };
       writeSettings(next);
       applyClaudeBinEnv(next); // export CADENCE_CLAUDE_BIN so agent spawns pick up the change

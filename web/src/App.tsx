@@ -1,6 +1,6 @@
 import type { HealthStatus } from "@cadence/shared";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
 import { Analytics } from "./features/analytics/Analytics";
 import { AttentionCenter } from "./features/attention/AttentionCenter";
@@ -15,12 +15,14 @@ import { SessionDetail } from "./features/session/SessionDetail";
 import { SessionPanel } from "./features/session/SessionPanel";
 import { NotificationsView } from "./features/notifications/NotificationsView";
 import { useNotifications } from "./features/notifications/store";
+import { Quickstart } from "./features/quickstart/Quickstart";
 import { CommandPalette } from "./features/search/CommandPalette";
 import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
+import { getSettings, updateSettings } from "./lib/api";
 import { ATTENTION_SHORTCUT } from "./lib/shortcuts";
 import { useTauriBridge } from "./lib/tauri";
 import { cn } from "./lib/utils";
@@ -56,6 +58,22 @@ export function App() {
   const notifications = useNotifications();
   const unread = notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0);
   const qc = useQueryClient();
+
+  // First launch only: auto-open the Quickstart guide, then persist that it was shown
+  // (server-side in settings.json — the UI keeps nothing in localStorage). After that it
+  // never auto-opens again; the bottom-of-sidebar "Quickstart" link reopens it on demand.
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const quickstartBooted = useRef(false);
+  useEffect(() => {
+    if (!settings.data || quickstartBooted.current) return;
+    quickstartBooted.current = true;
+    if (!settings.data.ui?.quickstartSeen) {
+      setView("quickstart");
+      updateSettings({ ui: { quickstartSeen: true } })
+        .then(() => qc.invalidateQueries({ queryKey: ["settings"] }))
+        .catch(() => {}); // non-fatal — worst case the guide shows once more
+    }
+  }, [settings.data, qc]);
 
   // Live-refresh the session lists, rolled-up task cost, and any open session detail as agent
   // stages record themselves and finish (the deep counterpart to the board's activity spinner).
@@ -158,6 +176,15 @@ export function App() {
         {view === "memory" ? <Memory /> : null}
         {view === "notifications" ? <NotificationsView onOpenTask={setSelectedId} /> : null}
         {view === "settings" ? <SettingsView /> : null}
+        {view === "quickstart" ? (
+          <Quickstart
+            onNavigate={(v) => {
+              setView(v);
+              setSelectedId(null);
+            }}
+            onAddTask={() => setAddTaskOpen(true)}
+          />
+        ) : null}
       </AppShell>
 
       {selectedId ? (

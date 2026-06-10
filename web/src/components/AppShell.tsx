@@ -7,6 +7,7 @@ import {
   CalendarDays,
   FolderGit2,
   LayoutGrid,
+  Rocket,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -23,7 +24,8 @@ export type ViewId =
   | "analytics"
   | "memory"
   | "notifications"
-  | "settings";
+  | "settings"
+  | "quickstart";
 
 interface NavItem {
   id: ViewId;
@@ -46,6 +48,9 @@ const NAV: NavItem[] = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "settings", label: "Settings", icon: Settings },
 ];
+
+// Pinned to the bottom of the sidebar: the re-openable first-launch guide.
+const NAV_BOTTOM: NavItem[] = [{ id: "quickstart", label: "Quickstart", icon: Rocket }];
 
 export interface AppShellProps {
   children: ReactNode;
@@ -70,6 +75,32 @@ export function AppShell({
   navBadges,
   primaryAction,
 }: AppShellProps) {
+  const renderItem = (item: NavItem) => {
+    const active = item.id === activeView;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        onClick={() => onNavigate(item.id)}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+          active
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+      >
+        <item.icon className="size-4" />
+        <span>{item.label}</span>
+        {navBadges?.[item.id] ? (
+          <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+            {navBadges[item.id]}
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
   return (
     <div className="flex h-full bg-background text-foreground">
       <aside className="flex w-56 shrink-0 flex-col border-r border-border bg-card/40">
@@ -80,38 +111,14 @@ export function AppShell({
 
         {primaryAction ? <div className="px-2 pt-2">{primaryAction}</div> : null}
 
-        <nav className="flex flex-col gap-1 p-2">
-          {NAV.map((item) => {
-            const active = item.id === activeView;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <item.icon className="size-4" />
-                <span>{item.label}</span>
-                {navBadges?.[item.id] ? (
-                  <span className="ml-auto inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
-                    {navBadges[item.id]}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
+        <nav className="flex flex-col gap-1 p-2">{NAV.map(renderItem)}</nav>
+
+        <nav className="mt-auto flex flex-col gap-1 border-t border-border p-2">
+          {NAV_BOTTOM.map(renderItem)}
         </nav>
 
         {status ? (
-          <div className="mt-auto border-t border-border p-3 text-xs text-muted-foreground">
-            {status}
-          </div>
+          <div className="border-t border-border p-3 text-xs text-muted-foreground">{status}</div>
         ) : null}
       </aside>
 

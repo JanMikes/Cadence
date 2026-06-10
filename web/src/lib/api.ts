@@ -480,6 +480,8 @@ export function updateSettings(
     operations?: Record<string, number | null>;
     /** Review settings (§6.5.h). */
     review?: { strictness?: string | null };
+    /** Persisted UI flags; null clears a flag (re-opens Quickstart on next launch). */
+    ui?: { quickstartSeen?: boolean | null };
   },
 ): Promise<GlobalSettings> {
   return fetch("/api/settings", {

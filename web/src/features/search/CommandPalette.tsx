@@ -24,6 +24,7 @@ const NAV: Array<{ id: ViewId; label: string }> = [
   { id: "memory", label: "Go to Memory" },
   { id: "notifications", label: "Go to Notifications" },
   { id: "settings", label: "Go to Settings" },
+  { id: "quickstart", label: "Go to Quickstart" },
 ];
 
 /** ⌘K / Ctrl+K command palette: full-text task search + jump-to actions (§10). */

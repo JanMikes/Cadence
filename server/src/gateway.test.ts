@@ -1432,6 +1432,34 @@ test("PATCH /api/settings stores operations knobs and clears invalid/null values
   expect(s.operations?.maxConcurrentAgents).toBeUndefined(); // back to the built-in default
 });
 
+test("PATCH /api/settings stores ui.quickstartSeen and clears it (Quickstart)", async () => {
+  let res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ui: { quickstartSeen: true } }),
+  });
+  let s = (await res.json()) as { ui?: { quickstartSeen?: boolean } };
+  expect(s.ui?.quickstartSeen).toBe(true);
+
+  // Survives unrelated patches (the merge keeps the ui group intact).
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ preferredTerminal: "iTerm2" }),
+  });
+  s = (await res.json()) as typeof s;
+  expect(s.ui?.quickstartSeen).toBe(true);
+
+  // null clears the flag → the guide auto-opens again on next launch.
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ui: { quickstartSeen: null } }),
+  });
+  s = (await res.json()) as typeof s;
+  expect(s.ui?.quickstartSeen).toBeUndefined();
+});
+
 test("GET /api/projects/:slug/forge detects the forge from the remote (§6.4.a/b)", async () => {
   const project = (await fetch(`${gw.url}/api/projects`, {
     method: "POST",

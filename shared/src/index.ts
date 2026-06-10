@@ -581,6 +581,11 @@ export interface GlobalSettings {
     maxStageAttemptsPer24h?: number;
     maxConcurrentAgents?: number;
   };
+  /** Persisted UI state (server-side — the web app keeps nothing in localStorage). */
+  ui?: {
+    /** The Quickstart guide auto-opens on first launch only; set once it has been shown. */
+    quickstartSeen?: boolean;
+  };
 }
 
 /** Wire shape of one agent's prompt definition + current override (GET /api/agents/prompts, 6.3.c). */
