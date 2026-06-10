@@ -341,6 +341,13 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       .track(taskId, "planner", () => runPlanner(ctx.db, taskId, ctx.runAgent))
       .then((p) => {
         if (!p.ran) {
+          // The Planner stopped to ask the user — the task is already parked in
+          // Needs-input with Q&A cards + a notification. Answering moves it back to
+          // Ready; PLAY then re-runs the Planner with the answers in its context.
+          if (p.askedUser) {
+            ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+            return;
+          }
           // No plan came back (agent produced no JSON): don't strand the task in
           // Implementing with nothing running — put it back on PLAY and say why.
           recoverFailedPlay(ctx, taskId, "the Planner produced no plan");
@@ -846,7 +853,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     );
     if (outcome.ran) {
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-      if (outcome.status === "needs_feedback") {
+      // An interactive ask already notified with a role-specific title.
+      if (outcome.status === "needs_feedback" && !outcome.askedUser) {
         const t = getTask(ctx.db, taskId);
         if (t) notifyOnTransition(ctx.hub, before?.status, t);
       }
@@ -1976,6 +1984,12 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
       runImplementer(ctx.db, taskId, ctx.runAgent),
     );
     if (!r.ran) {
+      // Stopped to ask the user — already parked in Needs-input with Q&A cards and a
+      // notification; reverting to Ready here would bury the questions.
+      if (r.askedUser) {
+        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+        return;
+      }
       // A graceful bail (dirty tree, no work product, dangerous-without-worktree…) must
       // be visible AND actionable — not a silent stall in Implementing, which nothing
       // re-enters. Note the reason, move the task back to Ready (PLAY reappears), notify.
@@ -2032,6 +2046,9 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
           });
         }
       }
+    } else if (v.askedUser) {
+      // Stopped to ask the user — already surfaced as Needs-input with Q&A cards.
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
     } else if (v.reason) {
       // Verifier bail (no JSON, missing worktree…) must be visible, not a silent
       // stall in Verifying — same contract as the implementer bail above.
@@ -2178,8 +2195,11 @@ export function maybeTriageOnCapture(ctx: AutonomyContext, taskId: string): void
       if (!outcome.ran) return;
       ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
       if (outcome.status === "needs_feedback") {
-        const t = getTask(ctx.db, taskId);
-        if (t) notifyOnTransition(ctx.hub, "inbox", t);
+        // An interactive ask already notified with a role-specific title.
+        if (!outcome.askedUser) {
+          const t = getTask(ctx.db, taskId);
+          if (t) notifyOnTransition(ctx.hub, "inbox", t);
+        }
         return;
       }
       await continueRefinement(ctx, taskId);
@@ -2204,8 +2224,11 @@ async function continueRefinement(ctx: AutonomyContext, taskId: string): Promise
   if (!disc.ran) return;
   ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
   if (disc.status === "needs_feedback") {
-    const t = getTask(ctx.db, taskId);
-    if (t) notifyOnTransition(ctx.hub, "refining", t);
+    // An interactive ask already notified with a role-specific title.
+    if (!disc.askedUser) {
+      const t = getTask(ctx.db, taskId);
+      if (t) notifyOnTransition(ctx.hub, "refining", t);
+    }
     return;
   }
   // Refining with unknowns → the Questioner turns them into Q&A cards.
@@ -2215,7 +2238,7 @@ async function continueRefinement(ctx: AutonomyContext, taskId: string): Promise
     );
     if (!q.ran) return;
     ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-    if (q.status === "needs_feedback") {
+    if (q.status === "needs_feedback" && !q.askedUser) {
       const t = getTask(ctx.db, taskId);
       if (t) notifyOnTransition(ctx.hub, "refining", t);
     }

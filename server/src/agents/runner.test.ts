@@ -7,6 +7,8 @@ const MOCK_CMD = [process.execPath, join(import.meta.dir, "..", "testing", "mock
 
 afterEach(() => {
   delete process.env.CADENCE_MOCK_AGENT_RESULT;
+  delete process.env.CADENCE_MOCK_AGENT_ASK;
+  delete process.env.CADENCE_MOCK_AGENT_DENIALS;
 });
 
 test("modelForRole maps roles to default models", () => {
@@ -87,6 +89,40 @@ test("runAgent spawns the child as its own process-group leader (§6.1.e) so kil
   process.kill(-(pid as unknown as number), "SIGKILL"); // group kill must work
   const res = await done; // close fires; an empty run resolves (no output) rather than hanging
   expect(res.text).toBe("");
+});
+
+test("runAgent stops a run that calls AskUserQuestion and surfaces the ask (no 15-min hang)", async () => {
+  process.env.CADENCE_MOCK_AGENT_ASK = "1";
+  const started = Date.now();
+  const res = await runAgent({ cwd: tmpdir(), role: "planner", prompt: "plan it", command: MOCK_CMD });
+  // The mock hangs for 60s after asking — the runner must kill it on sight of the tool_use.
+  expect(Date.now() - started).toBeLessThan(10_000);
+  expect(res.asks).toHaveLength(1);
+  expect(res.asks?.[0]?.tool).toBe("AskUserQuestion");
+  expect(res.asks?.[0]?.toolUseId).toBe("toolu_mock_ask");
+  const input = res.asks?.[0]?.input as { questions: Array<{ question: string }> };
+  expect(input.questions[0]?.question).toBe("Where should the button live?");
+  // A run stopped for an ask is a handoff, not a mystery failure.
+  expect(res.errorDetail ?? null).toBeNull();
+});
+
+test("runAgent harvests permission_denials from the result event (name-agnostic catch-all)", async () => {
+  process.env.CADENCE_MOCK_AGENT_DENIALS = "1";
+  const res = await runAgent({ cwd: tmpdir(), role: "discovery", prompt: "x", command: MOCK_CMD });
+  expect(res.asks).toHaveLength(1);
+  expect(res.asks?.[0]?.tool).toBe("SomeFutureInteractiveTool");
+  expect(res.asks?.[0]?.input).toEqual({ x: 1 });
+});
+
+test("runAgent reports errorDetail for an empty/failed run instead of staying silent", async () => {
+  const res = await runAgent({
+    cwd: tmpdir(),
+    role: "discovery",
+    prompt: "x",
+    command: ["bash", "-c", "echo boom >&2; exit 3"],
+  });
+  expect(res.text).toBe("");
+  expect(res.errorDetail).toContain("boom");
 });
 
 test("defaultStageTimeoutMs: write-stages get 60m, read-stages 15m (§6.1.g)", () => {

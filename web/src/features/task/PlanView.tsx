@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, ListChecks } from "lucide-react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { useActivity } from "../../lib/activity";
 import { approvePlan, getPlan } from "../../lib/api";
 
 /**
@@ -31,18 +32,37 @@ export function PlanView({
     },
   });
 
+  // "Planning…" only when a Planner run is verifiably alive (display-logic rule:
+  // status alone can lie — a task stays "implementing" after a planner dies).
+  const activeStage = useActivity(taskId);
+
   const steps = plan.data?.steps ?? [];
   if (steps.length === 0) {
     // The Planner only runs in the window between PLAY and Plan review (status
     // "implementing", §7.4). Anywhere else an empty plan just means none was
     // written (e.g. merged without one) — show nothing, not a stale "Planning…".
     if (!plan.data || status !== "implementing") return null;
+    if (activeStage === "planner" || activeStage === "queued") {
+      return (
+        <section className="mt-5 rounded-lg border border-border bg-card/40 p-4">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <ListChecks className="size-4" /> Plan
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">Planning… the Planner is drafting steps.</p>
+        </section>
+      );
+    }
+    // No plan AND no live planner: be honest about the interruption instead of
+    // showing an eternal "Planning…" (no silent dead ends, §10).
     return (
-      <section className="mt-5 rounded-lg border border-border bg-card/40 p-4">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <ListChecks className="size-4" /> Plan
+      <section className="mt-5 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-amber-400">
+          <AlertTriangle className="size-4" /> Plan
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Planning… the Planner is drafting steps.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          No plan yet and the Planner isn’t running — it was likely interrupted. Check “What
+          happened” below; to retry, move the task back to Ready and press PLAY again.
+        </p>
       </section>
     );
   }

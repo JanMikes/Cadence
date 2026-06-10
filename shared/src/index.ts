@@ -733,6 +733,19 @@ export interface SubagentDef {
   model?: string;
 }
 
+/**
+ * An interactive request claude made mid-run that a headless one-shot can't answer
+ * (AskUserQuestion, ExitPlanMode, a permission-gated tool…). Captured live from the
+ * `tool_use` stream and, generically for ANY denied tool, from the result event's
+ * `permission_denials` — so new interactive tools are still caught by name-agnostic
+ * detection even before we know about them.
+ */
+export interface InteractiveAsk {
+  tool: string;
+  toolUseId: string | null;
+  input: unknown;
+}
+
 /** Result of a one-shot agent run (`claude -p --output-format json`) — Phase 2. */
 export interface AgentResult {
   /** The final result text. */
@@ -744,6 +757,10 @@ export interface AgentResult {
   isError: boolean;
   /** The raw parsed output object from claude. */
   raw: unknown;
+  /** Interactive requests the run made that nobody could answer (headless). */
+  asks?: InteractiveAsk[];
+  /** Diagnostic for a failed/empty run (stderr tail, exit code) — never silent. */
+  errorDetail?: string | null;
 }
 
 /** Per-agent user override (6.3.b): only set fields persist; an absent field means default. */
@@ -1282,7 +1299,7 @@ export interface TaskDiff {
 export interface TaskRunReport {
   at: number; // epoch ms — when the run finished
   role: string;
-  status: "done" | "failed";
+  status: "done" | "failed" | "needs_input";
   costUsd: number | null;
   sessionId: string | null;
   model: string | null;

@@ -21,6 +21,8 @@ export interface VerifierOutcome {
   passed?: boolean;
   status?: string;
   reason?: string;
+  /** True when the run stopped on an interactive ask — already surfaced as Needs-input. */
+  askedUser?: boolean;
 }
 
 /** Diverse, independent reviewer lenses injected per verify run (spec §7.2). */
@@ -124,7 +126,15 @@ export async function runVerifier(
     agentsJson: agentsJson(VERIFY_SUBAGENTS),
   });
 
+  // Stopped to ask for human input — already surfaced as Q&A + Needs-input.
+  if (result.asks?.length) return { ran: false, askedUser: true };
+
   const j = (result.json ?? null) as VerifierJson | null;
-  if (!j || typeof j !== "object") return { ran: false, reason: "verifier returned no JSON" };
+  if (!j || typeof j !== "object") {
+    return {
+      ran: false,
+      reason: `verifier returned no JSON${result.errorDetail ? ` — ${result.errorDetail}` : ""}`,
+    };
+  }
   return applyVerify(db, taskId, j);
 }

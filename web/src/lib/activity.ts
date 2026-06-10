@@ -98,7 +98,9 @@ function subscribeStore(listener: () => void): () => void {
 
 const getSnapshot = (): Record<string, ActivityInfo> => busy;
 
-/** Human label for an autonomy stage, for the spinner caption. */
+/** Human label for an autonomy stage, for the spinner caption. Every pipeline stage
+ *  has its own word — a generic "Working…" hides WHAT is happening (e.g. a card in
+ *  the In-progress column that is actually still planning, not implementing). */
 export function stageLabel(stage: string): string {
   return (
     {
@@ -106,9 +108,14 @@ export function stageLabel(stage: string): string {
       discovery: "Refining…",
       refine: "Refining…",
       questioner: "Preparing questions…",
+      planner: "Planning…",
+      implementer: "Implementing…",
+      verifier: "Verifying…",
+      delivery: "Delivering…",
       reviewer: "Reviewing…",
       review_responder: "Addressing feedback…",
       queued: "Waiting…",
+      heal: "Recovering…",
     }[
       stage
     ] ?? "Working…"
@@ -123,6 +130,7 @@ export function stageNoun(stage: string): string {
       discovery: "Refining",
       refine: "Refining",
       questioner: "Questions",
+      planner: "Planning",
       implementer: "Implementing",
       verifier: "Verifying",
       delivery: "Delivering",
@@ -155,6 +163,11 @@ export function useActivityInfo(taskId: string): ActivityInfo | null {
 export function _resetActivity(): void {
   busy = {};
   emit();
+}
+
+/** Test-only: inject an activity entry (what an activity:start event would do). */
+export function _setActivity(taskId: string, stage: string | null): void {
+  setBusy(taskId, stage);
 }
 
 /** Test-only: subscribe (wires the WS handlers) without a React render. */

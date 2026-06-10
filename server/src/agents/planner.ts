@@ -16,6 +16,9 @@ export interface PlannerJson {
 export interface PlannerOutcome {
   ran: boolean;
   steps?: number;
+  /** True when the run stopped on an interactive ask — the task is already parked in
+   *  Needs-input with Q&A cards; callers must NOT treat it as a failed PLAY. */
+  askedUser?: boolean;
 }
 
 export function buildPlannerPrompt(task: { title: string; body: string }, spec: string): string {
@@ -85,6 +88,11 @@ export async function runPlanner(
       permissionMode: "plan",
     }),
   );
+
+  // The Planner stopped to ask (the recording wrapper already parked the task in
+  // Needs-input with Q&A cards). Answers land on the context channel and feed the
+  // next PLAY — report the handoff so the caller doesn't "recover" over it.
+  if (result.asks?.length) return { ran: false, askedUser: true };
 
   const j = (result.json ?? null) as PlannerJson | null;
   if (!j || typeof j !== "object") return { ran: false };

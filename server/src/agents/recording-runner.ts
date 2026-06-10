@@ -8,6 +8,7 @@ import { appendRunReport } from "../store/store";
 import { getTask } from "../tasks";
 import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
+import { applyInteractiveAsks, describeAsks } from "./interactive";
 import { getAgentModel, projectPromptLayer } from "./prompts";
 import { type AgentRunOptions, runAgent } from "./runner";
 import { assertConcurrencyCapacity, assertStageIdle } from "./stage-guard";
@@ -144,20 +145,33 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
           hub.broadcast({ type: "event", name: "session:event", payload: { sessionId: id, event } });
         },
       });
+      // The run stopped because the agent needed a human (AskUserQuestion, ExitPlanMode,
+      // a denied tool…) — not a failure, a handoff. Surface it the way Cadence surfaces
+      // every ask: Q&A cards + Needs-input + a context note (§10, never a dead end).
+      const askedUser = (result.asks?.length ?? 0) > 0;
+      if (askedUser) applyInteractiveAsks(db, hub, opts.taskId, role, result.asks ?? []);
       // A run that errored or produced no parseable output is a failure worth seeing —
       // the transcript still exists, and that's exactly when you want to read it.
-      const ok = !result.isError && (result.text.trim() !== "" || result.json != null);
-      finish({ status: ok ? "done" : "failed", costUsd: result.costUsd });
+      const ok = !askedUser && !result.isError && (result.text.trim() !== "" || result.json != null);
+      finish({ status: askedUser ? "awaiting_feedback" : ok ? "done" : "failed", costUsd: result.costUsd });
       // Durable account of what this stage said/did (runs.md — content truth): the
-      // final text, or the structured JSON when that's all the agent returned.
+      // final text, the structured JSON, the ask that stopped it, or the error detail —
+      // never a bare "(no output)".
       appendRunReport(opts.taskId, {
         at: Date.now(),
         role,
-        status: ok ? "done" : "failed",
+        status: askedUser ? "needs_input" : ok ? "done" : "failed",
         costUsd: result.costUsd ?? null,
         sessionId: id,
         model: opts.model ?? getAgentModel(role) ?? null,
-        output: result.text.trim() || (result.json != null ? JSON.stringify(result.json, null, 2) : ""),
+        output: askedUser
+          ? `Stopped to ask for your input — the agent ${describeAsks(result.asks ?? [])}. Any questions were added to this task's Q&A; answer them and run the stage again.`
+          : result.text.trim() ||
+            (result.json != null
+              ? JSON.stringify(result.json, null, 2)
+              : result.errorDetail
+                ? `The run failed before producing output: ${result.errorDetail}`
+                : ""),
       });
       return result;
     } catch (err) {

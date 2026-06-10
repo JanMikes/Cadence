@@ -37,6 +37,8 @@ export interface TriageOutcome {
   needFromUser?: string;
   /** True when triage abstained on the project and asked via a Q&A card. */
   askedProject?: boolean;
+  /** True when the run stopped on an interactive ask (already surfaced + notified). */
+  askedUser?: boolean;
 }
 
 /** Question id of the "which project?" card triage writes when it can't route confidently. */
@@ -234,6 +236,10 @@ export async function runTriage(
       permissionMode: "plan",
     }),
   );
+
+  // The run stopped to ask for human input — the recording wrapper surfaced it
+  // (Q&A + Needs-input). Report it as handled so callers don't retry on top.
+  if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
 
   const j = (result.json ?? null) as TriageJson | null;
   if (!j || typeof j !== "object") return { ran: false }; // couldn't parse — leave in Inbox

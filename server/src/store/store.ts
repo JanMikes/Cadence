@@ -299,7 +299,7 @@ export function readRunReports(id: string): import("@cadence/shared").TaskRunRep
         current = {
           at: typeof meta.at === "number" ? meta.at : 0,
           role: meta.role ?? "agent",
-          status: meta.status === "failed" ? "failed" : "done",
+          status: meta.status === "failed" || meta.status === "needs_input" ? meta.status : "done",
           costUsd: typeof meta.costUsd === "number" ? meta.costUsd : null,
           sessionId: meta.sessionId ?? null,
           model: meta.model ?? null,

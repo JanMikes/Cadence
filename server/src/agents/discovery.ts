@@ -27,6 +27,8 @@ export interface DiscoveryOutcome {
   status?: string;
   unknowns?: string[];
   needFromUser?: string;
+  /** True when the run stopped on an interactive ask (already surfaced + notified). */
+  askedUser?: boolean;
 }
 
 /** Explorers injected per discovery run via --agents (read-only, §7.2/§7.3). */
@@ -144,6 +146,11 @@ export async function runDiscovery(
     }),
   );
 
+  // The run stopped to ask for human input — the recording wrapper already turned the
+  // ask into Q&A cards + Needs-input + a note. Don't pile a misleading "no parseable
+  // JSON" failure on top of a perfectly explained handoff.
+  if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
+
   const j = (result.json ?? null) as DiscoveryJson | null;
   // The model didn't return usable JSON (or the run errored) — DON'T strand the task in Refining.
   // Surface it as Needs-Feedback with a visible note so it's recoverable, not silently stuck.
@@ -151,8 +158,9 @@ export async function runDiscovery(
     updateTask(db, taskId, { status: "needs_feedback" });
     appendContext(
       taskId,
-      "Discovery couldn't turn the agent's response into a spec (no parseable JSON). " +
-        "Add more detail to the task, or run Claude on it manually.",
+      "Discovery couldn't turn the agent's response into a spec (no parseable JSON" +
+        (result.errorDetail ? ` — ${result.errorDetail}` : "") +
+        "). Add more detail to the task and use “Refine again”, or run Claude on it manually.",
     );
     return { ran: true, status: "needs_feedback" };
   }

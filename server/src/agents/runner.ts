@@ -1,4 +1,4 @@
-import type { AgentResult, ClaudeEvent } from "@cadence/shared";
+import type { AgentResult, ClaudeEvent, InteractiveAsk } from "@cadence/shared";
 import { spawn } from "node:child_process";
 import { killGroup } from "../liveness";
 import { opsSettings } from "../ops";
@@ -52,6 +52,61 @@ export interface AgentRunOptions {
   onEvent?: (event: ClaudeEvent) => void;
 }
 
+/**
+ * Tools that exist to talk to a human RIGHT NOW. In a headless `claude -p` run the CLI
+ * auto-denies them (tool_result `is_error` + "Answer questions?" / "Exit plan mode?"),
+ * the model flounders, and the run burns time producing nothing usable — verified
+ * against binary v2.1.x and live incidents (2026-06-10). The moment one appears in the
+ * stream we already hold its full input (the questions / the plan), so the right move
+ * is: stop the run and hand the ask to the user. Unknown future interactive tools are
+ * still caught generically via the result event's `permission_denials` (see below).
+ */
+const INTERACTIVE_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode"]);
+
+/**
+ * Standing contract appended to every one-shot system prompt: nobody is watching the
+ * run, so interactive tools can only dead-end (prevention layer; detection above is
+ * the safety net for when the model ignores it — plan mode actively nudges it to).
+ */
+export const NON_INTERACTIVE_CONTRACT =
+  "NON-INTERACTIVE RUN: this is an unattended one-shot — no human can see or answer anything " +
+  "until it ends. Never use interactive tools (AskUserQuestion, ExitPlanMode, or anything that " +
+  "waits for a person); they fail here. If you are missing information or need a decision, state " +
+  "the open questions in your final output using the response format your instructions define, " +
+  "then stop.";
+
+/** Interactive tool_use blocks in an `assistant` stream event (incl. subagent events). */
+function interactiveAsksIn(ev: Record<string, unknown>): InteractiveAsk[] {
+  if (ev.type !== "assistant") return [];
+  const message = ev.message as { content?: unknown } | undefined;
+  const content = Array.isArray(message?.content) ? message.content : [];
+  const asks: InteractiveAsk[] = [];
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block?.type === "tool_use" && INTERACTIVE_TOOLS.has(String(block.name))) {
+      asks.push({
+        tool: String(block.name),
+        toolUseId: typeof block.id === "string" ? block.id : null,
+        input: block.input ?? null,
+      });
+    }
+  }
+  return asks;
+}
+
+/**
+ * Name-agnostic catch-all: the final `result` event lists EVERY tool call the CLI
+ * denied (`permission_denials: [{tool_name, tool_use_id, tool_input}]`) — including
+ * interactive tools we don't know about yet. Forward-compatible by construction.
+ */
+function denialAsks(ev: Record<string, unknown>): InteractiveAsk[] {
+  const denials = Array.isArray(ev.permission_denials) ? ev.permission_denials : [];
+  return (denials as Array<Record<string, unknown>>).map((d) => ({
+    tool: String(d?.tool_name ?? "unknown"),
+    toolUseId: typeof d?.tool_use_id === "string" ? d.tool_use_id : null,
+    input: d?.tool_input ?? null,
+  }));
+}
+
 /** Try to parse the agent's result text as JSON (tolerates ```json fences). */
 export function parseAgentJson(text: string): unknown | null {
   const t = text.trim();
@@ -103,7 +158,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
   // Per-call > per-agent override (Settings, §6.3.b) > role default.
   const model = opts.model ?? getAgentModel(opts.role);
   if (model) args.push("--model", model);
-  if (opts.appendSystemPrompt) args.push("--append-system-prompt", opts.appendSystemPrompt);
+  // Every one-shot carries the non-interactive contract — composed after any
+  // caller-provided layer so it always lands (prevention; detection backs it up).
+  const appendSystemPrompt = opts.appendSystemPrompt
+    ? `${opts.appendSystemPrompt}\n\n${NON_INTERACTIVE_CONTRACT}`
+    : NON_INTERACTIVE_CONTRACT;
+  args.push("--append-system-prompt", appendSystemPrompt);
   if (opts.resumeSessionId) args.push("--resume", opts.resumeSessionId);
   // --session-id and --resume are mutually exclusive; resume already owns its session id.
   else if (opts.sessionId) args.push("--session-id", opts.sessionId);
@@ -126,6 +186,8 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
     let sawAny = false;
     let buf = "";
     let err = "";
+    const asks: InteractiveAsk[] = [];
+    let stoppedForAsk = false;
     const handleLine = (line: string): void => {
       if (!line) return;
       try {
@@ -135,6 +197,24 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
           if (typeof ev.type === "string") opts.onEvent?.(ev as ClaudeEvent);
           // Remember the result event (or the last object, for mocks emitting one blob).
           if (ev.type === "result" || last == null || last.type !== "result") last = ev;
+          // Interactive ask in flight → we already hold the full question/plan payload,
+          // and headless claude can only dead-end on it (auto-deny, then flounder or
+          // hang). Stop the run NOW and hand the ask to the caller — don't burn the
+          // stage timeout on a conversation nobody can have.
+          const live = interactiveAsksIn(ev);
+          if (live.length) {
+            asks.push(...live);
+            if (!stoppedForAsk) {
+              stoppedForAsk = true;
+              if (child.pid != null) killGroup(child.pid, "SIGKILL");
+              else child.kill("SIGKILL");
+            }
+          }
+          // Catch-all for tools we don't know: every denied call is listed here.
+          if (ev.type === "result") {
+            const seen = new Set(asks.map((a) => a.toolUseId).filter(Boolean));
+            asks.push(...denialAsks(ev).filter((a) => !a.toolUseId || !seen.has(a.toolUseId)));
+          }
         }
       } catch {
         // Tolerate non-JSON noise (the schema is unversioned — §7).
@@ -168,12 +248,17 @@ export async function runAgent(opts: AgentRunOptions): Promise<AgentResult> {
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
       handleLine(buf.trim()); // a final line without a trailing newline
-      // Surface a failed/empty run instead of swallowing it (the caller turns this into a visible note).
-      if ((code && code !== 0) || !sawAny) {
-        const detail = err.trim() || `exit ${code ?? "?"}`;
+      const result = toAgentResult(last);
+      if (asks.length) result.asks = asks;
+      // Surface a failed/empty run instead of swallowing it — on the result itself
+      // (callers turn it into a visible note), not just the server log. A run we
+      // stopped for an interactive ask is not a failure; the ask explains it.
+      if (!stoppedForAsk && ((code && code !== 0) || !sawAny)) {
+        const detail = err.trim() || `claude exited with code ${code ?? "?"} and no output`;
+        result.errorDetail = detail.slice(0, 1000);
         console.warn(`[cadence] agent (${opts.role ?? "?"}) produced no output: ${detail.slice(0, 500)}`);
       }
-      resolve(toAgentResult(last));
+      resolve(result);
     });
   });
 }

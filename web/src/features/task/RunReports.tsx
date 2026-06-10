@@ -38,10 +38,12 @@ export function RunReports({ taskId }: { taskId: string }) {
                     className={
                       r.status === "done"
                         ? "rounded bg-green-500/15 px-1 py-0.5 text-[10px] text-green-400"
-                        : "rounded bg-red-500/15 px-1 py-0.5 text-[10px] text-red-400"
+                        : r.status === "needs_input"
+                          ? "rounded bg-amber-500/15 px-1 py-0.5 text-[10px] text-amber-400"
+                          : "rounded bg-red-500/15 px-1 py-0.5 text-[10px] text-red-400"
                     }
                   >
-                    {r.status === "done" ? "finished" : "failed"}
+                    {r.status === "done" ? "finished" : r.status === "needs_input" ? "needs your input" : "failed"}
                   </span>
                 </span>
                 <span className="shrink-0 text-muted-foreground">

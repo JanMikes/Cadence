@@ -21,6 +21,7 @@ import {
   getTaskSessions,
   playTask,
   recheckGitContext,
+  refineTask,
   spawnSession,
   updateTask,
 } from "../../lib/api";
@@ -136,6 +137,27 @@ export function TaskDetail({
     onSuccess: invalidateTask,
   });
 
+  // Manual "run refinement again" — the recovery action when refinement failed or
+  // the user added context after the fact. The endpoint resolves when the run is
+  // DONE (it can take minutes); the button shows pending and the toast reports the
+  // real outcome (visible feedback rule).
+  const refine = useMutation({
+    mutationFn: () => refineTask(taskId),
+    onSuccess: (r) => {
+      invalidateTask();
+      toast(
+        r.status === "ready"
+          ? "Refinement finished — task is Ready ✓"
+          : r.status === "needs_feedback"
+            ? "Refinement needs your input — see the questions and context on the task."
+            : r.ran
+              ? "Refinement finished."
+              : "Refinement couldn’t run.",
+      );
+    },
+    onError: () => toast("Refinement is already running (or the task is busy)."),
+  });
+
   // Manual git re-check ("did this merge yet?") — always answers with a toast so
   // the click visibly did something, even when nothing changed.
   const recheckGit = useMutation({
@@ -214,6 +236,26 @@ export function TaskDetail({
         {task ? (
           <>
             <QACards taskId={taskId} status={task.status} onResolved={resolved} />
+
+            {task.status === "needs_feedback" ? (
+              // The escape hatch for a stalled refinement (e.g. the agent failed and
+              // parked the task here): one visible action, not a dead end. Answering
+              // open questions advances on its own; this re-runs Discovery with all
+              // the context added so far.
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-border bg-card/40 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Added more context, or did refinement fail? Re-run it — answers and notes feed the
+                  next run.
+                </p>
+                <LabeledIconButton
+                  icon={<RotateCcw />}
+                  label={refine.isPending ? "Refining…" : "Refine again"}
+                  size="sm"
+                  onClick={() => refine.mutate()}
+                  disabled={refine.isPending}
+                />
+              </div>
+            ) : null}
 
             {task.status === "ready" ? (
               <button

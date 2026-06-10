@@ -15,6 +15,9 @@ export interface ImplementerOutcome {
   branch?: string;
   worktreePath?: string;
   costUsd?: number;
+  /** True when the run stopped on an interactive ask — the task is already parked in
+   *  Needs-input with Q&A cards; callers must not revert it to Ready. */
+  askedUser?: boolean;
 }
 
 export function buildImplementerPrompt(
@@ -108,10 +111,22 @@ export async function runImplementer(
     permissionMode: claudeMode,
   });
 
+  // Stopped to ask for human input — already surfaced as Q&A + Needs-input by the
+  // recording wrapper. Hand back a marker, not a failure.
+  if (result.asks?.length) {
+    return {
+      ran: false,
+      askedUser: true,
+      branch: target.branch ?? undefined,
+      worktreePath: target.worktreePath ?? undefined,
+      costUsd: result.costUsd,
+    };
+  }
+
   if (result.isError) {
     return {
       ran: false,
-      reason: "implementer agent errored",
+      reason: `implementer agent errored${result.errorDetail ? ` — ${result.errorDetail}` : ""}`,
       branch: target.branch ?? undefined,
       worktreePath: target.worktreePath ?? undefined,
     };

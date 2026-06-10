@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { createProject } from "../projects";
 import { listTaskSessions, taskCostUsd } from "../sessions";
-import { bootstrap, readRunReports } from "../store/store";
-import { createTask } from "../tasks";
+import { bootstrap, readQa, readRunReports } from "../store/store";
+import { createTask, getTask } from "../tasks";
 import { WsHub } from "../ws";
 import { makeRecordingRunner } from "./recording-runner";
 import type { AgentRunOptions } from "./runner";
@@ -178,6 +178,64 @@ test("persists each stage run's final output as a run report (runs.md)", async (
   expect(reports[0]?.output).toContain("I implemented the feature");
   // the report's session pointer matches the recorded session row
   expect(reports[0]?.sessionId).toBe(listTaskSessions(db, t.id)[0]?.id ?? "");
+});
+
+test("a run stopped on an interactive ask becomes Q&A cards + Needs-input, not a failure", async () => {
+  const t = createTask(db, { title: "ask me things" });
+  const broadcasts: Array<{ name: string; payload?: unknown }> = [];
+  const hub = {
+    broadcast: (msg: { name: string; payload?: unknown }) => broadcasts.push(msg),
+  } as unknown as WsHub;
+  const run = makeRecordingRunner({
+    db,
+    hub,
+    base: async () => ({
+      text: "",
+      json: null,
+      costUsd: 0.02,
+      sessionId: "x",
+      isError: false,
+      raw: {},
+      asks: [
+        {
+          tool: "AskUserQuestion",
+          toolUseId: "toolu_1",
+          input: {
+            questions: [
+              {
+                question: "Where should the Cancel button live?",
+                header: "Placement",
+                multiSelect: false,
+                options: [{ label: "Task detail" }, { label: "Board card" }],
+              },
+            ],
+          },
+        },
+      ],
+    }),
+  });
+
+  await run({ cwd: "/tmp/proj", role: "planner", prompt: "p", taskId: t.id });
+
+  // The ask became an answerable Q&A card…
+  const qa = readQa(t.id);
+  expect(qa.questions).toHaveLength(1);
+  expect(qa.questions[0]).toMatchObject({
+    text: "Where should the Cancel button live?",
+    type: "single_choice",
+    options: ["Task detail", "Board card"],
+    why: "Placement",
+  });
+  // …the task is parked where the user looks for questions…
+  expect(getTask(db, t.id)?.status).toBe("needs_feedback");
+  // …the session/run report say "needs input", not "failed"…
+  expect(listTaskSessions(db, t.id)[0]?.status).toBe("awaiting_feedback");
+  const reports = readRunReports(t.id);
+  expect(reports[0]?.status).toBe("needs_input");
+  expect(reports[0]?.output).toContain("Where should the Cancel button live?");
+  // …and the user was notified with a role-specific title.
+  const notify = broadcasts.find((b) => b.name === "notify");
+  expect((notify?.payload as { title: string }).title).toContain("Planner");
 });
 
 test("a failed run still leaves a run report (with the failure visible)", async () => {

@@ -101,6 +101,13 @@ Per turn, in order:
   `total_cost_usd`, `usage` (input/output/cache tokens), `modelUsage`, `num_turns`,
   `stop_reason`, `duration_ms`, `ttft_ms`, `is_error`, `permission_denials`.
 
+⚠️ **Interactive tools in headless `-p` runs** (`AskUserQuestion`, `ExitPlanMode`, any
+permission-gated tool): the CLI **auto-denies** them (`tool_result is_error:true`, content
+`"Answer questions?"` / `"Exit plan mode?"`); the run may continue degraded, exit empty, or
+hang. The full ask payload is visible live in the `assistant` `tool_use` block, and every
+denial lands in `result.permission_denials`. Cadence's detection + handling:
+[claude-interaction-handling.md](claude-interaction-handling.md) (✅ verified 2026-06-10).
+
 ### 3.2a Subscription usage windows (✅ verified 2026-06-10, the data behind `/usage`)
 `GET https://api.anthropic.com/api/oauth/usage` with headers
 `Authorization: Bearer <accessToken>` + `anthropic-beta: oauth-2025-04-20` returns:

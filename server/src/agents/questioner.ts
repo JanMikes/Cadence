@@ -22,6 +22,8 @@ export interface QuestionerOutcome {
   ran: boolean;
   status?: string;
   questions?: QAQuestion[];
+  /** True when the run stopped on an interactive ask (already surfaced + notified). */
+  askedUser?: boolean;
 }
 
 export function buildQuestionerPrompt(spec: string, task: { title: string }): string {
@@ -75,6 +77,10 @@ export async function runQuestioner(
       permissionMode: "plan",
     }),
   );
+
+  // The run itself stopped to ask (AskUserQuestion) — the recording wrapper already
+  // turned that into Q&A cards + Needs-input, which is this stage's job anyway.
+  if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
 
   const j = (result.json ?? null) as QuestionerJson | null;
   if (!j || !Array.isArray(j.questions)) {
