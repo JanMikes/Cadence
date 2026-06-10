@@ -11,6 +11,8 @@ import { onReconnect, subscribe as subscribeWs, subscribeConnection, getConnecti
 export interface ActivityInfo {
   stage: string;
   startedAt: number;
+  /** Human context for the stage — e.g. WHO a "queued" execution is waiting for. */
+  detail?: string | null;
 }
 
 let busy: Record<string, ActivityInfo> = {};
@@ -21,14 +23,17 @@ function emit(): void {
   for (const l of listeners) l();
 }
 
-function setBusy(taskId: string, stage: string | null, startedAt?: number): void {
+function setBusy(taskId: string, stage: string | null, startedAt?: number, detail?: string | null): void {
   if (stage === null) {
     if (!(taskId in busy)) return;
     const { [taskId]: _drop, ...rest } = busy;
     busy = rest;
   } else {
-    if (busy[taskId]?.stage === stage) return;
-    busy = { ...busy, [taskId]: { stage, startedAt: startedAt ?? Date.now() } };
+    if (busy[taskId]?.stage === stage && (busy[taskId]?.detail ?? null) === (detail ?? null)) return;
+    busy = {
+      ...busy,
+      [taskId]: { stage, startedAt: startedAt ?? Date.now(), ...(detail ? { detail } : {}) },
+    };
   }
   emit();
 }
@@ -39,9 +44,16 @@ async function hydrate(): Promise<void> {
       taskId: string;
       stage: string;
       startedAt?: number;
+      detail?: string | null;
     }>;
     const next: Record<string, ActivityInfo> = {};
-    for (const e of list) next[e.taskId] = { stage: e.stage, startedAt: e.startedAt ?? Date.now() };
+    for (const e of list) {
+      next[e.taskId] = {
+        stage: e.stage,
+        startedAt: e.startedAt ?? Date.now(),
+        ...(e.detail ? { detail: e.detail } : {}),
+      };
+    }
     busy = next;
     emit();
   } catch {
@@ -65,8 +77,8 @@ function wire(): void {
   subscribeWs((m) => {
     if (m.type !== "event") return;
     if (m.name === "activity:start") {
-      const p = m.payload as { taskId: string; stage: string; startedAt?: number };
-      setBusy(p.taskId, p.stage, p.startedAt);
+      const p = m.payload as { taskId: string; stage: string; startedAt?: number; detail?: string | null };
+      setBusy(p.taskId, p.stage, p.startedAt, p.detail);
     } else if (m.name === "activity:end") {
       // `next` = a stage still working the task (concurrent stages, §6.1.f) — fall
       // back to it instead of going dark while work continues.
@@ -96,6 +108,7 @@ export function stageLabel(stage: string): string {
       questioner: "Preparing questions…",
       reviewer: "Reviewing…",
       review_responder: "Addressing feedback…",
+      queued: "Waiting…",
     }[
       stage
     ] ?? "Working…"
@@ -131,6 +144,11 @@ export function useActivityMap(): Record<string, ActivityInfo> {
 /** The stage currently working `taskId` (e.g. "discovery"), or null if idle. */
 export function useActivity(taskId: string): string | null {
   return useActivityMap()[taskId]?.stage ?? null;
+}
+
+/** The full activity entry for `taskId` (stage + detail), or null if idle. */
+export function useActivityInfo(taskId: string): ActivityInfo | null {
+  return useActivityMap()[taskId] ?? null;
 }
 
 /** Test-only: reset the store. */

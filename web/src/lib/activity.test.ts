@@ -105,6 +105,19 @@ test("hydrates on connect, applies WS events, re-hydrates after a gap, clears on
   latest().serverSends({ type: "event", name: "activity:end", payload: { taskId: "t2", next: null } });
   expect(_activitySnapshot().t2).toBeUndefined();
 
+  // -- a queued execution's detail (WHO it waits for) rides the event into the store --
+  latest().serverSends({
+    type: "event",
+    name: "activity:start",
+    payload: { taskId: "t4", stage: "queued", startedAt: 250, detail: "the task “Fix login”" },
+  });
+  expect(_activitySnapshot().t4).toEqual({
+    stage: "queued",
+    startedAt: 250,
+    detail: "the task “Fix login”",
+  });
+  latest().serverSends({ type: "event", name: "activity:end", payload: { taskId: "t4", next: null } });
+
   // -- hard disconnect (past the grace window): never show unverifiable spinners --
   latest().close();
   await sleep(60);

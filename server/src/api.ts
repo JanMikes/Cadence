@@ -440,11 +440,11 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (task.projectId) {
       const project = getProjectById(ctx.db, task.projectId);
       if (project?.rootPath) {
-        releaseMerge = projectLocks.tryAcquireWrite(project.id, {
-          db: ctx.db,
-          rootPath: project.rootPath,
-          excludeTaskId: taskId,
-        });
+        releaseMerge = projectLocks.tryAcquireWrite(
+          project.id,
+          { db: ctx.db, rootPath: project.rootPath, excludeTaskId: taskId },
+          `a merge of “${task.title}”`,
+        );
         if (!releaseMerge) {
           return conflict("another task is executing in this project's working dir — try again when it finishes", {
             merged: false,
@@ -1942,7 +1942,9 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
     if (lockTarget) {
       // exclusive: the run mutates the dir, so it waits out EVERY live occupant —
       // other executions, warm chat sessions, even claude processes outside Cadence.
+      const ownTitle = getTask(ctx.db, taskId)?.title;
       release = await projectLocks.acquireWrite(lockTarget.projectId, {
+        label: ownTitle ? `the task “${ownTitle}”` : undefined,
         guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId, exclusive: true },
         onQueued: (blockers) => {
           // Visible queueing (§10: never lie about state): the project dir is busy —
@@ -1962,7 +1964,8 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
             );
             ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
           }
-          ctx.activity.start(taskId, "queued");
+          // detail = WHO we're waiting for; the board card shows it next to "Waiting…".
+          ctx.activity.start(taskId, "queued", blockers.map((b) => b.label).join(", "));
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },
       });
@@ -2061,6 +2064,7 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
       // exclusive, same as runExecutionChain: the apply mutates the dir, so every
       // live occupant (chat session, external claude) blocks it — visibly.
       release = await projectLocks.acquireWrite(lockTarget.projectId, {
+        label: task?.title ? `the task “${task.title}”` : undefined,
         guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId, exclusive: true },
         onQueued: (blockers) => {
           const occupants = blockers.filter((b) => b.kind !== "execution");
@@ -2071,7 +2075,7 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
             );
             ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
           }
-          ctx.activity.start(taskId, "queued");
+          ctx.activity.start(taskId, "queued", blockers.map((b) => b.label).join(", "));
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },
       });

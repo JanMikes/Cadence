@@ -246,6 +246,40 @@ test("exclusive guard: an alive claude process OUTSIDE Cadence blocks an executi
   expect(locks.isWriteBusy(project.id, guard)).toBe(false);
 });
 
+test("a queued writer is told WHO holds the slot (the holder's label)", async () => {
+  const locks = new ProjectLocks(15, () => []);
+  const w1 = await locks.acquireWrite("p1", { label: "the task “First”" });
+
+  let blockers: LockBlocker[] = [];
+  const w2 = locks.acquireWrite("p1", {
+    label: "the task “Second”",
+    onQueued: (b) => (blockers = b),
+  });
+  await tick();
+  expect(blockers).toEqual([{ kind: "execution", label: "the task “First”" }]);
+
+  w1();
+  (await w2)();
+
+  // DB blockers name the running task too, not a session hash
+  const project = createProject(db, { name: "P", rootPath: "/tmp/p-root" });
+  const running = createTask(db, { title: "Fix login" });
+  db.insert(sessions)
+    .values({
+      id: "exec-named",
+      taskId: running.id,
+      projectId: project.id,
+      role: "implementer",
+      kind: "oneshot",
+      status: "running",
+      cwd: "/tmp/p-root",
+    })
+    .run();
+  expect(locks.blockersFor({ db, rootPath: "/tmp/p-root" })).toEqual([
+    { kind: "execution", label: "the task “Fix login” (implementer)" },
+  ]);
+});
+
 test("tryAcquireWrite claims the slot without waiting — and a held merge serializes with writers", async () => {
   const locks = new ProjectLocks(15, () => []);
 

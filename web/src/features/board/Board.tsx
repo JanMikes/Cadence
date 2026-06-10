@@ -2,7 +2,7 @@ import type { Project, Task, TaskGitContext } from "@cadence/shared";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronsUp, ChevronUp, Equal, ListFilter } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useActivity, stageLabel } from "../../lib/activity";
+import { stageLabel, useActivityInfo } from "../../lib/activity";
 import { formatDate, useDateFormats } from "../../lib/datetime";
 import { getProjects, getTasks } from "../../lib/api";
 import { gitStateLabel } from "../../lib/git";
@@ -463,15 +463,39 @@ export function ProjectChip({ project }: { project: Project }) {
   );
 }
 
-/** A small inline spinner shown while an autonomy stage is working a task. */
-export function WorkingSpinner({ stage, className }: { stage: string; className?: string }) {
+/** A small inline spinner shown while an autonomy stage is working a task.
+ *  "queued" renders muted (gray, slower spin, "Waiting for …") — the task isn't
+ *  being worked, it's in line behind whatever `detail` names (never lie about state). */
+export function WorkingSpinner({
+  stage,
+  detail,
+  className,
+}: {
+  stage: string;
+  detail?: string | null;
+  className?: string;
+}) {
+  const waiting = stage === "queued";
+  const caption = waiting && detail ? `Waiting for ${detail}` : stageLabel(stage);
   return (
-    <span className={cn("inline-flex items-center gap-1.5 text-primary", className)}>
+    <span
+      title={caption}
+      className={cn(
+        "inline-flex min-w-0 max-w-full items-center gap-1.5",
+        waiting ? "text-muted-foreground" : "text-primary",
+        className,
+      )}
+    >
       <span
         aria-hidden
-        className="inline-block size-3 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
+        className={cn(
+          "inline-block size-3 shrink-0 animate-spin rounded-full border-2",
+          waiting
+            ? "border-muted-foreground/30 border-t-muted-foreground [animation-duration:1.6s]"
+            : "border-primary/30 border-t-primary",
+        )}
       />
-      {stageLabel(stage)}
+      <span className="truncate">{caption}</span>
     </span>
   );
 }
@@ -491,20 +515,22 @@ function BoardCard({
   const fmts = useDateFormats();
   const badge = task.urgencyTier ? URGENCY_BADGE[task.urgencyTier] : undefined;
   const attention = ATTENTION_BADGE[task.status];
-  const stage = useActivity(task.id);
+  const activity = useActivityInfo(task.id);
+  const stage = activity?.stage ?? null;
   return (
     <button
       type="button"
       onClick={() => onOpen(task.id)}
       className={cn(
         "rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50",
-        stage && "border-primary/40",
+        // queued = in line, not being worked — no "agent active" tint for it
+        stage && stage !== "queued" && "border-primary/40",
         stalled && "border-red-500/50",
       )}
     >
       <div className="text-sm font-medium">{task.title}</div>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-        {stage ? <WorkingSpinner stage={stage} /> : null}
+        {stage ? <WorkingSpinner stage={stage} detail={activity?.detail} /> : null}
         {stalled ? (
           <span className="rounded bg-red-500/20 px-1.5 py-0.5 font-medium text-red-300">⚠ Stalled</span>
         ) : null}

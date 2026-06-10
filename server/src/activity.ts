@@ -14,11 +14,20 @@ export interface ActivityEntry {
   taskId: string;
   stage: AgentStage;
   startedAt: number;
+  /** Human context for the stage — e.g. WHO a "queued" execution is waiting for.
+   *  Rides the WS payload and GET /api/activity so the board can say it. */
+  detail?: string;
 }
 
 type Broadcast = (
   name: "activity:start" | "activity:end",
-  payload: { taskId: string; stage?: AgentStage; next?: AgentStage | null; startedAt?: number },
+  payload: {
+    taskId: string;
+    stage?: AgentStage;
+    next?: AgentStage | null;
+    startedAt?: number;
+    detail?: string;
+  },
 ) => void;
 
 export class ActivityTracker {
@@ -30,12 +39,13 @@ export class ActivityTracker {
     private readonly now: () => number = Date.now,
   ) {}
 
-  start(taskId: string, stage: AgentStage): void {
+  start(taskId: string, stage: AgentStage, detail?: string): void {
     const list = this.active.get(taskId) ?? [];
     const startedAt = this.now();
-    list.push({ taskId, stage, startedAt });
+    // `detail` is added conditionally so detail-less entries keep their exact shape.
+    list.push({ taskId, stage, startedAt, ...(detail ? { detail } : {}) });
     this.active.set(taskId, list);
-    this.broadcast("activity:start", { taskId, stage, startedAt });
+    this.broadcast("activity:start", { taskId, stage, startedAt, ...(detail ? { detail } : {}) });
   }
 
   /**

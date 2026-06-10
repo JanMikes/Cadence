@@ -32,12 +32,16 @@ export type Release = () => void;
 interface Waiter {
   kind: "read" | "write";
   resolve: (release: Release) => void;
+  /** Who this waiter is (writers only) — becomes `writerLabel` when admitted. */
+  label?: string;
 }
 
 interface LockState {
   readers: number;
   writer: boolean;
   queue: Waiter[];
+  /** Who holds the writer slot — so a queued task can be told WHAT it waits for. */
+  writerLabel?: string;
 }
 
 /** DB/oracle guard inputs: how to recognize live occupants of the project dir. */
@@ -106,7 +110,12 @@ export class ProjectLocks {
    *  WHO is blocking (no silent queueing). */
   async acquireWrite(
     projectId: string | null | undefined,
-    opts: { guard?: SurvivorGuard; onQueued?: (blockers: LockBlocker[]) => void } = {},
+    opts: {
+      guard?: SurvivorGuard;
+      onQueued?: (blockers: LockBlocker[]) => void;
+      /** Who we are (e.g. `the task “Fix login”`) — told to whoever queues behind us. */
+      label?: string;
+    } = {},
   ): Promise<Release> {
     if (!projectId) return () => {};
     let queued = false;
@@ -120,10 +129,11 @@ export class ProjectLocks {
       const s = this.state(projectId);
       if (!s.writer && s.readers === 0) {
         s.writer = true;
+        s.writerLabel = opts.label;
         resolve(this.writeRelease(projectId));
       } else {
-        notifyQueued([{ kind: "execution", label: "another task is executing in this project" }]);
-        s.queue.push({ kind: "write", resolve });
+        notifyQueued([this.holderBlocker(s)]);
+        s.queue.push({ kind: "write", resolve, label: opts.label });
       }
     });
     if (opts.guard) {
@@ -140,13 +150,18 @@ export class ProjectLocks {
    *  stages have always coexisted with user-driven tree changes, and blocking a
    *  merge on a minutes-long investigation would be a regression. Returns null
    *  when an execution holds, awaits, or survives on the project. */
-  tryAcquireWrite(projectId: string | null | undefined, guard?: SurvivorGuard): Release | null {
+  tryAcquireWrite(
+    projectId: string | null | undefined,
+    guard?: SurvivorGuard,
+    label?: string,
+  ): Release | null {
     if (!projectId) return () => {};
     const s = this.locks.get(projectId);
     if (s?.writer || s?.queue.some((w) => w.kind === "write")) return null;
     if (guard && this.listBlockers(guard).length > 0) return null;
     const state = this.state(projectId);
     state.writer = true;
+    state.writerLabel = label;
     return this.writeRelease(projectId);
   }
 
@@ -191,8 +206,17 @@ export class ProjectLocks {
       released = true;
       const s = this.state(projectId);
       s.writer = false;
+      s.writerLabel = undefined;
       this.drain(projectId);
     };
+  }
+
+  /** Why an in-memory acquisition can't be granted right now, as a blocker. */
+  private holderBlocker(s: LockState): LockBlocker {
+    if (s.writer) {
+      return { kind: "execution", label: s.writerLabel ?? "another task executing in this project" };
+    }
+    return { kind: "execution", label: "investigation stages reading the project dir" };
   }
 
   /** Admit the queue head: a writer once readers drain, else every reader up to the
@@ -206,6 +230,7 @@ export class ProjectLocks {
         if (s.writer || s.readers > 0) break;
         s.queue.shift();
         s.writer = true;
+        s.writerLabel = head.label;
         head.resolve(this.writeRelease(projectId));
         break; // exclusive — nothing else can be admitted
       }
@@ -238,10 +263,21 @@ export class ProjectLocks {
     for (const r of rows) {
       if (guard.excludeTaskId && r.taskId === guard.excludeTaskId && r.kind === "oneshot") continue;
       const isExecution = r.kind === "oneshot" && EXECUTION_ROLES.includes(r.role ?? "");
+      // Name the task, not the session id — "waiting for the task “Fix login”" is
+      // something the user can act on; a session hash is not.
+      const title = r.taskId ? getTask(guard.db, r.taskId)?.title : null;
       if (isExecution) {
-        blockers.push({ kind: "execution", label: `a ${r.role} run (session ${r.id.slice(0, 8)})` });
+        blockers.push({
+          kind: "execution",
+          label: title ? `the task “${title}” (${r.role})` : `a ${r.role} run (session ${r.id.slice(0, 8)})`,
+        });
       } else if (guard.exclusive) {
-        blockers.push({ kind: "session", label: `a live ${r.role ?? "chat"} session (${r.id.slice(0, 8)})` });
+        blockers.push({
+          kind: "session",
+          label: title
+            ? `a live ${r.role ?? "chat"} session on “${title}”`
+            : `a live ${r.role ?? "chat"} session (${r.id.slice(0, 8)})`,
+        });
       }
     }
     if (guard.exclusive) {

@@ -25,6 +25,26 @@ test("track() marks busy during fn, clears after, and broadcasts start→end", a
   expect(events[0]?.payload).toEqual({ taskId: "t1", stage: "discovery", startedAt: 1000 });
 });
 
+test("start() carries an optional detail (who a queued execution waits for) through list + broadcast", () => {
+  const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
+  const a = new ActivityTracker((name, payload) => events.push({ name, payload }), () => 1000);
+
+  a.start("t1", "queued", "the task “Fix login” (implementer)");
+  expect(a.list()).toEqual([
+    { taskId: "t1", stage: "queued", startedAt: 1000, detail: "the task “Fix login” (implementer)" },
+  ]);
+  expect(events[0]?.payload).toEqual({
+    taskId: "t1",
+    stage: "queued",
+    startedAt: 1000,
+    detail: "the task “Fix login” (implementer)",
+  });
+
+  // detail-less starts keep their exact shape (no stray `detail` key)
+  a.start("t2", "triage");
+  expect(a.list().at(-1)).toEqual({ taskId: "t2", stage: "triage", startedAt: 1000 });
+});
+
 test("track() clears + emits end even when fn throws", async () => {
   const events: string[] = [];
   const a = new ActivityTracker((name) => events.push(name));

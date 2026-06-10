@@ -207,14 +207,25 @@ function RunsPanel({
               key={`${run.taskId}:${stage}`}
               type="button"
               onClick={() => onOpenTask(run.taskId)}
+              title={stage === "queued" && run.detail ? `Waiting for ${run.detail}` : undefined}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent"
             >
-              <span
-                aria-hidden
-                className="inline-block size-2.5 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
-              />
+              {stage === "queued" ? (
+                // Queued = in line, not running — a clock, not a spinner (never lie about state).
+                <Clock className="size-2.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <span
+                  aria-hidden
+                  className="inline-block size-2.5 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
+                />
+              )}
               <span className="min-w-0 flex-1 truncate text-foreground">
                 {titles.get(run.taskId) ?? "(task)"}
+                {stage === "queued" && run.detail ? (
+                  <span className="block truncate text-[10px] text-muted-foreground">
+                    waiting for {run.detail}
+                  </span>
+                ) : null}
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {fmtElapsed(Date.now() - run.startedAt)}
