@@ -59,7 +59,7 @@ import { commitDigest, getDigest, recapDigest } from "./digest";
 import { listTaskEvents, recordEvent } from "./events";
 import { checkTaskGitContext } from "./git-context";
 import { projectLocks } from "./project-locks";
-import { clearExecutionState, executionLockTarget } from "./worktree";
+import { clearExecutionState, executionLockTarget, taskWorkEvidence } from "./worktree";
 import { runWorktreeCheck } from "./agents/worktree-check";
 import { createFleet, getFleet, getFleetById, listFleets, updateFleet } from "./fleets";
 import { importProjects, scanClaudeProjects } from "./import";
@@ -96,6 +96,7 @@ import {
   readQa,
   readReviewFindings,
   readReviewProposal,
+  readRunReports,
   readSettings,
   readVerify,
   writeReviewFindings,
@@ -383,7 +384,25 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (method !== "GET") return methodNotAllowed();
     const taskId = diffMatch[1] as string;
     if (!getTask(ctx.db, taskId)) return notFound(pathname);
-    return Response.json(taskDiff(ctx.db, taskId));
+    // The diff + the work-product verdict together: the Review surface shows not just
+    // WHAT changed but whether it's attributably this task's run (never guesswork).
+    let evidence: ReturnType<typeof taskWorkEvidence> | undefined;
+    try {
+      evidence = taskWorkEvidence(ctx.db, taskId);
+    } catch {
+      evidence = undefined;
+    }
+    return Response.json({ ...taskDiff(ctx.db, taskId), evidence });
+  }
+
+  // Durable per-stage agent outputs (runs.md): what each pipeline run actually
+  // said/did, with status + cost — the "what happened here" record.
+  const runsMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/runs$/);
+  if (runsMatch) {
+    if (method !== "GET") return methodNotAllowed();
+    const taskId = runsMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    return Response.json({ entries: readRunReports(taskId) });
   }
 
   const mergeMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review\/merge$/);

@@ -116,6 +116,80 @@ export function writeSpec(id: string, content: string): void {
   writeFileSync(paths.taskSpec(id), content.endsWith("\n") ? content : `${content}\n`);
 }
 
+// ------------------------------------------------- agent run reports (append-only)
+
+/** Marker line carrying the machine-readable meta for one run entry. The human-
+ *  readable heading + output follow it, so runs.md reads naturally in any editor
+ *  while parsing never depends on the (agent-authored) output text. */
+const RUN_MARKER = /^<!-- cadence:run (\{.*\}) -->$/;
+
+/** Append one agent run's final output to the task's runs.md — the durable
+ *  "what did each stage actually say/do" record (content truth; survives
+ *  transcript GC). Never throws: recording must not break the pipeline. */
+export function appendRunReport(id: string, report: import("@cadence/shared").TaskRunReport): void {
+  try {
+    mkdirSync(paths.taskDir(id), { recursive: true });
+    const meta = JSON.stringify({
+      at: report.at,
+      role: report.role,
+      status: report.status,
+      costUsd: report.costUsd,
+      sessionId: report.sessionId,
+      model: report.model,
+    });
+    const heading = `## ${report.role} — ${report.status} (${new Date(report.at).toISOString()})`;
+    const output = report.output.trim() || "(no output)";
+    appendFileSync(paths.taskRuns(id), `<!-- cadence:run ${meta} -->\n${heading}\n\n${output}\n\n`);
+  } catch (err) {
+    console.warn(`[cadence] run report skipped for ${id}:`, (err as Error).message);
+  }
+}
+
+/** Read a task's run reports (newest last); [] when none. Tolerates hand edits —
+ *  anything before the first marker or with unparseable meta is skipped. */
+export function readRunReports(id: string): import("@cadence/shared").TaskRunReport[] {
+  const file = paths.taskRuns(id);
+  if (!existsSync(file)) return [];
+  const lines = readFileSync(file, "utf8").split("\n");
+  const reports: import("@cadence/shared").TaskRunReport[] = [];
+  let current: import("@cadence/shared").TaskRunReport | null = null;
+  let body: string[] = [];
+  const flush = () => {
+    if (current) {
+      // Drop our own decorative heading (first non-empty line starting with "## ").
+      const text = body.join("\n").trim();
+      current.output = text.startsWith("## ") ? text.slice(text.indexOf("\n") + 1).trim() : text;
+      reports.push(current);
+    }
+    current = null;
+    body = [];
+  };
+  for (const line of lines) {
+    const m = line.match(RUN_MARKER);
+    if (m) {
+      flush();
+      try {
+        const meta = JSON.parse(m[1] as string) as Partial<import("@cadence/shared").TaskRunReport>;
+        current = {
+          at: typeof meta.at === "number" ? meta.at : 0,
+          role: meta.role ?? "agent",
+          status: meta.status === "failed" ? "failed" : "done",
+          costUsd: typeof meta.costUsd === "number" ? meta.costUsd : null,
+          sessionId: meta.sessionId ?? null,
+          model: meta.model ?? null,
+          output: "",
+        };
+      } catch {
+        current = null; // unparseable meta — skip this entry
+      }
+      continue;
+    }
+    if (current) body.push(line);
+  }
+  flush();
+  return reports;
+}
+
 // ---------------------------------------------- review artifacts (6.5.c/d, JSON)
 
 /** Read the reviewer's findings artifact; null when no review ran yet. */

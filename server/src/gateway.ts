@@ -84,8 +84,10 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   const activity = new ActivityTracker((name, payload) => hub.broadcast({ type: "event", name, payload }));
 
   // Record every task-linked agent stage (triage…delivery) as a first-class oneshot Session with its
-  // transcript, so each stage's full output shows up in the Sessions list. Tests inject opts.runAgent.
-  const runAgentImpl = opts.runAgent ?? makeRecordingRunner({ db, hub });
+  // transcript, so each stage's full output shows up in the Sessions list. An injected
+  // runner (tests) is wrapped too — recording (sessions + run reports) is gateway
+  // behavior, not an implementation detail of the real claude runner.
+  const runAgentImpl = makeRecordingRunner({ db, hub, base: opts.runAgent });
 
   let watcher: WatcherHandle | undefined;
   if (opts.startWatcher !== false) {

@@ -42,6 +42,7 @@ import type {
   TaskEvent,
   TaskGitContext,
   TaskPlan,
+  TaskRunReport,
   TranscriptEntry,
   TranscriptHit,
   UpdateFleetInput,
@@ -59,7 +60,18 @@ export function buildResumeCommand(cwd: string, sessionId: string): string {
 }
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    // Surface the server's human-readable reason (conflict/badRequest bodies carry
+    // `message`) — "409 Conflict" alone tells the user nothing actionable.
+    let detail = "";
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) detail = body.message;
+    } catch {
+      /* non-JSON body — keep the status line */
+    }
+    throw new Error(detail || `${res.status} ${res.statusText}`);
+  }
   return (await res.json()) as T;
 }
 
@@ -111,6 +123,10 @@ export function getDelivery(id: string): Promise<DeliveryResult> {
 
 export function getDiff(id: string): Promise<TaskDiff> {
   return fetch(`/api/tasks/${id}/diff`).then(json<TaskDiff>);
+}
+
+export function getTaskRuns(id: string): Promise<{ entries: TaskRunReport[] }> {
+  return fetch(`/api/tasks/${id}/runs`).then(json<{ entries: TaskRunReport[] }>);
 }
 
 export function recheckGitContext(

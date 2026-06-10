@@ -21,6 +21,9 @@ export const paths = {
   taskPlan: (id: string) => join(cadenceHome(), "tasks", id, "plan.md"),
   taskVerify: (id: string) => join(cadenceHome(), "tasks", id, "verify.md"),
   taskDelivery: (id: string) => join(cadenceHome(), "tasks", id, "delivery.md"),
+  // Append-only record of every agent run's final output (content truth — survives
+  // transcript GC; the Sessions list is the live/streaming view of the same runs).
+  taskRuns: (id: string) => join(cadenceHome(), "tasks", id, "runs.md"),
   // Runtime state for an in-place execution (base branch + untracked snapshot) — JSON,
   // not markdown: machine state for crash-safe restore, not user-editable content.
   taskExecution: (id: string) => join(cadenceHome(), "tasks", id, "execution.json"),

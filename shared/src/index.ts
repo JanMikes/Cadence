@@ -254,6 +254,8 @@ export interface TaskDetail extends Task {
   titleGenerated: boolean;
   /** Effective permission mode after task ?? project ?? global resolution (§9.1). */
   resolvedPermissionMode: string;
+  /** Effective delivery mode after task ?? project ?? global resolution (§8). */
+  resolvedDeliveryMode: string;
   /** Sum of this task's session costs (effort signal, not a budget). */
   costUsd: number;
 }
@@ -287,6 +289,31 @@ export type PermissionMode = (typeof PERMISSION_MODES)[number];
 
 export const DELIVERY_MODES = ["branch_summary", "auto_pr", "apply_in_place"] as const;
 export type DeliveryMode = (typeof DELIVERY_MODES)[number];
+
+/** The single source of truth for how delivery modes are presented — every picker,
+ *  chip, and review surface uses these labels/descriptions so the modes read the
+ *  same everywhere (UX clarity §10.1: plain language, no raw enum values). */
+export const DELIVERY_MODE_INFO: Record<DeliveryMode, { label: string; description: string }> = {
+  branch_summary: {
+    label: "Task branch + review",
+    description:
+      "Work lands on an isolated task branch. You review the diff here and merge it — nothing touches your base branch until you say so. The safe default.",
+  },
+  auto_pr: {
+    label: "Task branch + PR/MR",
+    description:
+      "Same isolation as Task branch + review, and the branch is pushed with a pull/merge request opened on your forge (GitHub/GitLab).",
+  },
+  apply_in_place: {
+    label: "Directly in my checkout",
+    description:
+      "No branch — edits land straight in the project working copy, alongside your own changes. Review shows what changed since the run began; accepting marks the task done (there is nothing to merge).",
+  },
+};
+
+export function deliveryModeLabel(mode: string | null | undefined): string {
+  return DELIVERY_MODE_INFO[mode as DeliveryMode]?.label ?? (mode || "—");
+}
 
 /** One blocker found by the worktree-readiness check (e.g. ".env not committed"). */
 export interface WorktreeCheckBlocker {
@@ -1062,10 +1089,38 @@ export interface TaskGitContext {
 }
 
 /** The task's changes for the Review screen (§7 / §10): unified git diff. */
+/** What can honestly be attributed to a task's execution (server: taskWorkEvidence).
+ *  The Review surface renders this so "what was delivered, by whom" is never guesswork. */
+export interface TaskWorkEvidenceInfo {
+  mode: string;
+  /** False when the question is unanswerable (no git repo) — neither delivered nor empty. */
+  attributable: boolean;
+  hasWork: boolean;
+  commitsAhead: number;
+  dirty: boolean;
+  /** Human-readable explanation, e.g. "cadence/x has 3 commit(s) ahead of main". */
+  detail: string;
+}
+
 export interface TaskDiff {
   mode: string;
   branch: string | null;
   diff: string; // unified diff text ("" when there's nothing to show)
+  /** Present when the server could assess the task's work product. */
+  evidence?: TaskWorkEvidenceInfo;
+}
+
+/** One persisted agent-run record (runs.md): the durable, human-readable account of
+ *  what each pipeline stage did — survives transcript GC, readable as plain markdown. */
+export interface TaskRunReport {
+  at: number; // epoch ms — when the run finished
+  role: string;
+  status: "done" | "failed";
+  costUsd: number | null;
+  sessionId: string | null;
+  model: string | null;
+  /** The agent's final output (or a failure note). */
+  output: string;
 }
 
 export interface ReviewActionInput {

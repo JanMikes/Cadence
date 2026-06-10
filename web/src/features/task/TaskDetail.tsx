@@ -1,4 +1,4 @@
-import { PERMISSION_MODES, TASK_STATUSES } from "@cadence/shared";
+import { DELIVERY_MODE_INFO, DELIVERY_MODES, deliveryModeLabel, PERMISSION_MODES, TASK_STATUSES } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, GitMerge, MessageSquarePlus, Play, RotateCcw, ShieldAlert, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -33,6 +33,7 @@ import { DeliveryRecord } from "./DeliveryRecord";
 import { PlanView } from "./PlanView";
 import { RelationsPanel } from "./RelationsPanel";
 import { ReviewPanel } from "./ReviewPanel";
+import { RunReports } from "./RunReports";
 import { StatusTimeline } from "./StatusTimeline";
 
 export function TaskDetail({
@@ -98,6 +99,11 @@ export function TaskDetail({
 
   const setPermission = useMutation({
     mutationFn: (mode: string | null) => updateTask(taskId, { permissionMode: mode }),
+    onSuccess: invalidateTask,
+  });
+
+  const setDelivery = useMutation({
+    mutationFn: (mode: string | null) => updateTask(taskId, { deliveryMode: mode }),
     onSuccess: invalidateTask,
   });
 
@@ -340,6 +346,31 @@ export function TaskDetail({
                 </span>
               </dd>
 
+              <dt className="text-muted-foreground">Delivery</dt>
+              <dd className="flex items-center gap-2">
+                <select
+                  value={task.deliveryMode ?? ""}
+                  onChange={(e) => setDelivery.mutate(e.target.value || null)}
+                  aria-label="Delivery mode"
+                  title={
+                    DELIVERY_MODE_INFO[
+                      (task.deliveryMode ?? task.resolvedDeliveryMode) as keyof typeof DELIVERY_MODE_INFO
+                    ]?.description
+                  }
+                  className="rounded-md border border-border bg-card px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">Inherit</option>
+                  {DELIVERY_MODES.map((m) => (
+                    <option key={m} value={m} title={DELIVERY_MODE_INFO[m].description}>
+                      {DELIVERY_MODE_INFO[m].label}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-muted-foreground">
+                  effective: {deliveryModeLabel(task.resolvedDeliveryMode)}
+                </span>
+              </dd>
+
               <dt className="text-muted-foreground">Priority</dt>
               <dd>{task.priority ?? "—"}</dd>
 
@@ -496,6 +527,8 @@ export function TaskDetail({
                 </div>
               </form>
             </section>
+
+            <RunReports taskId={taskId} />
 
             <RelationsPanel
               taskId={taskId}

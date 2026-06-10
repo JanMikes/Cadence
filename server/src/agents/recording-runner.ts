@@ -4,6 +4,7 @@ import { composeContext } from "../context";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
 import { getProjectById } from "../projects";
+import { appendRunReport } from "../store/store";
 import { getTask } from "../tasks";
 import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
@@ -147,9 +148,29 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
       // the transcript still exists, and that's exactly when you want to read it.
       const ok = !result.isError && (result.text.trim() !== "" || result.json != null);
       finish({ status: ok ? "done" : "failed", costUsd: result.costUsd });
+      // Durable account of what this stage said/did (runs.md — content truth): the
+      // final text, or the structured JSON when that's all the agent returned.
+      appendRunReport(opts.taskId, {
+        at: Date.now(),
+        role,
+        status: ok ? "done" : "failed",
+        costUsd: result.costUsd ?? null,
+        sessionId: id,
+        model: opts.model ?? getAgentModel(role) ?? null,
+        output: result.text.trim() || (result.json != null ? JSON.stringify(result.json, null, 2) : ""),
+      });
       return result;
     } catch (err) {
       finish({ status: "failed" });
+      appendRunReport(opts.taskId, {
+        at: Date.now(),
+        role,
+        status: "failed",
+        costUsd: null,
+        sessionId: id,
+        model: opts.model ?? getAgentModel(role) ?? null,
+        output: `Run crashed before finishing: ${(err as Error).message}`,
+      });
       throw err;
     }
   };

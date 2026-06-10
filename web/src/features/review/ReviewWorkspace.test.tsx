@@ -28,6 +28,7 @@ function reviewTask(direction: "perform" | "address", status = "review"): TaskDe
     labels: [],
     titleGenerated: false,
     resolvedPermissionMode: "auto",
+    resolvedDeliveryMode: "branch_summary",
     costUsd: 0,
   };
 }

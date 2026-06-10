@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { type Db, migrateDb, openDb } from "../db/client";
 import { createProject } from "../projects";
 import { listTaskSessions, taskCostUsd } from "../sessions";
-import { bootstrap } from "../store/store";
+import { bootstrap, readRunReports } from "../store/store";
 import { createTask } from "../tasks";
 import { WsHub } from "../ws";
 import { makeRecordingRunner } from "./recording-runner";
@@ -153,4 +153,44 @@ test("records the child pid and forwards live events to the hub as session:event
   const events = broadcasts.filter((b) => b.name === "session:event");
   expect(events).toHaveLength(2);
   expect((events[0]?.payload as { sessionId: string }).sessionId).toBe(s?.id ?? "");
+});
+
+test("persists each stage run's final output as a run report (runs.md)", async () => {
+  const t = createTask(db, { title: "report me" });
+  const run = makeRecordingRunner({
+    db,
+    hub: new WsHub(),
+    base: async () => ({
+      text: "I implemented the feature and committed it.",
+      json: null,
+      costUsd: 0.07,
+      sessionId: "claude-x",
+      isError: false,
+      raw: {},
+    }),
+  });
+
+  await run({ cwd: "/tmp/proj", role: "implementer", prompt: "p", taskId: t.id });
+
+  const reports = readRunReports(t.id);
+  expect(reports).toHaveLength(1);
+  expect(reports[0]).toMatchObject({ role: "implementer", status: "done", costUsd: 0.07 });
+  expect(reports[0]?.output).toContain("I implemented the feature");
+  // the report's session pointer matches the recorded session row
+  expect(reports[0]?.sessionId).toBe(listTaskSessions(db, t.id)[0]?.id ?? "");
+});
+
+test("a failed run still leaves a run report (with the failure visible)", async () => {
+  const t = createTask(db, { title: "fail loud" });
+  const run = makeRecordingRunner({
+    db,
+    hub: new WsHub(),
+    base: async () => ({ text: "", json: null, costUsd: 0, sessionId: "x", isError: true, raw: {} }),
+  });
+
+  await run({ cwd: "/tmp/proj", role: "verifier", prompt: "p", taskId: t.id });
+
+  const reports = readRunReports(t.id);
+  expect(reports).toHaveLength(1);
+  expect(reports[0]?.status).toBe("failed");
 });

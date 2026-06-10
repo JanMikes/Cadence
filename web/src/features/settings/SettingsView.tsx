@@ -1,5 +1,5 @@
 import type { AgentPromptInfo } from "@cadence/shared";
-import { DELIVERY_MODES, PERMISSION_MODES, TERMINAL_APPS } from "@cadence/shared";
+import { DELIVERY_MODE_INFO, DELIVERY_MODES, PERMISSION_MODES, TERMINAL_APPS } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, CalendarClock, Check, Gauge, GitPullRequest, Save, Settings2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
@@ -169,11 +169,14 @@ function GeneralSection() {
         Default delivery mode
         <select value={delivery} onChange={(e) => setDelivery(e.target.value)} className={FIELD}>
           {DELIVERY_MODES.map((m) => (
-            <option key={m} value={m}>
-              {m}
+            <option key={m} value={m} title={DELIVERY_MODE_INFO[m].description}>
+              {DELIVERY_MODE_INFO[m].label}
             </option>
           ))}
         </select>
+        <span className="text-[11px] leading-snug text-muted-foreground/80">
+          {DELIVERY_MODE_INFO[delivery as keyof typeof DELIVERY_MODE_INFO]?.description}
+        </span>
       </label>
 
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">

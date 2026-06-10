@@ -151,6 +151,7 @@ export function getTaskDetail(db: Db, id: string): TaskDetail | null {
     labels,
     titleGenerated,
     resolvedPermissionMode: resolvePermissionMode(db, id),
+    resolvedDeliveryMode: resolveDeliveryMode(db, id),
     costUsd: taskCostUsd(db, id),
   };
 }

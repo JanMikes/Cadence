@@ -637,13 +637,26 @@ test("execution slice (worktrees opted in): PLAY → plan → approve → Implem
     expect(delivery.mode).toBe("branch_summary");
     expect(delivery.summary.length).toBeGreaterThan(0);
 
-    // Review screen: the diff endpoint serves the task's changes shape
+    // Review screen: the diff endpoint serves the task's changes shape + the
+    // work-product evidence ("what was delivered, attributably").
     const diff = (await fetch(`${gw.url}/api/tasks/${task.id}/diff`).then((r) => r.json())) as {
       mode: string;
       branch: string | null;
+      evidence?: { attributable: boolean; hasWork: boolean; detail: string };
     };
     expect(diff.mode).toBe("branch_summary");
     expect(diff.branch).toContain("cadence/");
+    expect(diff.evidence?.attributable).toBe(true);
+    expect(diff.evidence?.hasWork).toBe(true);
+
+    // every pipeline stage left a durable run report (runs.md → /runs)
+    const runs = (await fetch(`${gw.url}/api/tasks/${task.id}/runs`).then((r) => r.json())) as {
+      entries: Array<{ role: string; status: string }>;
+    };
+    const roles = runs.entries.map((e) => e.role);
+    expect(roles).toContain("implementer");
+    expect(roles).toContain("verifier");
+    expect(runs.entries.every((e) => e.status === "done")).toBe(true);
 
     // the run stayed isolated: a worktree exists under the base, and the user's
     // checkout never left main

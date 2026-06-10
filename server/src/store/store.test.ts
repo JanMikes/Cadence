@@ -8,7 +8,9 @@ import { searchTasks } from "../db/search";
 import { projects, tasks } from "../db/schema";
 import { paths } from "./paths";
 import {
+  appendRunReport,
   bootstrap,
+  readRunReports,
   readSettings,
   readTask,
   reindexProject,
@@ -92,4 +94,37 @@ test("reindex is idempotent and reflects edits", () => {
   expect(row?.title).toBe("Second");
   expect(row?.status).toBe("triaged");
   expect(row?.body).toBe("v2");
+});
+
+test("run reports: append + read round-trip, newest last, hand-edit tolerant", () => {
+  const id = "task-runs-1";
+  appendRunReport(id, {
+    at: 1000,
+    role: "implementer",
+    status: "done",
+    costUsd: 0.42,
+    sessionId: "s-1",
+    model: "opus",
+    output: "Implemented the thing.\n\n## Notes\nwith a heading inside the output",
+  });
+  appendRunReport(id, {
+    at: 2000,
+    role: "verifier",
+    status: "failed",
+    costUsd: null,
+    sessionId: "s-2",
+    model: null,
+    output: "",
+  });
+
+  const reports = readRunReports(id);
+  expect(reports.length).toBe(2);
+  expect(reports[0]).toMatchObject({ at: 1000, role: "implementer", status: "done", costUsd: 0.42, sessionId: "s-1" });
+  // the agent's own markdown headings survive; only our decorative heading is stripped
+  expect(reports[0]?.output).toContain("## Notes");
+  expect(reports[0]?.output).toContain("Implemented the thing.");
+  expect(reports[1]).toMatchObject({ role: "verifier", status: "failed", costUsd: null });
+  expect(reports[1]?.output).toBe("(no output)");
+
+  expect(readRunReports("never-ran")).toEqual([]);
 });

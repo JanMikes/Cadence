@@ -1,4 +1,5 @@
 import {
+  DELIVERY_MODE_INFO,
   DELIVERY_MODES,
   PERMISSION_MODES,
   type Project,
@@ -37,11 +38,6 @@ const PERMISSION_LABELS: Record<string, string> = {
   auto: "Auto",
   manual: "Manual (approve in app)",
   dangerous: "Dangerous (skip checks)",
-};
-const DELIVERY_LABELS: Record<string, string> = {
-  branch_summary: "Branch + summary",
-  auto_pr: "Auto PR",
-  apply_in_place: "Apply in place",
 };
 
 interface FormValues {
@@ -722,8 +718,8 @@ function ProjectFields({
           className={field}
         >
           {DELIVERY_MODES.map((m) => (
-            <option key={m} value={m}>
-              {DELIVERY_LABELS[m]}
+            <option key={m} value={m} title={DELIVERY_MODE_INFO[m].description}>
+              {DELIVERY_MODE_INFO[m].label}
             </option>
           ))}
         </select>
