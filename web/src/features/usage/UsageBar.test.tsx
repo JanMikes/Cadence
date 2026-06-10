@@ -2,14 +2,14 @@ import type { UsageResponse } from "@cadence/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { UsageBar } from "./UsageBar";
+import { SidebarUsage } from "./UsageBar";
 
 function render(data?: UsageResponse): string {
   const qc = new QueryClient();
   if (data) qc.setQueryData(["usage"], data);
   return renderToStaticMarkup(
     <QueryClientProvider client={qc}>
-      <UsageBar />
+      <SidebarUsage />
     </QueryClientProvider>,
   );
 }
@@ -23,11 +23,11 @@ const STATS = {
   topModels: [],
 };
 
-test("UsageBar renders nothing until usage data loads (no crash without provider data)", () => {
+test("SidebarUsage renders nothing until usage data loads (no crash without provider data)", () => {
   expect(render()).toBe("");
 });
 
-test("UsageBar shows 5h + weekly meters with percentages and reset countdowns", () => {
+test("SidebarUsage shows 5h + weekly meters with percentages and reset countdowns", () => {
   const inTwoHours = new Date(Date.now() + 2 * 3600_000).toISOString();
   const html = render({
     stats: STATS,
@@ -51,7 +51,7 @@ test("UsageBar shows 5h + weekly meters with percentages and reset countdowns", 
   expect(html).not.toContain("sessions all-time");
 });
 
-test("UsageBar explains itself when windows are unavailable", () => {
+test("SidebarUsage explains itself when windows are unavailable", () => {
   const html = render({ stats: STATS, rateLimit: null, windows: null });
   expect(html).toContain("usage windows unavailable");
 });

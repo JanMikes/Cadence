@@ -18,7 +18,7 @@ export interface ActivityEntry {
 
 type Broadcast = (
   name: "activity:start" | "activity:end",
-  payload: { taskId: string; stage?: AgentStage; next?: AgentStage | null },
+  payload: { taskId: string; stage?: AgentStage; next?: AgentStage | null; startedAt?: number },
 ) => void;
 
 export class ActivityTracker {
@@ -32,9 +32,10 @@ export class ActivityTracker {
 
   start(taskId: string, stage: AgentStage): void {
     const list = this.active.get(taskId) ?? [];
-    list.push({ taskId, stage, startedAt: this.now() });
+    const startedAt = this.now();
+    list.push({ taskId, stage, startedAt });
     this.active.set(taskId, list);
-    this.broadcast("activity:start", { taskId, stage });
+    this.broadcast("activity:start", { taskId, stage, startedAt });
   }
 
   /**
@@ -64,6 +65,33 @@ export class ActivityTracker {
     } finally {
       this.end(taskId, stage);
     }
+  }
+
+  /**
+   * End every entry older than `maxAgeMs`. Safety net for unpaired `start()`s (an agent
+   * path that dies outside `track()`'s finally) — without it a leaked entry spins in the
+   * UI forever. Returns how many entries were reaped.
+   */
+  expire(maxAgeMs: number): number {
+    const cutoff = this.now() - maxAgeMs;
+    let reaped = 0;
+    // Remove the exact stale entries (not via end(), which drops the *newest* of a stage
+    // and could kill a fresh concurrent run while leaving the leaked one spinning).
+    for (const [taskId, list] of [...this.active.entries()]) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        const entry = list[i];
+        if (!entry || entry.startedAt > cutoff) continue;
+        list.splice(i, 1);
+        if (list.length === 0) this.active.delete(taskId);
+        reaped++;
+        this.broadcast("activity:end", {
+          taskId,
+          stage: entry.stage,
+          next: list.at(-1)?.stage ?? null,
+        });
+      }
+    }
+    return reaped;
   }
 
   isActive(taskId: string): boolean {

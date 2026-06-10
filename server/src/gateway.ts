@@ -1,7 +1,13 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { ServerWebSocket } from "bun";
-import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cadence/shared";
+import {
+  APP_NAME,
+  APP_TAGLINE,
+  SCHEMA_VERSION,
+  type ClientMessage,
+  type ServerMessage,
+} from "@cadence/shared";
 import { ActivityTracker } from "./activity";
 import { makeRecordingRunner } from "./agents/recording-runner";
 import { startGitContextSweep } from "./git-context";
@@ -143,7 +149,7 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   // Proactive session watchdog: detect dead/stuck runs at runtime so a conversation is never
   // silently dead — dead sessions are ended + their task rescued, idle ones surface a nudge.
   const watchdog =
-    opts.startWatcher === false ? { close() {} } : startSessionWatchdog(db, hub);
+    opts.startWatcher === false ? { close() {} } : startSessionWatchdog(db, hub, { activity });
 
   // Git-context sweep: deterministic local-git checks that catch merges done outside
   // Cadence (terminal merges, forge PR/MR merges) so review/done cards stay honest.
@@ -179,6 +185,12 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       return serveStatic(url.pathname, webDir);
     },
     websocket: {
+      // Dead-client cleanup is protocol-level and free: browsers auto-answer ping frames,
+      // so a quiet-but-alive tab stays connected while a vanished one is reaped in ≤60s.
+      // (App-level ping/pong below exists for the opposite direction — the browser can't
+      // observe protocol pongs, so the client proves *server* liveness with its own ping.)
+      idleTimeout: 60,
+      sendPings: true,
       open(ws: ServerWebSocket<WsData>) {
         hub.add(ws);
         hub.send(ws, { type: "hello", app: APP_NAME, version: SCHEMA_VERSION });
@@ -186,8 +198,14 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
       close(ws: ServerWebSocket<WsData>) {
         hub.remove(ws);
       },
-      message() {
-        // Client messages handled as live features land (subscribe, ping, …).
+      message(ws: ServerWebSocket<WsData>, raw) {
+        let msg: ClientMessage;
+        try {
+          msg = JSON.parse(String(raw)) as ClientMessage;
+        } catch {
+          return;
+        }
+        if (msg.type === "ping") hub.send(ws, { type: "pong", t: msg.t });
       },
     },
   });

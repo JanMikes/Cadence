@@ -71,9 +71,9 @@ export interface AppShellProps {
   children: ReactNode;
   activeView: ViewId;
   onNavigate: (view: ViewId) => void;
-  /** Small status line shown at the bottom of the nav (e.g. gateway health). */
+  /** Ambient block at the bottom of the nav (the Claude usage meters). */
   status?: ReactNode;
-  /** Ambient bar pinned above the scrolling content (e.g. the usage bar). */
+  /** Ambient bar pinned above the scrolling content (live work status + attention pill). */
   topBar?: ReactNode;
   /** Unread-count badges per nav item (e.g. notifications). */
   navBadges?: Partial<Record<ViewId, number>>;

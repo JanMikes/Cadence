@@ -289,12 +289,17 @@ export function checkSessions(
 export function startSessionWatchdog(
   db: Db,
   hub: WsHub,
-  opts: { intervalMs?: number } = {},
+  opts: { intervalMs?: number; activity?: import("./activity").ActivityTracker } = {},
 ): { close: () => void } {
   const notified = new Set<string>();
   const timer = setInterval(() => {
     try {
       checkSessions(db, hub, notified);
+      // Reap activity entries far past any plausible run length (unpaired start() leaks) so
+      // a leaked spinner can't live forever. 12× the stuck threshold (default 2h) keeps long
+      // but legitimate implementer/verifier runs untouched.
+      const reaped = opts.activity?.expire(12 * stuckIdleMs()) ?? 0;
+      if (reaped) console.log(`[cadence] expired ${reaped} stale activity entr(y/ies)`);
     } catch (err) {
       console.error("[cadence] session watchdog failed:", err);
     }

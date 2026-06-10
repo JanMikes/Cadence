@@ -1456,6 +1456,58 @@ test("WS connect receives hello, then a broadcast", async () => {
   expect(received[1]).toEqual({ type: "event", name: "test", payload: 42 });
 });
 
+test("WS answers a heartbeat ping with a pong echoing t", async () => {
+  const ws = new WebSocket(`ws://localhost:${gw.port}/ws`);
+  const received: ServerMessage[] = [];
+
+  await new Promise<void>((resolveP, rejectP) => {
+    const timer = setTimeout(() => rejectP(new Error("ws timed out")), 3000);
+    ws.onmessage = (e) => {
+      received.push(JSON.parse(e.data as string) as ServerMessage);
+      if (received.length === 1) {
+        // hello arrived — the connection is live, send the client heartbeat.
+        ws.send(JSON.stringify({ type: "ping", t: 123 }));
+      } else if (received.length === 2) {
+        clearTimeout(timer);
+        resolveP();
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      rejectP(new Error("ws error"));
+    };
+  });
+
+  ws.close();
+  expect(received[1]).toEqual({ type: "pong", t: 123 });
+});
+
+test("WS ignores malformed client messages without dropping the connection", async () => {
+  const ws = new WebSocket(`ws://localhost:${gw.port}/ws`);
+  const received: ServerMessage[] = [];
+
+  await new Promise<void>((resolveP, rejectP) => {
+    const timer = setTimeout(() => rejectP(new Error("ws timed out")), 3000);
+    ws.onmessage = (e) => {
+      received.push(JSON.parse(e.data as string) as ServerMessage);
+      if (received.length === 1) {
+        ws.send("not json {{{");
+        ws.send(JSON.stringify({ type: "ping", t: 7 })); // still answered after the garbage
+      } else if (received.length === 2) {
+        clearTimeout(timer);
+        resolveP();
+      }
+    };
+    ws.onerror = () => {
+      clearTimeout(timer);
+      rejectP(new Error("ws error"));
+    };
+  });
+
+  ws.close();
+  expect(received[1]).toEqual({ type: "pong", t: 7 });
+});
+
 test("POST /api/sessions/clear-finished drops finished agent rows, keeps live + warm (§6.1.g)", async () => {
   const seed = (over: Partial<typeof sessions.$inferInsert> = {}): string => {
     const id = crypto.randomUUID();

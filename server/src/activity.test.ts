@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { ActivityTracker } from "./activity";
 
 test("track() marks busy during fn, clears after, and broadcasts start→end", async () => {
-  const events: Array<{ name: string; payload: { taskId: string; stage?: string } }> = [];
+  const events: Array<{
+    name: string;
+    payload: { taskId: string; stage?: string; startedAt?: number };
+  }> = [];
   let clock = 1000;
   const a = new ActivityTracker((name, payload) => events.push({ name, payload }), () => clock);
 
@@ -18,7 +21,8 @@ test("track() marks busy during fn, clears after, and broadcasts start→end", a
   expect(a.isActive("t1")).toBe(false);
   expect(a.list()).toEqual([]);
   expect(events.map((e) => e.name)).toEqual(["activity:start", "activity:end"]);
-  expect(events[0]?.payload).toEqual({ taskId: "t1", stage: "discovery" });
+  // startedAt rides along so the UI can show live elapsed time on WS-delivered entries.
+  expect(events[0]?.payload).toEqual({ taskId: "t1", stage: "discovery", startedAt: 1000 });
 });
 
 test("track() clears + emits end even when fn throws", async () => {
@@ -51,6 +55,27 @@ test("concurrent stages on one task don't corrupt each other (§6.1.f)", () => {
   a.end("t1", "questioner");
   expect(a.isActive("t1")).toBe(false);
   expect(ends[1]).toEqual({ taskId: "t1", stage: "questioner", next: null });
+});
+
+test("expire() reaps only entries past maxAge and broadcasts their end", () => {
+  const ends: Array<{ taskId: string; stage?: string; next?: string | null }> = [];
+  let clock = 0;
+  const a = new ActivityTracker((name, payload) => {
+    if (name === "activity:end") ends.push(payload);
+  }, () => clock);
+
+  a.start("t1", "implementer"); // startedAt 0 — will leak
+  clock = 50_000;
+  a.start("t1", "verifier"); // fresh — must survive
+  a.start("t2", "triage"); // fresh — must survive
+
+  clock = 60_000;
+  expect(a.expire(30_000)).toBe(1); // only the implementer entry is past 30s
+  expect(a.list().map((e) => e.stage).sort()).toEqual(["triage", "verifier"]);
+  // the survivor keeps the task busy via `next`, so the UI spinner doesn't go dark
+  expect(ends[0]).toEqual({ taskId: "t1", stage: "implementer", next: "verifier" });
+
+  expect(a.expire(30_000)).toBe(0); // idempotent — nothing else is stale
 });
 
 test("end() is precise: unknown stage is a no-op; without a stage it pops the newest", () => {

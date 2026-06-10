@@ -1,9 +1,9 @@
-import type { HealthStatus } from "@cadence/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
 import { Toaster } from "./components/Toaster";
 import { Analytics } from "./features/analytics/Analytics";
+import { HeaderStatus } from "./features/activity/HeaderStatus";
 import { AttentionCenter } from "./features/attention/AttentionCenter";
 import { AttentionPill } from "./features/attention/AttentionPill";
 import { Board } from "./features/board/Board";
@@ -23,15 +23,12 @@ import { SessionsView } from "./features/sessions/SessionsView";
 import { SettingsView } from "./features/settings/SettingsView";
 import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
-import { UsageBar } from "./features/usage/UsageBar";
+import { SidebarUsage } from "./features/usage/UsageBar";
 import { getDigest, getSettings, updateSettings } from "./lib/api";
 import { useHashRoute } from "./lib/hashRoute";
 import { ATTENTION_SHORTCUT } from "./lib/shortcuts";
 import { useTauriBridge } from "./lib/tauri";
-import { cn } from "./lib/utils";
-import { useServerMessages } from "./lib/ws";
-
-type Conn = "connecting" | "online" | "offline";
+import { onReconnect, useServerMessages } from "./lib/ws";
 
 // Server events that change what's waiting on the user → refresh the "needs you" feed
 // (and the board). Keeps the top-bar pill and the Attention Center live.
@@ -62,8 +59,6 @@ export function App() {
   const [sessionDetailId, setSessionDetailId] = useState<string | null>(null);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [attentionOpen, setAttentionOpen] = useState(false);
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [conn, setConn] = useState<Conn>("connecting");
   const notifications = useNotifications();
   const unread = notifications.reduce((n, x) => n + (x.read ? 0 : 1), 0);
   const qc = useQueryClient();
@@ -144,20 +139,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/health")
-      .then((r) => r.json() as Promise<HealthStatus>)
-      .then((h) => {
-        if (cancelled) return;
-        setHealth(h);
-        setConn(h.ok ? "online" : "offline");
-      })
-      .catch(() => !cancelled && setConn("offline"));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Resync after any connection gap (incl. the first connect): events were missed, so
+  // every cached query may be stale. Blanket invalidation is cheap on localhost and has
+  // no forgotten-key failure mode; the per-feature polling safety nets stay as backup.
+  useEffect(() => onReconnect(() => void qc.invalidateQueries()), [qc]);
 
   // The daily-ritual nav nudge: amber "Plan your day" until today's plan is committed,
   // then an indigo "Recap" from the evening on until the day is closed. Shares the
@@ -184,14 +169,6 @@ export function App() {
           }
         : undefined;
 
-  const dot = conn === "online" ? "bg-green-500" : conn === "offline" ? "bg-red-500" : "bg-yellow-500";
-  const statusText =
-    conn === "online" && health
-      ? `Connected · ${health.app} v${health.version}`
-      : conn === "offline"
-        ? "Gateway offline"
-        : "Connecting…";
-
   return (
     <>
       <AppShell
@@ -200,7 +177,7 @@ export function App() {
         topBar={
           <div className="flex items-center gap-3 border-b border-border bg-card/30 px-4 py-1.5">
             <div className="min-w-0 flex-1">
-              <UsageBar />
+              <HeaderStatus onOpenTask={setSelectedId} />
             </div>
             <AttentionPill onOpen={() => setAttentionOpen(true)} />
           </div>
@@ -208,12 +185,7 @@ export function App() {
         navBadges={{ notifications: unread }}
         navAlerts={{ today: todayAlert }}
         primaryAction={<AddTaskButton onClick={() => setAddTaskOpen(true)} />}
-        status={
-          <span className="inline-flex items-center gap-1.5">
-            <span className={cn("size-2 rounded-full", dot)} />
-            {statusText}
-          </span>
-        }
+        status={<SidebarUsage />}
       >
         {view === "today" ? (
           <Today onOpen={setSelectedId} onAddTask={() => setAddTaskOpen(true)} />

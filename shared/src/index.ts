@@ -32,9 +32,15 @@ export interface EventMessage {
   payload?: unknown;
 }
 
-export type ServerMessage = HelloMessage | EventMessage;
+/** Heartbeat reply — echoes the client ping's `t` so liveness can be measured. */
+export interface PongMessage {
+  type: "pong";
+  t: number;
+}
 
-export type ClientMessage = { type: "ping" } | { type: "subscribe"; topic?: string };
+export type ServerMessage = HelloMessage | EventMessage | PongMessage;
+
+export type ClientMessage = { type: "ping"; t: number } | { type: "subscribe"; topic?: string };
 
 /** Payload of a `notify` ServerMessage — drives in-app badges + OS notifications. */
 export interface NotifyPayload {
