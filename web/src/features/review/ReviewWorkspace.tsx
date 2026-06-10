@@ -71,6 +71,13 @@ export function ReviewWorkspace({ task }: { task: TaskDetail }) {
   );
 }
 
+/** A closed task's workspace is a record, not a control panel — no triage buttons,
+ *  no publish/post actions, no "press PLAY" prompts (same stale-panel family as
+ *  PlanView/QACards). */
+function isClosed(task: TaskDetail): boolean {
+  return task.status === "done" || task.status === "cancelled";
+}
+
 function Header({ task, hint }: { task: TaskDetail; hint: string }) {
   return (
     <div className="flex items-center justify-between gap-2">
@@ -132,13 +139,22 @@ function PerformPane({ task }: { task: TaskDetail }) {
     save.mutate(next);
   };
 
+  const closed = isClosed(task);
+
   if (findings.isLoading) {
     return <section className="mt-6 rounded-lg border border-border bg-card/40 p-4 text-xs text-muted-foreground">Loading review…</section>;
   }
   if (!data) {
     return (
       <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
-        <Header task={task} hint="No findings yet — press PLAY to run the reviewer." />
+        <Header
+          task={task}
+          hint={
+            closed
+              ? "This review task is closed — no findings were recorded."
+              : "No findings yet — press PLAY to run the reviewer."
+          }
+        />
       </section>
     );
   }
@@ -150,7 +166,9 @@ function PerformPane({ task }: { task: TaskDetail }) {
         hint={
           data.published
             ? `Published ${data.published.verdict} — nothing auto-posts without you.`
-            : "Triage the findings, then publish or copy. Nothing posts without your confirm."
+            : closed
+              ? "Task closed — these findings were never published."
+              : "Triage the findings, then publish or copy. Nothing posts without your confirm."
         }
       />
 
@@ -180,16 +198,18 @@ function PerformPane({ task }: { task: TaskDetail }) {
                   </span>
                   <code className="font-mono text-[11px]">{f.file}:{f.line}</code>
                   <span className="font-medium">{f.title}</span>
-                  <span className="ml-auto flex shrink-0 gap-1">
-                    {f.decision === "dismiss" ? (
-                      <WorkspaceButton label="↩ Restore" onClick={() => patchFinding(index, { decision: "include" })} />
-                    ) : (
-                      <>
-                        <WorkspaceButton label="✎ Edit" onClick={() => setEditing(editing === index ? null : index)} />
-                        <WorkspaceButton danger label="✕ Dismiss" onClick={() => patchFinding(index, { decision: "dismiss" })} />
-                      </>
-                    )}
-                  </span>
+                  {!closed ? (
+                    <span className="ml-auto flex shrink-0 gap-1">
+                      {f.decision === "dismiss" ? (
+                        <WorkspaceButton label="↩ Restore" onClick={() => patchFinding(index, { decision: "include" })} />
+                      ) : (
+                        <>
+                          <WorkspaceButton label="✎ Edit" onClick={() => setEditing(editing === index ? null : index)} />
+                          <WorkspaceButton danger label="✕ Dismiss" onClick={() => patchFinding(index, { decision: "dismiss" })} />
+                        </>
+                      )}
+                    </span>
+                  ) : null}
                 </div>
                 {editing === index ? (
                   <textarea
@@ -215,7 +235,19 @@ function PerformPane({ task }: { task: TaskDetail }) {
         )}
       </ul>
 
-      {!data.published ? (
+      {closed && !data.published ? (
+        // Closed without publishing: keep the record copyable, drop the controls.
+        <div className="mt-4 flex justify-end border-t border-border pt-3">
+          <WorkspaceButton
+            label={copied ? "✓ Copied" : "⧉ Copy as Markdown"}
+            onClick={() => {
+              void navigator.clipboard?.writeText(findingsToMarkdown(data));
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            }}
+          />
+        </div>
+      ) : !data.published ? (
         <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-border pt-3">
           <label className="mr-auto flex items-center gap-2 text-xs text-muted-foreground">
             Verdict
@@ -316,13 +348,22 @@ function AddressPane({ task }: { task: TaskDetail }) {
     save.mutate(next);
   };
 
+  const closed = isClosed(task);
+
   if (proposal.isLoading) {
     return <section className="mt-6 rounded-lg border border-border bg-card/40 p-4 text-xs text-muted-foreground">Loading proposal…</section>;
   }
   if (!data) {
     return (
       <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
-        <Header task={task} hint="No proposal yet — press PLAY to fetch and triage the feedback." />
+        <Header
+          task={task}
+          hint={
+            closed
+              ? "This review task is closed — no proposal was recorded."
+              : "No proposal yet — press PLAY to fetch and triage the feedback."
+          }
+        />
       </section>
     );
   }
@@ -332,13 +373,21 @@ function AddressPane({ task }: { task: TaskDetail }) {
     <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
       <Header
         task={task}
-        hint="Per-thread proposals: Apply runs after your approval; replies post only on your confirm."
+        hint={
+          closed
+            ? data.repliedAt
+              ? "Task closed — replies were posted."
+              : "Task closed — these replies were never posted."
+            : "Per-thread proposals: Apply runs after your approval; replies post only on your confirm."
+        }
       />
       {data.overallNote ? <p className="mt-2 text-xs text-muted-foreground">{data.overallNote}</p> : null}
 
       <ul className="mt-3 flex flex-col gap-2">
         {data.threads.length === 0 ? (
-          <li className="text-xs text-emerald-400">No unresolved feedback 🎉 — mark the task done when ready.</li>
+          <li className="text-xs text-emerald-400">
+            {closed ? "No unresolved feedback 🎉" : "No unresolved feedback 🎉 — mark the task done when ready."}
+          </li>
         ) : null}
         {data.threads.map((t, index) => (
           <li
@@ -351,16 +400,18 @@ function AddressPane({ task }: { task: TaskDetail }) {
               </span>
               <code className="font-mono text-[11px] text-muted-foreground">{t.threadId}</code>
               {t.resolves ? <span className="text-[10px] text-muted-foreground">will resolve</span> : null}
-              <span className="ml-auto flex shrink-0 gap-1">
-                {t.decision === "skip" ? (
-                  <WorkspaceButton label="↩ Include" onClick={() => patchThread(index, { decision: "apply" })} />
-                ) : (
-                  <>
-                    <WorkspaceButton label="✎ Edit reply" onClick={() => setEditing(editing === index ? null : index)} />
-                    <WorkspaceButton danger label="⤼ Skip" onClick={() => patchThread(index, { decision: "skip" })} />
-                  </>
-                )}
-              </span>
+              {!closed ? (
+                <span className="ml-auto flex shrink-0 gap-1">
+                  {t.decision === "skip" ? (
+                    <WorkspaceButton label="↩ Include" onClick={() => patchThread(index, { decision: "apply" })} />
+                  ) : (
+                    <>
+                      <WorkspaceButton label="✎ Edit reply" onClick={() => setEditing(editing === index ? null : index)} />
+                      <WorkspaceButton danger label="⤼ Skip" onClick={() => patchThread(index, { decision: "skip" })} />
+                    </>
+                  )}
+                </span>
+              ) : null}
             </div>
             {editing === index ? (
               <textarea

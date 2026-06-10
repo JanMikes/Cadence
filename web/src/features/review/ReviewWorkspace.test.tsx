@@ -101,3 +101,58 @@ test("standard tasks render no workspace at all", () => {
   );
   expect(html).toBe("");
 });
+
+test("a closed perform task is a record, not a control panel", () => {
+  const qc = new QueryClient();
+  qc.setQueryData(["review-findings", "t1"], FINDINGS);
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <ReviewWorkspace task={reviewTask("perform", "done")} />
+    </QueryClientProvider>,
+  );
+  // findings still visible as history, but no triage/publish controls
+  expect(html).toContain("x.ts:3");
+  expect(html).not.toContain("Dismiss");
+  expect(html).not.toContain("Publish review");
+  expect(html).toContain("never published");
+  expect(html).toContain("Copy as Markdown"); // the record stays exportable
+});
+
+test("a closed task without artifacts never says “press PLAY”", () => {
+  const qc = new QueryClient();
+  qc.setQueryData(["review-findings", "t1"], null);
+  qc.setQueryData(["review-proposal", "t1"], null);
+  const perform = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <ReviewWorkspace task={reviewTask("perform", "done")} />
+    </QueryClientProvider>,
+  );
+  expect(perform).not.toContain("press PLAY");
+  expect(perform).toContain("closed");
+
+  const address = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <ReviewWorkspace task={reviewTask("address", "cancelled")} />
+    </QueryClientProvider>,
+  );
+  expect(address).not.toContain("press PLAY");
+  expect(address).toContain("closed");
+});
+
+test("a closed address task hides thread actions", () => {
+  const qc = new QueryClient();
+  qc.setQueryData(["review-proposal", "t1"], {
+    generatedAt: 1,
+    overallNote: "One fix.",
+    threads: [{ threadId: "RT_1", classification: "must_fix", reply: "Fixed.", resolves: true }],
+  });
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <ReviewWorkspace task={reviewTask("address", "done")} />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("Fixed."); // history stays readable
+  expect(html).not.toContain("Skip");
+  expect(html).not.toContain("Edit reply");
+  expect(html).toContain("never posted");
+});

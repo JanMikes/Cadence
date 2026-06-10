@@ -1,12 +1,13 @@
 import type { Project, Task } from "@cadence/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronsUp, ChevronUp, Equal, ListFilter } from "lucide-react";
-import { type DragEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useActivity, stageLabel } from "../../lib/activity";
 import { formatDate, useDateFormats } from "../../lib/datetime";
-import { getProjects, getTasks, updateTask } from "../../lib/api";
+import { getProjects, getTasks } from "../../lib/api";
 import { BOARD_COLUMNS, type StatusColumn } from "../../lib/status";
 import { cn } from "../../lib/utils";
+import { useAttention } from "../attention/useAttention";
 
 /** Sentinel for tasks without a project in the filter (they're first-class too). */
 const NO_PROJECT = "none";
@@ -31,13 +32,25 @@ const COLUMN_ACCENTS: Record<string, { border: string; dot: string }> = {
 };
 
 export function Board({ onOpen }: { onOpen: (id: string) => void }) {
-  const qc = useQueryClient();
   // Within each column, surface the most urgent (overdue / due-soon) cards first.
   const tasks = useQuery({
     queryKey: ["tasks", "all", "urgency"],
     queryFn: () => getTasks({ sort: "urgency" }),
   });
   const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  // Stalled = the server's verdict (same feed as the Attention pill) — the one
+  // source that actually knows whether a live run exists. A client-side guess from
+  // `updatedAt` lied both ways (any unrelated edit hid a real stall for a minute).
+  const attention = useAttention();
+  const stalledIds = useMemo(
+    () =>
+      new Set(
+        (attention.data?.items ?? [])
+          .filter((i) => i.kind === "stalled" && i.taskId)
+          .map((i) => i.taskId as string),
+      ),
+    [attention.data],
+  );
 
   // Project filter: empty selection (the initial state) = all projects.
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -55,11 +68,6 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
     () => new Map((projects.data ?? []).map((p) => [p.id, p])),
     [projects.data],
   );
-
-  const move = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) => updateTask(id, { status }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["tasks"] }),
-  });
 
   const visible = useMemo(() => {
     let all = tasks.data ?? [];
@@ -80,7 +88,7 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Board</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Drag a card to change its status. Click a card to open it.
+            Click a card to open it — statuses move through the flow (PLAY · approve · merge), not by hand.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -129,7 +137,7 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
             col={col}
             tasks={byStatus(col.id)}
             projectById={projectById}
-            onDropTask={(id) => id && move.mutate({ id, status: col.id })}
+            stalledIds={stalledIds}
             onOpen={onOpen}
           />
         ))}
@@ -288,34 +296,22 @@ function Column({
   col,
   tasks,
   projectById,
-  onDropTask,
+  stalledIds,
   onOpen,
 }: {
   col: StatusColumn;
   tasks: Task[];
   projectById: Map<string, Project>;
-  onDropTask: (id: string) => void;
+  stalledIds: ReadonlySet<string>;
   onOpen: (id: string) => void;
 }) {
-  const [over, setOver] = useState(false);
   const accent = COLUMN_ACCENTS[col.id] ?? { border: "border-t-border", dot: "bg-muted-foreground" };
 
   return (
     <section
-      onDragOver={(e) => {
-        e.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setOver(false);
-        onDropTask(e.dataTransfer.getData("text/plain"));
-      }}
       className={cn(
-        "flex w-64 shrink-0 flex-col rounded-lg border border-border border-t-2 bg-card/30 p-2 transition-colors",
+        "flex w-64 shrink-0 flex-col rounded-lg border border-border border-t-2 bg-card/30 p-2",
         accent.border,
-        over && "ring-2 ring-ring",
       )}
     >
       <div className="flex items-center justify-between px-2 py-1 text-xs font-medium text-muted-foreground">
@@ -331,6 +327,7 @@ function Column({
             key={task.id}
             task={task}
             project={task.projectId ? projectById.get(task.projectId) : undefined}
+            stalled={stalledIds.has(task.id)}
             onOpen={onOpen}
           />
         ))}
@@ -417,31 +414,25 @@ export function WorkingSpinner({ stage, className }: { stage: string; className?
 function BoardCard({
   task,
   project,
+  stalled,
   onOpen,
 }: {
   task: Task;
   project?: Project;
+  /** Server verdict from the attention feed — a run died and nothing is moving this task. */
+  stalled: boolean;
   onOpen: (id: string) => void;
 }) {
   const fmts = useDateFormats();
-  const onDragStart = (e: DragEvent) => e.dataTransfer.setData("text/plain", task.id);
   const badge = task.urgencyTier ? URGENCY_BADGE[task.urgencyTier] : undefined;
   const attention = ATTENTION_BADGE[task.status];
   const stage = useActivity(task.id);
-  // An active-work card with no live run (and not just dispatched) is stalled — show it loudly
-  // rather than letting it masquerade as "in progress" with nothing happening.
-  const stalled =
-    !stage &&
-    (task.status === "implementing" || task.status === "verifying") &&
-    Date.now() - task.updatedAt > 60_000;
   return (
     <button
       type="button"
-      draggable
-      onDragStart={onDragStart}
       onClick={() => onOpen(task.id)}
       className={cn(
-        "cursor-grab rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50 active:cursor-grabbing",
+        "rounded-md border border-border bg-card px-3 py-2 text-left hover:border-primary/50",
         stage && "border-primary/40",
         stalled && "border-red-500/50",
       )}

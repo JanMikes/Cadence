@@ -214,7 +214,14 @@ export function App() {
       ) : null}
 
       {activeSessionId ? (
-        <SessionPanel sessionId={activeSessionId} onClose={() => setActiveSessionId(null)} />
+        <SessionPanel
+          sessionId={activeSessionId}
+          onClose={() => setActiveSessionId(null)}
+          onOpenDetail={(id) => {
+            setActiveSessionId(null);
+            setSessionDetailId(id);
+          }}
+        />
       ) : null}
 
       <CommandPalette

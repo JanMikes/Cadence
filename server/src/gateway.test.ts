@@ -1594,6 +1594,21 @@ test("review workspace endpoints (§6.5.e): findings round-trip, publish filters
 
   const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
   expect(after.status).toBe("done");
+
+  // Re-publishing is refused — even after manually moving the done task back to
+  // Review, the on-disk publish stamp survives and the forge never gets a double post.
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "review" }),
+  });
+  const again = await fetch(`${gw.url}/api/tasks/${task.id}/review/publish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ verdict: "approve" }),
+  });
+  expect(again.status).toBe(409);
+  expect(publishedReviews.length).toBe(before + 1); // still exactly one forge post
 });
 
 test("review replies endpoint (§6.5.f): posts non-skipped replies, resolves, → done", async () => {
@@ -1770,4 +1785,50 @@ test("re-submitting answers neither duplicates context nor yanks the status", as
   const ctx = await contextNow();
   expect(count(ctx, "A: GitHub OAuth")).toBe(1);
   expect(count(ctx, "A: SAML")).toBe(1);
+});
+
+test("attention surfaces a dead capture pipeline (autonomy on, triage attempt died)", async () => {
+  // Build the evidence trail with autonomy OFF (no real spawn): a task stuck in
+  // inbox whose only triage attempt is a dead session row.
+  const task = await createViaApi("triage died on me");
+  db.insert(sessions)
+    .values({
+      id: crypto.randomUUID(),
+      taskId: task.id,
+      role: "triage",
+      kind: "oneshot",
+      status: "failed",
+      cwd: "/tmp",
+      costUsd: 0,
+      startedAt: Date.now() - 120_000,
+      endedAt: Date.now() - 110_000,
+    })
+    .run();
+  // age the task past the 60s grace window
+  db.update(tasksTable).set({ updatedAt: Date.now() - 120_000 }).where(eq(tasksTable.id, task.id)).run();
+
+  // a fresh inbox task with NO attempt must never be flagged (manual capture is a valid resting state)
+  const resting = await createViaApi("resting in inbox");
+  db.update(tasksTable).set({ updatedAt: Date.now() - 120_000 }).where(eq(tasksTable.id, resting.id)).run();
+
+  await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ global: { autonomy: true } }),
+  });
+  try {
+    const att = (await fetch(`${gw.url}/api/attention`).then((r) => r.json())) as {
+      items: Array<{ id: string; kind: string; taskId?: string; summary: string }>;
+    };
+    const item = att.items.find((i) => i.taskId === task.id);
+    expect(item?.kind).toBe("stalled");
+    expect(item?.summary).toContain("triage never finished");
+    expect(att.items.some((i) => i.taskId === resting.id)).toBe(false);
+  } finally {
+    await fetch(`${gw.url}/api/settings`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ global: { autonomy: false } }),
+    });
+  }
 });

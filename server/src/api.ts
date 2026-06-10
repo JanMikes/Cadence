@@ -543,6 +543,33 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       });
     }
 
+    // Dead capture pipeline (autonomy on): a task still in inbox/triaged whose
+    // triage/discovery attempt died gets only an ephemeral WS notify from the
+    // watchdog — give it a persistent item too. Evidence-based: only tasks where a
+    // run actually existed are flagged (tasks captured with autonomy off, or in a
+    // project that opted out, are legitimately resting — never flag those).
+    if (readSettings().global.autonomy) {
+      for (const status of ["inbox", "triaged"] as const) {
+        for (const t of listTasks(ctx.db, { status, sort: "urgency" })) {
+          if (activeIds.has(t.id) || nowMs - t.updatedAt < 60_000) continue;
+          if (status === "triaged" && !resolveProjectAutonomy(ctx.db, t.projectId ?? null)) continue;
+          const roles = new Set(listTaskSessions(ctx.db, t.id).map((s) => s.role));
+          if (!roles.has("triage") && !roles.has("discovery")) continue;
+          if (findLiveStage(ctx.db, t.id, "triage") || findLiveStage(ctx.db, t.id, "discovery")) continue;
+          items.push({
+            id: `stalled:${t.id}`,
+            kind: "stalled",
+            taskId: t.id,
+            title: t.title,
+            summary: "Capture pipeline died — triage never finished",
+            actionLabel: "Inspect",
+            urgency: (t.urgency ?? 0) + 1_000_000,
+            createdAt: t.updatedAt,
+          });
+        }
+      }
+    }
+
     items.sort((x, y) => y.urgency - x.urgency || x.createdAt - y.createdAt);
     return Response.json({ items, count: items.length } satisfies AttentionResponse);
   }
@@ -602,6 +629,14 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const findings = readReviewFindings(taskId);
     const ref = task.reviewRef ? parsePrUrl(task.reviewRef) : null;
     if (!findings || !ref) return conflict("no findings to publish (run the review first)");
+    // Already on the forge → never double-post. (Reachable e.g. by manually moving a
+    // done review task back to Review — the first publish stamp survives on disk.)
+    if (findings.published) {
+      return conflict(
+        `this review was already published${findings.published.url ? ` (${findings.published.url})` : ""} — it can't be posted twice`,
+        { published: true, url: findings.published.url },
+      );
+    }
     let body: { verdict?: string };
     try {
       body = (await req.json().catch(() => ({}))) as typeof body;

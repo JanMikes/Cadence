@@ -456,8 +456,8 @@ const OPS_FIELDS: Array<{ key: string; label: string; help: string; fallback: nu
   },
   {
     key: "maxStageAttemptsPer24h",
-    label: "Max automatic attempts per stage / 24 h",
-    help: "The circuit breaker: past this, the task flips to Needs input instead of spawning again.",
+    label: "Max automatic retries per stage / 24 h",
+    help: "Circuit breaker for Cadence-initiated respawns (self-heal): past this, the task flips to Needs input instead of spawning again. Actions you trigger yourself (PLAY, Refine) are never blocked.",
     fallback: 3,
   },
   {
