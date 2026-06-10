@@ -119,3 +119,34 @@ test("one-shot stages receive the composed context layers (§6.3.f)", async () =
   await run({ cwd: "/tmp/ctx", role: "verifier", prompt: "p", taskId: t.id, appendSystemPrompt: "EXPLICIT" });
   expect(seen[2]?.appendSystemPrompt).toBe("EXPLICIT");
 });
+
+test("composed context carries the forge capability line (§6.4.f)", async () => {
+  const { createProject } = await import("../projects");
+  const { updateTask } = await import("../tasks");
+  const { composeContext } = await import("../context");
+  const { projectForgeStatus, _clearForgeCache } = await import("../forge");
+  const db: Db = openDb(join(home, "forgectx.db"));
+  migrateDb(db);
+
+  const project = createProject(db, {
+    name: "Forge Ctx",
+    rootPath: "/tmp/fc",
+    gitRemote: "git@github.com:acme/fc.git",
+  });
+  const t = createTask(db, { title: "uses gh" });
+  updateTask(db, t.id, { project: project.slug });
+
+  // Pre-warm the probe cache with a deterministic fake so composeContext never shells out.
+  _clearForgeCache();
+  projectForgeStatus("git@github.com:acme/fc.git", null, {
+    exec: (cmd, args) =>
+      args[0] === "--version" ? `${cmd} version 1\n` : "Logged in to github.com account janmikes\n",
+  });
+
+  const projectId = (await import("../projects")).getProject(db, project.slug)?.id ?? null;
+  const ctx = composeContext(db, { taskId: t.id, projectId, fleetId: null });
+  expect(ctx).toContain("Repository forge");
+  expect(ctx).toContain("github.com/acme/fc (GitHub)");
+  expect(ctx).toContain("`gh` CLI is installed and authenticated");
+  _clearForgeCache();
+});

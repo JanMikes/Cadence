@@ -430,6 +430,27 @@ function BoardCard({
         ) : null}
         {task.priority ? <PriorityBadge priority={task.priority} /> : null}
         {task.deadline ? <span>⏷ {formatDate(task.deadline, fmts)}</span> : null}
+        {task.prUrl ? (
+          // The card root is a <button>, so this is a styled span (nested <a> is invalid HTML).
+          <span
+            role="link"
+            tabIndex={0}
+            title="Open the PR/MR this task delivered"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(task.prUrl as string, "_blank", "noreferrer");
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.stopPropagation();
+                window.open(task.prUrl as string, "_blank", "noreferrer");
+              }
+            }}
+            className="text-primary hover:underline"
+          >
+            PR ↗
+          </span>
+        ) : null}
         {project ? (
           // Quiet provenance, not a shout: a dot in the project's color + its name.
           <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/50 px-1.5 py-0.5 text-[10px]">

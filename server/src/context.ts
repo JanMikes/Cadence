@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { fleets } from "./db/schema";
+import { projectForgeStatus } from "./forge";
 import { readGlobalMemory, readProjectMemory } from "./memory";
 import { getProjectById } from "./projects";
 import { readContext, readSettings, readSpec } from "./store/store";
@@ -41,6 +42,26 @@ export function composeContext(db: Db, scope: ContextScope): string {
       const projectMemory = readProjectMemory(project.slug);
       if (projectMemory.trim()) {
         sections.push(section(`Project memory: ${project.name}`, projectMemory));
+      }
+      // Forge capability (§6.4.f, tell-don't-hardcode): agents learn whether gh/glab is
+      // usable here so they can open PRs / read issues / check CI when relevant. The
+      // probe is cached (10 min), so this stays cheap per run.
+      if (project.gitRemote) {
+        const forge = projectForgeStatus(project.gitRemote, project.forgeOverride);
+        if (forge.remote?.forge) {
+          const label = forge.remote.forge === "github" ? "GitHub" : "GitLab";
+          const cli = forge.cli;
+          const ready = cli?.installed && cli.authenticated;
+          sections.push(
+            section(
+              "Repository forge",
+              `This repo is ${forge.remote.host}/${forge.remote.owner}/${forge.remote.repo} (${label}). ` +
+                (ready
+                  ? `The \`${cli.cli}\` CLI is installed and authenticated${cli.account ? ` as ${cli.account}` : ""} — you may use it for PR/MR, issue and CI operations when relevant.`
+                  : `The \`${cli?.cli ?? (forge.remote.forge === "github" ? "gh" : "glab")}\` CLI is not ready here — avoid forge API operations.`),
+            ),
+          );
+        }
       }
     }
   }

@@ -278,6 +278,22 @@ export function TaskDetail({
               <dt className="text-muted-foreground">Deadline</dt>
               <dd>{formatDate(task.deadline, fmts)}</dd>
 
+              {task.prUrl ? (
+                <>
+                  <dt className="text-muted-foreground">PR / MR</dt>
+                  <dd>
+                    <a
+                      href={task.prUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      Open PR/MR ↗
+                    </a>
+                  </dd>
+                </>
+              ) : null}
+
               <dt className="text-muted-foreground">Estimate</dt>
               <dd>{task.estimate != null ? `${task.estimate} min` : "—"}</dd>
 
