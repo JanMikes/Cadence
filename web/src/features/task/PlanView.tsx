@@ -7,7 +7,17 @@ import { approvePlan, getPlan } from "../../lib/api";
  * The Planner's output (§7.4): an ordered, approvable implementation plan shown
  * once a task is executing. The Implementer (3.4) runs only after approval.
  */
-export function PlanView({ taskId, onResolved }: { taskId: string; onResolved?: () => void }) {
+export function PlanView({
+  taskId,
+  status,
+  onResolved,
+}: {
+  taskId: string;
+  /** The task's current status — gates the "Planning…" placeholder to the window
+   *  where the Planner can actually be running. */
+  status: string;
+  onResolved?: () => void;
+}) {
   const qc = useQueryClient();
   const plan = useQuery({ queryKey: ["task", taskId, "plan"], queryFn: () => getPlan(taskId) });
 
@@ -23,15 +33,18 @@ export function PlanView({ taskId, onResolved }: { taskId: string; onResolved?: 
 
   const steps = plan.data?.steps ?? [];
   if (steps.length === 0) {
-    // Planner may still be running right after PLAY.
-    return plan.data ? (
+    // The Planner only runs in the window between PLAY and Plan review (status
+    // "implementing", §7.4). Anywhere else an empty plan just means none was
+    // written (e.g. merged without one) — show nothing, not a stale "Planning…".
+    if (!plan.data || status !== "implementing") return null;
+    return (
       <section className="mt-5 rounded-lg border border-border bg-card/40 p-4">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ListChecks className="size-4" /> Plan
         </div>
         <p className="mt-1 text-xs text-muted-foreground">Planning… the Planner is drafting steps.</p>
       </section>
-    ) : null;
+    );
   }
 
   const approved = plan.data?.approved ?? false;

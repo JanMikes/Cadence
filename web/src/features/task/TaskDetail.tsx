@@ -10,6 +10,7 @@ const PERMISSION_LABELS: Record<string, string> = {
 };
 import { type FlowControls, FlowStrip } from "../../components/FlowStrip";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
+import { toast } from "../../components/Toaster";
 import {
   appendContext,
   getContext,
@@ -168,7 +169,7 @@ export function TaskDetail({
 
         {task ? (
           <>
-            <QACards taskId={taskId} onResolved={resolved} />
+            <QACards taskId={taskId} status={task.status} onResolved={resolved} />
 
             {task.status === "ready" ? (
               <button
@@ -194,11 +195,20 @@ export function TaskDetail({
             ) : (
               <>
                 {task.status === "review" ? (
-                  <ReviewPanel taskId={taskId} onChanged={resolved} />
+                  <ReviewPanel
+                    taskId={taskId}
+                    onChanged={resolved}
+                    onMerged={() => {
+                      // Celebrate + get out of the way: toast, and close the modal
+                      // when standalone (the Attention flow advances on its own).
+                      toast(`🎉 “${task.title}” merged — task done. Nice ship!`);
+                      if (!flow) onClose();
+                    }}
+                  />
                 ) : null}
 
                 {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
-                  <PlanView taskId={taskId} onResolved={resolved} />
+                  <PlanView taskId={taskId} status={task.status} onResolved={resolved} />
                 ) : null}
               </>
             )}

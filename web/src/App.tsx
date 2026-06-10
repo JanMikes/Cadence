@@ -2,6 +2,7 @@ import type { HealthStatus } from "@cadence/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { AppShell, type ViewId } from "./components/AppShell";
+import { Toaster } from "./components/Toaster";
 import { Analytics } from "./features/analytics/Analytics";
 import { AttentionCenter } from "./features/attention/AttentionCenter";
 import { AttentionPill } from "./features/attention/AttentionPill";
@@ -239,6 +240,8 @@ export function App() {
           }}
         />
       ) : null}
+
+      <Toaster />
     </>
   );
 }

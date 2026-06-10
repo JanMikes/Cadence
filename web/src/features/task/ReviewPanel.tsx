@@ -20,7 +20,17 @@ function DiffLine({ line }: { line: string }) {
  * The Review screen (spec §7.7/§10): delivery summary + verify results + the diff,
  * with Merge (→ done) / Request changes (→ implementing). Shown when in review.
  */
-export function ReviewPanel({ taskId, onChanged }: { taskId: string; onChanged: () => void }) {
+export function ReviewPanel({
+  taskId,
+  onChanged,
+  onMerged,
+}: {
+  taskId: string;
+  onChanged: () => void;
+  /** Fired after a successful merge (on top of onChanged) — lets the host close
+   *  the modal / celebrate. */
+  onMerged?: () => void;
+}) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
 
@@ -33,7 +43,13 @@ export function ReviewPanel({ taskId, onChanged }: { taskId: string; onChanged: 
     void qc.invalidateQueries({ queryKey: ["tasks"] });
     onChanged();
   };
-  const merge = useMutation({ mutationFn: () => mergeReview(taskId), onSuccess: invalidate });
+  const merge = useMutation({
+    mutationFn: () => mergeReview(taskId),
+    onSuccess: () => {
+      invalidate();
+      onMerged?.();
+    },
+  });
   const reqChanges = useMutation({
     mutationFn: () => requestChanges(taskId, note.trim()),
     onSuccess: invalidate,

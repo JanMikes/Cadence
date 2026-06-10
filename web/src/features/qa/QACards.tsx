@@ -7,9 +7,29 @@ import { getQa, submitAnswers } from "../../lib/api";
 
 type Answer = string | string[];
 
+/** Statuses where answers still feed the pipeline (capture → refinement → Ready).
+ *  Once execution starts (or the task is closed) the card would be stale noise —
+ *  answers can no longer steer the task. */
+const INPUT_STATUSES = new Set(["inbox", "triaged", "refining", "needs_feedback", "ready", "blocked"]);
+
+/** Mirrors the server's rule: non-empty string or non-empty selection. */
+function isAnswered(a: Answer | undefined): boolean {
+  if (a == null) return false;
+  return Array.isArray(a) ? a.length > 0 : a.trim().length > 0;
+}
+
 /** The Needs-Feedback Q&A cards (§6/§10): ranked questions the user answers to
  *  unblock a task. Submitting answers advances the task (→ Ready when complete). */
-export function QACards({ taskId, onResolved }: { taskId: string; onResolved?: () => void }) {
+export function QACards({
+  taskId,
+  status,
+  onResolved,
+}: {
+  taskId: string;
+  /** The task's current status — the card only shows while input is still consumed. */
+  status: string;
+  onResolved?: () => void;
+}) {
   const qc = useQueryClient();
   const qa = useQuery({ queryKey: ["task", taskId, "qa"], queryFn: () => getQa(taskId) });
   const [draft, setDraft] = useState<Record<string, Answer>>({});
@@ -23,11 +43,17 @@ export function QACards({ taskId, onResolved }: { taskId: string; onResolved?: (
     },
   });
 
-  if (!qa.data || qa.data.questions.length === 0) return null;
-  const questions = [...qa.data.questions].sort((a, b) => a.rank - b.rank);
+  const channel = qa.data;
+  if (!channel || channel.questions.length === 0) return null;
+  if (!INPUT_STATUSES.has(status)) return null;
+  // Outside the explicit Needs-Feedback gate, only surface while something is
+  // actually unanswered — answered Q&A is history, not a call to action.
+  const hasOpen = channel.questions.some((q) => !isAnswered(channel.answers[q.id]));
+  if (status !== "needs_feedback" && !hasOpen) return null;
+  const questions = [...channel.questions].sort((a, b) => a.rank - b.rank);
 
   const valueOf = (q: QAQuestion): Answer =>
-    draft[q.id] ?? qa.data?.answers[q.id] ?? (q.type === "multi_choice" ? [] : "");
+    draft[q.id] ?? channel.answers[q.id] ?? (q.type === "multi_choice" ? [] : "");
   const set = (id: string, v: Answer) => setDraft((p) => ({ ...p, [id]: v }));
 
   return (
