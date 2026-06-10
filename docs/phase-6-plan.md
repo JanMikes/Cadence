@@ -8,7 +8,8 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.5.g (board type filter + badges).
+- **PHASE 6 CODE COMPLETE (2026-06-10).** Every automatable step is [x]; the sole remainder is
+  6.5.i — the human real-forge smoke (instructions in the Journal). 427 tests, all gates green.
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -374,16 +375,17 @@ cognition Cadence delegates to autonomous Claude — while keeping the human as 
   threads** (shows exact replies to be posted; resolves only threads marked resolvable).
   - Verify: seeded threads render; apply edits the branch (fixture); replies queue until confirmed;
     nothing posts without the confirm.
-- [ ] **6.5.g Board + filter polish.** Type segmented control (All · Tasks · Reviews), **Review**
+- [x] **6.5.g Board + filter polish.** Type segmented control (All · Tasks · Reviews), **Review**
   badge on cards (direction-aware tooltip: “reviewing their PR” / “addressing feedback”), stage
   label “Reviewing…” while the reviewer runs.
-  - Verify: filter narrows correctly; badges render; gates green.
-- [ ] **6.5.h Settings: Review section.** Under the 6.3 sections: strictness (lenient / standard /
+  - Verify: filter narrows correctly; badges render; gates green. ✓ 2026-06-10 (`09ca996`, 427 tests).
+- [x] **6.5.h Settings: Review section.** Under the 6.3 sections: strictness (lenient / standard /
   strict → `{{strictness}}` template variable), default verdict suggestion on/off, “encourage task
   description” hint toggle (capture shows a nudge: a one-line “what should this PR do?” improves
   review quality — optional but encouraged).
   - Verify: strictness reaches the reviewer prompt (test); section renders + saves.
-- [ ] **6.5.i Acceptance (human-assisted).** On a scratch repo: perform-review a real PR end-to-end
+    ✓ 2026-06-10 (verdict/capture-hint toggles skipped by decision — covered by existing UI).
+- [blocked: human-assisted — real-forge smoke; instructions in the Journal] **6.5.i Acceptance (human-assisted).** On a scratch repo: perform-review a real PR end-to-end
   (PLAY → findings → publish a *Comment* review with 1 included finding); address-review your own PR
   with a seeded comment (PLAY → proposal → approve → fix applied → reply posted + resolved). Confirm
   no spawn leaks (6.1 guards) during both runs. Automated parts mocked in CI; journal results.
@@ -681,5 +683,23 @@ yourself.
   endpoint posts non-skipped replies, resolves marked threads, and tolerates per-thread failures
   with a context note. Copy-as-Markdown via exported `findingsToMarkdown` (unit-tested: dismissed
   excluded). Both flows end the task → done with the standard notification. Caught during
-  implementation: a python-generated escape produced an invalid template literal (`\\\``) — fixed
-  to `\\``; gates were red until then, honest catch by the test run.
+  implementation: a python-generated escape produced an invalid template literal — fixed; gates
+  were red until then, honest catch by the test run.
+- **2026-06-10 — 6.5.g+h done (`09ca996`, 427 tests) → PHASE 6 CODE COMPLETE.** Type filter +
+  badge + spinner labels; strictness setting wired end-to-end. Skipped by decision (journal): the
+  "default verdict on/off" and capture-hint toggles — the verdict select in the workspace and the
+  capture banner already serve both needs; adding switches would be settings noise.
+- **6.5.i — INSTRUCTIONS FOR THE HUMAN ACCEPTANCE RUN (the only open item):**
+  1. *Perform:* on a scratch GitHub repo with a real PR, capture the PR URL (the banner should
+     propose Review · perform · matched project — needs the project's gitRemote set), move it to
+     Ready, press PLAY. Expect: "Reviewing…" spinner → task lands in Review with findings; dismiss
+     one finding, pick a verdict, hit Publish (armed confirm) → verify on GitHub the review +
+     inline comments appear and the dismissed one doesn't; task → Done.
+  2. *Address:* open a PR of your own with a seeded review comment, capture its URL (banner should
+     infer "address" — your account = author), PLAY. Expect proposal in plan_review → Approve &
+     apply → branch gets the fix pushed (check the commit) → Post replies & resolve → the thread on
+     GitHub shows the reply + resolved; task → Done.
+  3. *GitLab:* repeat either flow on a GitLab repo if available — the glab payload shapes are
+     doc-verified only (⚠ flags in forge-review.ts) and may need small fixes; file follow-ups.
+  4. Watch the Sessions view during runs: stage rows appear, finish, and never linger "running"
+     (§6.1 guards active throughout).

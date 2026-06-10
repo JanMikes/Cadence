@@ -123,10 +123,12 @@ prompt: [`phase-6-prompt.md`](phase-6-prompt.md).**
       (+ forgeOverride for self-hosted), gh/glab capability probe + Repository card, forge-aware
       auto_pr delivery with honest fallback (PR/MR URL on task + Open links), forge capability
       line in composed context
-- [ ] **6.5 ⭐ Code-review module** — `code_review` task type with inferred perform/address
-      direction, reviewer + review-responder agents (editable prompts), forge review data layer
-      (diff/threads/publish/resolve), findings-centric Review Workspace UI with explicit-confirm
-      publishing, board type filter + badges, review settings
+- [x] **6.5 ⭐ Code-review module** — **CODE COMPLETE 2026-06-10** (human real-forge smoke
+      pending, see plan §6.5.i): code_review task type + capture inference (author vs account →
+      perform/address), reviewer + review-responder agents (editable, pre-fetched PR data, opus),
+      gh/glab review data layer (meta/diff/threads/publish/reply/resolve), Review Workspace with
+      armed explicit-confirm publishing (dismissed findings never leave the machine), deterministic
+      PR-branch apply chain, board type filter + ⇄ Review badges, strictness setting
 
 ---
 
