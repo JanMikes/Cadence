@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.3.c (Settings UI restructure: sections + Agents & Prompts editor).
+- **Current step:** 6.3.d (Czech date/time format + central formatter).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -212,7 +212,7 @@ global→project→fleet→task context, violating the “compose into every age
   it for model resolution (replacing direct `modelForRole` calls).
   - Verify: round-trip + reset tests; an overridden model reaches the spawn args (mock runner).
     ✓ 2026-06-10 (`7f2c253`, 366 tests; lazy subagent resolution per the 6.3.a journal note).
-- [ ] **6.3.c Settings UI restructure.** Left sub-nav sections within Settings: **General**
+- [x] **6.3.c Settings UI restructure.** Left sub-nav sections within Settings: **General**
   (existing fields) · **Agents & Prompts** · **Formats** · **Operations**. *Agents & Prompts*: agent
   list (label, model chip, “customized” dot) → editor pane: description, variables legend (chips),
   monospace autosizing textarea, per-agent **model select** (default/haiku/sonnet/opus), labeled
@@ -220,7 +220,8 @@ global→project→fleet→task context, violating the “compose into every age
   difference between the **global system prompt** (context layer composed into every run — stays in
   General) and **per-agent stage templates** (the agent’s instructions).
   - Verify: edit the discovery prompt → next discovery run uses it (mock-runner test); reset
-    restores default; keyboard navigable; gates green.
+    restores default; keyboard navigable; gates green. ✓ 2026-06-10 (`e9db554`, 368 tests; the
+    render-through-override path was proven in 6.3.b's tests).
 - [ ] **6.3.d Date/time format (Czech default).** Settings `dateTimeFormat` + `dateFormat` with
   presets — **`d.m.Y H:i:s` / `d.m.Y` (DEFAULT)**, ISO, US, System locale — plus a custom
   PHP-style token input (`d m Y H i s`) with live preview. New `web/src/lib/datetime.ts`
@@ -585,3 +586,11 @@ yourself.
   row). Whitespace-only prompt overrides fall back to the default — an agent can never run with an
   empty prompt. PATCH deep-merge semantics: per-field set/clear, role removed when emptied,
   `agents: {role: null}` resets wholesale.
+- **2026-06-10 — 6.3.c done** (`e9db554`). Settings split into a section nav (General · Agents &
+  Prompts; 6.3.d/e add theirs when they land — no dead placeholder sections). **Decisions:** the
+  editor textarea shows the EFFECTIVE template (override ?? default) so editing starts from what
+  actually runs; saving text equal to the default clears the override (the amber “customized” dot
+  never lies); unsaved-changes guard is an inline Discard/Keep bar (no native confirm — codebase
+  precedent); variables legend renders each `{{var}}` chip with its doc line. New
+  GET /api/agents/prompts (registry + overrides merged); gateway test cleans its override up so
+  test order stays independent.
