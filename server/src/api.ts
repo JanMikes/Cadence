@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import {
+  type AgentPromptInfo,
   APP_NAME,
   type AppendContextInput,
   type AttentionItem,
@@ -29,6 +30,7 @@ import { runFleetImplementer } from "./agents/fleet";
 import { runImplementer } from "./agents/implementer";
 import { approvePlan, runPlanner } from "./agents/planner";
 import { runReflector } from "./agents/reflector";
+import { AGENT_PROMPTS } from "./agents/prompts";
 import { findLiveStage } from "./agents/stage-guard";
 import { runVerifier } from "./agents/verifier";
 import { answerQuestions, runQuestioner } from "./agents/questioner";
@@ -843,6 +845,22 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const created = importProjects(ctx.db, selections);
     if (created.length) ctx.hub.broadcast({ type: "event", name: "projects:imported" });
     return Response.json(created, { status: 201 });
+  }
+
+  // The agent prompt registry + current overrides — powers Settings → Agents & Prompts (6.3.c).
+  if (pathname === "/api/agents/prompts" && method === "GET") {
+    const overrides = readSettings().agents ?? {};
+    const list: AgentPromptInfo[] = Object.values(AGENT_PROMPTS).map((def) => ({
+      role: def.role,
+      kind: def.kind,
+      label: def.label,
+      description: def.description,
+      defaultModel: def.defaultModel ?? null,
+      variables: def.variables,
+      defaultTemplate: def.defaultTemplate,
+      override: overrides[def.role] ?? null,
+    }));
+    return Response.json(list);
   }
 
   if (pathname === "/api/settings") {

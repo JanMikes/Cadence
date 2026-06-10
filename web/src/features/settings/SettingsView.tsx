@@ -1,15 +1,64 @@
+import type { AgentPromptInfo } from "@cadence/shared";
 import { DELIVERY_MODES, PERMISSION_MODES, TERMINAL_APPS } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Save } from "lucide-react";
+import { Bot, Check, Save, Settings2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
-import { getSettings, updateSettings } from "../../lib/api";
+import { getAgentPrompts, getSettings, updateSettings } from "../../lib/api";
 import { getAutostart, isTauri, setAutostart } from "../../lib/tauri";
+import { cn } from "../../lib/utils";
 
 const FIELD =
   "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
+type SectionId = "general" | "agents";
+
+// Sections grow with the phase: Formats (6.3.d) and Operations (6.3.e) join when they land.
+const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Settings2 }> = [
+  { id: "general", label: "General", icon: Settings2 },
+  { id: "agents", label: "Agents & Prompts", icon: Bot },
+];
+
 export function SettingsView() {
+  const [section, setSection] = useState<SectionId>("general");
+  return (
+    <div className="mx-auto max-w-5xl p-8">
+      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Global defaults (overridable per project/task), agent prompts, and the preferred terminal.
+      </p>
+
+      <div className="mt-6 flex items-start gap-6">
+        <nav aria-label="Settings sections" className="flex w-44 shrink-0 flex-col gap-1">
+          {SECTIONS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setSection(id)}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                section === id
+                  ? "bg-primary/10 font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-card hover:text-foreground",
+              )}
+            >
+              <Icon className="size-4 shrink-0" />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1">
+          {section === "general" ? <GeneralSection /> : null}
+          {section === "agents" ? <AgentsPromptsSection /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- General
+
+function GeneralSection() {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
 
@@ -71,139 +120,385 @@ export function SettingsView() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Global defaults (overridable per project/task) and the preferred terminal for handoff.
-      </p>
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+      <Toggle
+        label="Autonomy"
+        help="When on, Cadence triages and refines every captured task automatically (spawns Claude in the background). Off by default; override per project."
+        checked={autonomy}
+        onToggle={() => setAutonomy((v) => !v)}
+      />
 
-      <form onSubmit={onSubmit} className="mt-6 flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card/40 p-4">
-          <div>
-            <div className="text-sm font-medium">Autonomy</div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              When on, Cadence triages and refines every captured task automatically (spawns Claude in
-              the background). Off by default; override per project.
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={autonomy}
-            aria-label="Autonomy"
-            onClick={() => setAutonomy((v) => !v)}
-            className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-              autonomy ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            <span
-              className={`inline-block size-5 rounded-full bg-white transition-transform ${
-                autonomy ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
-        </div>
+      {inTauri ? (
+        <Toggle
+          label="Launch at login"
+          help="Start Cadence automatically when you log in (to the menubar). Desktop app only."
+          checked={launchAtLogin}
+          onToggle={() => void toggleLaunchAtLogin()}
+        />
+      ) : null}
 
-        {inTauri ? (
-          <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card/40 p-4">
-            <div>
-              <div className="text-sm font-medium">Launch at login</div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Start Cadence automatically when you log in (to the menubar). Desktop app only.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={launchAtLogin}
-              aria-label="Launch at login"
-              onClick={() => void toggleLaunchAtLogin()}
-              className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                launchAtLogin ? "bg-primary" : "bg-muted"
-              }`}
-            >
-              <span
-                className={`inline-block size-5 rounded-full bg-white transition-transform ${
-                  launchAtLogin ? "translate-x-5" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Preferred terminal (for one-click handoff)
+        <select value={terminal} onChange={(e) => setTerminal(e.target.value)} className={FIELD}>
+          {TERMINAL_APPS.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Default permission mode
+        <select value={perm} onChange={(e) => setPerm(e.target.value)} className={FIELD}>
+          {PERMISSION_MODES.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Default delivery mode
+        <select value={delivery} onChange={(e) => setDelivery(e.target.value)} className={FIELD}>
+          {DELIVERY_MODES.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Default model (blank = claude default)
+        <input
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          placeholder="claude-opus-4-8"
+          className={FIELD}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Claude binary path (blank = found on PATH)
+        <input
+          value={claudeBin}
+          onChange={(e) => setClaudeBin(e.target.value)}
+          placeholder="/Users/you/.local/bin/claude"
+          className={FIELD}
+        />
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Global system prompt (composed into every agent run)
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={4}
+          placeholder="e.g. Always prefer small, reviewable diffs."
+          className={FIELD}
+        />
+        <span className="text-[11px] leading-relaxed">
+          This is a <strong>context layer</strong> added to every run (global → project → task). The
+          per-agent <em>instructions</em> — what Triage, Discovery, the Implementer… are told to do —
+          live in <strong>Agents &amp; Prompts</strong>.
+        </span>
+      </label>
+
+      <div className="flex items-center justify-end gap-3">
+        {save.isSuccess ? (
+          <span className="inline-flex items-center gap-1 text-xs text-green-500">
+            <Check className="size-3.5" /> Saved
+          </span>
         ) : null}
+        <LabeledIconButton icon={<Save />} label="Save settings" type="submit" disabled={save.isPending} />
+      </div>
+    </form>
+  );
+}
 
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Preferred terminal (for one-click handoff)
-          <select value={terminal} onChange={(e) => setTerminal(e.target.value)} className={FIELD}>
-            {TERMINAL_APPS.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
+function Toggle({
+  label,
+  help,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  help: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-card/40 p-4">
+      <div>
+        <div className="text-sm font-medium">{label}</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">{help}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={onToggle}
+        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-primary" : "bg-muted"
+        }`}
+      >
+        <span
+          className={`inline-block size-5 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Agents & Prompts (6.3.c)
+
+const MODEL_OPTIONS = ["claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8"];
+
+/** Short chip text for a model id ("claude-sonnet-4-6" → "sonnet"). */
+function modelShort(model: string | null | undefined): string {
+  if (!model) return "auto";
+  const m = model.match(/claude-(\w+)/);
+  return m?.[1] ?? model;
+}
+
+function AgentsPromptsSection() {
+  const prompts = useQuery({ queryKey: ["agent-prompts"], queryFn: getAgentPrompts });
+  const list = prompts.data ?? [];
+  const [selected, setSelected] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [pendingSwitch, setPendingSwitch] = useState<string | null>(null);
+
+  const stages = list.filter((d) => d.kind === "stage");
+  const subagents = list.filter((d) => d.kind === "subagent");
+  const current = list.find((d) => d.role === selected) ?? stages[0] ?? list[0];
+
+  const trySelect = (role: string) => {
+    if (role === current?.role) return;
+    if (dirty) setPendingSwitch(role); // unsaved-changes guard — the editor shows the choice
+    else setSelected(role);
+  };
+
+  const Group = ({ title, items }: { title: string; items: AgentPromptInfo[] }) => (
+    <>
+      <div className="mt-3 mb-1 px-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground first:mt-0">
+        {title}
+      </div>
+      {items.map((d) => {
+        const customized = d.override != null;
+        const effectiveModel = d.override?.model ?? d.defaultModel;
+        return (
+          <button
+            key={d.role}
+            type="button"
+            onClick={() => trySelect(d.role)}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+              current?.role === d.role
+                ? "bg-primary/10 text-foreground"
+                : "text-muted-foreground hover:bg-card hover:text-foreground",
+            )}
+          >
+            <span className="truncate">{d.label}</span>
+            {customized ? (
+              <span title="Customized — differs from the default" className="size-1.5 shrink-0 rounded-full bg-amber-400" />
+            ) : null}
+            <span className="ml-auto shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+              {modelShort(effectiveModel)}
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+
+  return (
+    <div className="flex items-start gap-4">
+      <nav aria-label="Agents" className="w-56 shrink-0 rounded-lg border border-border bg-card/30 p-2">
+        {prompts.isLoading ? <div className="p-2 text-xs text-muted-foreground">Loading agents…</div> : null}
+        <Group title="Pipeline stages" items={stages} />
+        <Group title="Subagents (library)" items={subagents} />
+      </nav>
+      {current ? (
+        <AgentEditor
+          key={current.role}
+          def={current}
+          onDirtyChange={setDirty}
+          pendingSwitch={pendingSwitch}
+          onConfirmSwitch={() => {
+            if (pendingSwitch) setSelected(pendingSwitch);
+            setPendingSwitch(null);
+            setDirty(false);
+          }}
+          onCancelSwitch={() => setPendingSwitch(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AgentEditor({
+  def,
+  onDirtyChange,
+  pendingSwitch,
+  onConfirmSwitch,
+  onCancelSwitch,
+}: {
+  def: AgentPromptInfo;
+  onDirtyChange: (dirty: boolean) => void;
+  pendingSwitch: string | null;
+  onConfirmSwitch: () => void;
+  onCancelSwitch: () => void;
+}) {
+  const qc = useQueryClient();
+  const savedPrompt = def.override?.prompt ?? def.defaultTemplate;
+  const savedModel = def.override?.model ?? "";
+  const [prompt, setPrompt] = useState(savedPrompt);
+  const [model, setModel] = useState(savedModel);
+  const [resetArmed, setResetArmed] = useState(false);
+
+  const dirty = prompt !== savedPrompt || model !== savedModel;
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
+
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ["agent-prompts"] });
+    void qc.invalidateQueries({ queryKey: ["settings"] });
+  };
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateSettings({
+        agents: {
+          // Persist only real customizations: a prompt equal to the default clears the
+          // override (null), so "customized" honestly means "differs from default".
+          [def.role]: {
+            prompt: prompt !== def.defaultTemplate ? prompt : null,
+            model: model || null,
+          },
+        },
+      }),
+    onSuccess: invalidate,
+  });
+
+  const reset = useMutation({
+    mutationFn: () => updateSettings({ agents: { [def.role]: null } }),
+    onSuccess: () => {
+      setPrompt(def.defaultTemplate);
+      setModel("");
+      setResetArmed(false);
+      invalidate();
+    },
+  });
+
+  const rows = Math.min(28, Math.max(8, prompt.split("\n").length + 1));
+
+  return (
+    <div className="min-w-0 flex-1 rounded-lg border border-border bg-card/30 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">{def.label}</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">{def.description}</p>
+        </div>
+        {def.override != null ? (
+          <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">
+            customized
+          </span>
+        ) : null}
+      </div>
+
+      {pendingSwitch ? (
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+          <span>You have unsaved changes here.</span>
+          <span className="flex gap-2">
+            <button type="button" onClick={onConfirmSwitch} className="rounded border border-border px-2 py-0.5 hover:border-red-500/60 hover:text-red-400">
+              Discard &amp; switch
+            </button>
+            <button type="button" onClick={onCancelSwitch} className="rounded border border-primary/50 bg-primary/10 px-2 py-0.5">
+              Keep editing
+            </button>
+          </span>
+        </div>
+      ) : null}
+
+      {def.variables.length > 0 ? (
+        <div className="mt-3">
+          <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Variables (filled in by Cadence per run)
+          </div>
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {def.variables.map((v) => (
+              <li key={v.name} className="flex items-baseline gap-2 text-[11px] text-muted-foreground">
+                <code className="shrink-0 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground/80">{`{{${v.name}}}`}</code>
+                <span>{v.doc}</span>
+              </li>
             ))}
-          </select>
-        </label>
+          </ul>
+        </div>
+      ) : null}
 
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Default permission mode
-          <select value={perm} onChange={(e) => setPerm(e.target.value)} className={FIELD}>
-            {PERMISSION_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+      <label className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+        Prompt template
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={rows}
+          spellCheck={false}
+          className={cn(FIELD, "font-mono text-xs leading-relaxed")}
+        />
+      </label>
 
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Default delivery mode
-          <select value={delivery} onChange={(e) => setDelivery(e.target.value)} className={FIELD}>
-            {DELIVERY_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </label>
+      <label className="mt-3 flex flex-col gap-1 text-xs text-muted-foreground">
+        Model for this agent
+        <select value={model} onChange={(e) => setModel(e.target.value)} className={FIELD}>
+          <option value="">Default ({def.defaultModel ?? "claude default"})</option>
+          {MODEL_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+          {model && !MODEL_OPTIONS.includes(model) ? <option value={model}>{model}</option> : null}
+        </select>
+      </label>
 
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Default model (blank = claude default)
-          <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="claude-opus-4-8"
-            className={FIELD}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Claude binary path (blank = found on PATH)
-          <input
-            value={claudeBin}
-            onChange={(e) => setClaudeBin(e.target.value)}
-            placeholder="/Users/you/.local/bin/claude"
-            className={FIELD}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-          Global system prompt (composed into every agent run)
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={4}
-            placeholder="e.g. Always prefer small, reviewable diffs."
-            className={FIELD}
-          />
-        </label>
-
-        <div className="flex items-center justify-end gap-3">
-          {save.isSuccess ? (
+      <div className="mt-4 flex items-center justify-between">
+        <button
+          type="button"
+          disabled={reset.isPending || (def.override == null && !dirty)}
+          onClick={() => {
+            if (!resetArmed) {
+              setResetArmed(true);
+              window.setTimeout(() => setResetArmed(false), 4000);
+              return;
+            }
+            reset.mutate();
+          }}
+          className={cn(
+            "rounded-md border px-2 py-1 text-xs transition-colors disabled:opacity-40",
+            resetArmed
+              ? "border-red-500/60 bg-red-500/10 text-red-400"
+              : "border-border text-muted-foreground hover:border-primary/40",
+          )}
+        >
+          {resetArmed ? "✓ Confirm reset" : "↺ Reset to default"}
+        </button>
+        <div className="flex items-center gap-3">
+          {save.isSuccess && !dirty ? (
             <span className="inline-flex items-center gap-1 text-xs text-green-500">
               <Check className="size-3.5" /> Saved
             </span>
           ) : null}
-          <LabeledIconButton icon={<Save />} label="Save settings" type="submit" disabled={save.isPending} />
+          <LabeledIconButton
+            icon={<Save />}
+            label="Save agent"
+            disabled={!dirty || save.isPending}
+            onClick={() => save.mutate()}
+          />
         </div>
-      </form>
+      </div>
     </div>
   );
 }

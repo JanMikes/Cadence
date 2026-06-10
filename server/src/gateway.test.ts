@@ -1333,3 +1333,34 @@ test("PATCH /api/settings deep-merges per-agent overrides and clears them (§6.3
   settings = (await res.json()) as typeof settings;
   expect(settings.agents?.discovery).toBeUndefined();
 });
+
+test("GET /api/agents/prompts serves the registry with overrides merged (§6.3.c)", async () => {
+  let list = (await fetch(`${gw.url}/api/agents/prompts`).then((r) => r.json())) as Array<{
+    role: string;
+    kind: string;
+    label: string;
+    variables: Array<{ name: string }>;
+    defaultTemplate: string;
+    override: { prompt?: string } | null;
+  }>;
+  const discovery = list.find((d) => d.role === "discovery");
+  expect(discovery?.kind).toBe("stage");
+  expect(discovery?.defaultTemplate).toContain("You are the Discovery agent");
+  expect(discovery?.variables.map((v) => v.name)).toContain("title");
+  expect(list.some((d) => d.role === "subagent:explorer" && d.kind === "subagent")).toBe(true);
+
+  await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agents: { questioner: { prompt: "ASK BETTER {{title}}" } } }),
+  });
+  list = (await fetch(`${gw.url}/api/agents/prompts`).then((r) => r.json())) as typeof list;
+  expect(list.find((d) => d.role === "questioner")?.override?.prompt).toBe("ASK BETTER {{title}}");
+
+  // clean up so other tests see defaults
+  await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agents: { questioner: null } }),
+  });
+});

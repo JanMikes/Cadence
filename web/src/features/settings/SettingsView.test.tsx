@@ -24,3 +24,16 @@ test("HandoffButtons renders Copy command + Open in terminal", () => {
   expect(html).toContain("Copy command");
   expect(html).toContain("Open in terminal");
 });
+
+test("SettingsView has section navigation incl. Agents & Prompts (§6.3.c)", () => {
+  const qc = new QueryClient();
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <SettingsView />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("General");
+  expect(html).toContain("Agents &amp; Prompts");
+  // the global-vs-per-agent distinction is explained inline (clarity over confusion)
+  expect(html).toContain("context layer");
+});

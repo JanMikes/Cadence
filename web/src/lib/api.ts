@@ -1,4 +1,5 @@
 import type {
+  AgentPromptInfo,
   AnalyticsSummary,
   ApprovalRequest,
   AttentionResponse,
@@ -467,6 +468,8 @@ export function getSettings(): Promise<GlobalSettings> {
 export function updateSettings(
   patch: Partial<Pick<GlobalSettings, "preferredTerminal" | "claudeBinPath">> & {
     global?: Partial<GlobalSettings["global"]>;
+    /** Per-agent overrides; null clears a field / resets a role (deep-merged server-side, §6.3.b). */
+    agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
   },
 ): Promise<GlobalSettings> {
   return fetch("/api/settings", {
@@ -474,6 +477,11 @@ export function updateSettings(
     headers: JSON_HEADERS,
     body: JSON.stringify(patch),
   }).then(json<GlobalSettings>);
+}
+
+/** The agent prompt registry + current overrides (Settings → Agents & Prompts, §6.3.c). */
+export function getAgentPrompts(): Promise<AgentPromptInfo[]> {
+  return fetch("/api/agents/prompts").then(json<AgentPromptInfo[]>);
 }
 
 export function sendSessionMessage(sessionId: string, text: string): Promise<{ ok: boolean }> {

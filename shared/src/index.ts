@@ -530,6 +530,18 @@ export interface GlobalSettings {
   agents?: Record<string, AgentOverride>;
 }
 
+/** Wire shape of one agent's prompt definition + current override (GET /api/agents/prompts, 6.3.c). */
+export interface AgentPromptInfo {
+  role: string;
+  kind: "stage" | "subagent";
+  label: string;
+  description: string;
+  defaultModel: string | null;
+  variables: Array<{ name: string; doc: string }>;
+  defaultTemplate: string;
+  override: AgentOverride | null;
+}
+
 /** Supported terminal apps for one-click handoff (macOS). */
 export const TERMINAL_APPS = ["Terminal", "iTerm"] as const;
 
