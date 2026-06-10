@@ -18,7 +18,13 @@ export class ApprovalRegistry {
 
   /** Park a tool request; resolves when `resolve()` is called for its id. */
   request(
-    input: { sessionId?: string | null; taskId?: string | null; toolName: string; input?: unknown },
+    input: {
+      sessionId?: string | null;
+      taskId?: string | null;
+      toolName: string;
+      input?: unknown;
+      role?: string | null;
+    },
     opts: { id?: string; now?: number } = {},
   ): Promise<ApprovalDecision> {
     const id = opts.id ?? crypto.randomUUID();
@@ -29,6 +35,7 @@ export class ApprovalRegistry {
       toolName: input.toolName,
       input: input.input ?? null,
       createdAt: opts.now ?? Date.now(),
+      role: input.role ?? null,
     };
     return new Promise<ApprovalDecision>((resolve) => {
       this.pending.set(id, { req, resolve });

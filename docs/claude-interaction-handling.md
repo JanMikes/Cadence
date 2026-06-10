@@ -1,8 +1,9 @@
 # Understanding Claude's output — interactive asks, failures, and the road to bulletproof
 
 > Written 2026-06-10 after two live incidents (see §1). Part A documents the verified facts
-> and the detection layers **shipped that day**; Part B is the proposal for the long-term
-> control surface. Companion to [claude-code-control-surfaces.md](claude-code-control-surfaces.md).
+> and the detection layers shipped that day; **Part B (the Agent-SDK ask-gate) shipped the
+> same day** — see §5 for what's now live and how the layers compose. Companion to
+> [claude-code-control-surfaces.md](claude-code-control-surfaces.md).
 
 ## 1. The incidents (what "poor question detection" actually was)
 
@@ -74,46 +75,63 @@ Needs-input tasks have a one-click **Refine again**.
   optimization, safe to extend, harmless when stale. Event parsing stays tolerant
   (`ClaudeEvent {type:string, …}`, unknown lines skipped) per the unversioned-schema rule.
 
-## 4. Proposal: the long-term control surface (Part B)
+## 4. Part B as proposed (historical) — and what shipped
 
-The raw CLI fundamentally cannot **answer** an ask mid-run — only the Agent SDK can. The
-bulletproof end-state is a phased migration, keeping the CLI path as fallback:
+The raw CLI fundamentally cannot **answer** an ask mid-run — only the Agent SDK can. B1
+(SDK migration with a live ask-gate) and the B4 rejections shipped 2026-06-10 (see §5).
+B2 (persist `system/init`'s `tools[]` on the session row for drift detection) and B3
+(version canary at boot) remain open, lower-stakes now that the SDK pins its own bundled
+Claude Code version per release.
 
-### B1. Adopt `@anthropic-ai/claude-agent-sdk` for one-shot stage runs
-Replace `spawn("claude", ["-p", …])` in `runner.ts` with the SDK's `query()`, preserving the
-`AgentRunner` interface (callers untouched, tests keep their mocks). Gains:
-- **`canUseTool` wired to the existing `ApprovalRegistry`** (today scaffolded end-to-end —
-  registry → REST → WS → ToolApprovalModal — but fed by nothing). Manual permission mode
-  becomes real: a gated tool parks an approval card instead of stalling.
-- **Questions answered in-flight, optionally**: for short asks, `canUseTool` can hold the run
-  (bounded, e.g. 5 min) while the Q&A card is live; answered in time → `{behavior:"allow",
-  updatedInput}` and the run continues with full context. Timeout → today's behavior (stop,
-  park, resume on next run). Best of both: no lost momentum when the user is watching, no
-  hang when they're not.
-- `ExitPlanMode` deniable with a corrective message ("print your final JSON") — a second
-  chance instead of a dead run.
-- `includePartialMessages` keeps the live-streaming UI contract unchanged.
-
-### B2. Tool-inventory awareness
-Persist `system/init`'s `tools[]` (+ model, permissionMode) on the session row. Uses:
-diagnostics ("this run had no Write tool"), a future settings surface for per-stage
-allow/disallow lists, and drift detection — log once when an unknown tool name appears in a
-`tool_use` block, so new CLI tools are noticed in days, not after an incident.
-
-### B3. Version pinning + canary
-The stream schema is internal/unversioned (control-surfaces §7). Record the binary version
-from `claude --version` at gateway boot; on change, run a 1-turn canary (`-p "say hi"`)
-and assert the invariants we build on (init has `tools`, result has `permission_denials`
-key shape). A failed canary degrades loudly (banner: "Claude Code N.N.N changed its output
-format; live question detection may be degraded") instead of silently misparsing.
-
-### B4. Explicitly rejected
+### Explicitly rejected (B4)
 - `--permission-prompt-tool`: undocumented semantics, doesn't carry AskUserQuestion. ⚠️
 - `--disallowedTools AskUserQuestion`: hides the model's need instead of surfacing it.
 - Parsing the CLI's denial strings ("Answer questions?"): locale/version-fragile; the
   structured `tool_use` + `permission_denials` carry the same information reliably.
 - Hosted `/v1/sessions` event names: marked unverified in control-surfaces §9.
 
-**Sequencing**: B2/B3 are small and standalone (do anytime). B1 is the meaningful lift —
-worth a phase of its own, behind a setting (`runnerBackend: "cli" | "sdk"`), with the CLI
-path kept until the SDK path has survived a real week.
+## 5. Shipped: the SDK ask-gate (Part B live, 2026-06-10)
+
+Why prompts alone were never enough: the non-interactive contract is appended at the runner
+layer (user prompt layers can't remove it), but any instruction is advisory — the model can
+ignore it. The hard guarantee is the **tool-permission layer**: with the Agent SDK
+(`@anthropic-ai/claude-agent-sdk@0.3.x`, verified against its `sdk.d.ts`), every gated tool
+call MUST pass through the `canUseTool` callback before executing. No prompt wording can
+route around it.
+
+What runs now (`runnerBackend()` default `"sdk"`, override via Settings → Operations or
+`CADENCE_RUNNER_BACKEND`; automatic CLI fallback when the SDK can't start —
+`SdkUnavailableError`):
+
+- **`sdk-runner.ts`** — `query()` with the same `AgentRunner` contract: forced `sessionId`
+  (deterministic transcripts), `systemPrompt` preset+append, `agents` subagents, message
+  shapes identical to the CLI stream so every consumer (live transcript, recording,
+  watchdog) is untouched. The stage timeout's clock **pauses while an ask waits** on the
+  user.
+- **`ask-gate.ts`** — `AskUserQuestion` parks in the `ApprovalRegistry` → top-urgency
+  attention item + notification → the run WAITS (it is not killed). The user answers in the
+  **ToolApprovalModal** (real radio/checkbox/free-text form) → answers return as
+  `{behavior:"allow", updatedInput:{questions, answers}}` (the SDK's verified contract) →
+  **the run continues with the answers**, which are also persisted to qa.md + the context
+  channel. Timeout (`askWaitMinutes`, default 10) or "Skip" → deny with "proceed on stated
+  assumptions"; the parked card is withdrawn so the UI never shows a stale ask.
+- **`ExitPlanMode`** → corrective deny ("print your final output") — the run stays alive and
+  recovers, instead of dying like the discovery incident.
+- **Manual permission mode is real now**: any other gated tool routes to the approve/deny
+  modal — the previously-orphaned ApprovalRegistry → REST → WS → modal chain is fed.
+- **Liveness without a pid**: the SDK doesn't expose its child's pid, so `liveness.ts` keeps
+  an in-process run registry (sessionId → abort handle). Stage-guard dedupe, the watchdog,
+  the sessions UI, and Stop/Kill all consult it; a gateway crash empties it, so boot
+  reconcile treats SDK rows like any orphan.
+- **Success-first outcomes**: a run that produced usable output stands even if an ask timed
+  out (the miss is noted on the context channel); only a run with nothing usable turns its
+  asks into Q&A cards + Needs-input.
+
+Layer map after this wave:
+| Layer | Mechanism | Guarantee |
+|---|---|---|
+| 1 Prevention | system-prompt contract (per backend) | soft — model may ignore |
+| 2 Live answer | SDK `canUseTool` ask-gate | **hard** — in the tool-call path |
+| 3 Live interception (CLI fallback) | `tool_use` watch + kill | hard for known tools |
+| 4 Catch-all | `result.permission_denials` | name-agnostic, any backend |
+| 5 Surfacing | Q&A cards / approval modal / context notes / run reports | nothing invisible |

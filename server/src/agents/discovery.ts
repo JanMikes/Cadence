@@ -146,15 +146,14 @@ export async function runDiscovery(
     }),
   );
 
-  // The run stopped to ask for human input — the recording wrapper already turned the
-  // ask into Q&A cards + Needs-input + a note. Don't pile a misleading "no parseable
-  // JSON" failure on top of a perfectly explained handoff.
-  if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
-
   const j = (result.json ?? null) as DiscoveryJson | null;
   // The model didn't return usable JSON (or the run errored) — DON'T strand the task in Refining.
   // Surface it as Needs-Feedback with a visible note so it's recoverable, not silently stuck.
   if (!j || typeof j !== "object") {
+    // No output because the run stopped to ask for human input — the recording wrapper
+    // already turned the ask into Q&A cards + Needs-input + a note. Don't pile a
+    // misleading "no parseable JSON" failure on top of a perfectly explained handoff.
+    if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
     updateTask(db, taskId, { status: "needs_feedback" });
     appendContext(
       taskId,

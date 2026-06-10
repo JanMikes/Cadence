@@ -4,7 +4,7 @@ import { composeContext } from "../context";
 import type { Db } from "../db/client";
 import { sessions } from "../db/schema";
 import { getProjectById } from "../projects";
-import { appendRunReport } from "../store/store";
+import { appendContext, appendRunReport } from "../store/store";
 import { getTask } from "../tasks";
 import { findTranscriptPath, transcriptPathFor } from "../transcripts";
 import type { WsHub } from "../ws";
@@ -145,14 +145,27 @@ export function makeRecordingRunner(deps: RecordingRunnerDeps): AgentRunner {
           hub.broadcast({ type: "event", name: "session:event", payload: { sessionId: id, event } });
         },
       });
-      // The run stopped because the agent needed a human (AskUserQuestion, ExitPlanMode,
-      // a denied tool…) — not a failure, a handoff. Surface it the way Cadence surfaces
-      // every ask: Q&A cards + Needs-input + a context note (§10, never a dead end).
-      const askedUser = (result.asks?.length ?? 0) > 0;
-      if (askedUser) applyInteractiveAsks(db, hub, opts.taskId, role, result.asks ?? []);
+      // Success first: a run that delivered usable output stands, even if a question
+      // went unanswered along the way (SDK ask-gate timeout → the agent proceeded on
+      // stated assumptions). Only a run that produced NOTHING usable becomes a handoff:
+      // its asks turn into Q&A cards + Needs-input + a context note (§10, never a dead
+      // end) — exactly how the Questioner's own questions surface.
+      const produced = !result.isError && (result.text.trim() !== "" || result.json != null);
+      const askedUser = !produced && (result.asks?.length ?? 0) > 0;
+      if (askedUser) {
+        applyInteractiveAsks(db, hub, opts.taskId, role, result.asks ?? []);
+      } else if (produced && result.asks?.length) {
+        // The run recovered after an unanswered ask — keep the record honest without
+        // derailing the pipeline: the user can still weigh in at the next gate.
+        appendContext(
+          opts.taskId,
+          `While you were away, ${role} ${describeAsks(result.asks)} — no answer arrived, so it proceeded on its own assumptions. Review its output with that in mind.`,
+        );
+        hub.broadcast({ type: "event", name: "task:context", payload: opts.taskId });
+      }
       // A run that errored or produced no parseable output is a failure worth seeing —
       // the transcript still exists, and that's exactly when you want to read it.
-      const ok = !askedUser && !result.isError && (result.text.trim() !== "" || result.json != null);
+      const ok = produced;
       finish({ status: askedUser ? "awaiting_feedback" : ok ? "done" : "failed", costUsd: result.costUsd });
       // Durable account of what this stage said/did (runs.md — content truth): the
       // final text, the structured JSON, the ask that stopped it, or the error detail —

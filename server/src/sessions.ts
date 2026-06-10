@@ -2,7 +2,7 @@ import type { ClaudeEvent, Session, UpdateSessionInput } from "@cadence/shared";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
-import { isRunPidAlive, killGroup } from "./liveness";
+import { isInProcessRunAlive, isRunPidAlive, killGroup, stopInProcessRun } from "./liveness";
 import { openSession, type SessionHandle } from "./spawn";
 import { transcriptPathFor } from "./transcripts";
 import type { WsHub } from "./ws";
@@ -44,7 +44,8 @@ export function sessionRunState(spawn: SpawnManager, s: Session): { canChat: boo
   const canChat = spawn.liveIds().includes(s.id);
   const isLive =
     canChat ||
-    (RUNNING_STATUSES.has(s.status) && s.pid != null && isRunPidAlive(s.pid, s.startedAt));
+    (RUNNING_STATUSES.has(s.status) &&
+      (isInProcessRunAlive(s.id) || (s.pid != null && isRunPidAlive(s.pid, s.startedAt))));
   return { canChat, isLive };
 }
 
@@ -60,6 +61,8 @@ export function signalSession(spawn: SpawnManager, s: Session, action: "stop" | 
     else spawn.close(s.id);
     return true;
   }
+  // SDK runs (no pid): the in-process registry holds the abort handle.
+  if (stopInProcessRun(s.id)) return true;
   // Honest check before signalling (§6.1.d): never SIGKILL a recycled pid that now
   // belongs to some unrelated process. Kill targets the whole process group (§6.1.e)
   // so claude's own children die with it.

@@ -800,6 +800,10 @@ export interface GlobalSettings {
     implementStageTimeoutMinutes?: number;
     maxStageAttemptsPer24h?: number;
     maxConcurrentAgents?: number;
+    /** Minutes a paused run waits for an answer/approval before proceeding without. */
+    askWaitMinutes?: number;
+    /** One-shot engine: "sdk" (live ask-gate, default) or "cli" (raw claude -p). */
+    runnerBackend?: "sdk" | "cli";
   };
   /** Persisted UI state (server-side — the web app keeps nothing in localStorage). */
   ui?: {
@@ -1322,9 +1326,14 @@ export interface ApprovalRequest {
   toolName: string;
   input: unknown;
   createdAt: number;
+  /** Which pipeline agent is asking (e.g. "planner") — for human-readable copy. */
+  role?: string | null;
 }
 
 export interface ApprovalDecision {
   allow: boolean;
   reason?: string;
+  /** Answers for an AskUserQuestion request, keyed by the exact question text.
+   *  Single-select → the chosen option label (or free text); multi-select → labels[]. */
+  answers?: Record<string, string | string[]>;
 }

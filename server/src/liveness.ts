@@ -99,14 +99,54 @@ export function isRunPidAlive(
   return true;
 }
 
+// --- in-process run registry (§ SDK runs) -----------------------------------
+//
+// Agent-SDK runs manage their child process internally and expose NO pid, so the
+// pid-signature probe above can't see them. For runs owned by THIS gateway process
+// the registry below is the stronger truth: a registered run is alive by
+// construction (the entry is removed in the runner's finally). After a gateway
+// crash the registry is empty, so boot-time reconcile treats SDK rows exactly like
+// any other orphan — which is correct, their child died with us or is unreachable.
+
+const inProcessRuns = new Map<string, { startedAt: number; stop: () => void }>();
+
+/** Register a live in-process run (sessionId → stop handle). */
+export function registerInProcessRun(sessionId: string, stop: () => void): void {
+  inProcessRuns.set(sessionId, { startedAt: Date.now(), stop });
+}
+
+/** Remove a finished run from the registry. */
+export function unregisterInProcessRun(sessionId: string): void {
+  inProcessRuns.delete(sessionId);
+}
+
+/** Whether this gateway process currently owns a live run for the session. */
+export function isInProcessRunAlive(sessionId: string): boolean {
+  return inProcessRuns.has(sessionId);
+}
+
+/** Stop an in-process run (abort/interrupt). True when one existed. */
+export function stopInProcessRun(sessionId: string): boolean {
+  const entry = inProcessRuns.get(sessionId);
+  if (!entry) return false;
+  try {
+    entry.stop();
+  } catch {
+    /* stopping a dying run must never throw */
+  }
+  return true;
+}
+
 /**
  * Honest liveness for a session row (the shared verdict used by the stage-spawn
  * dedupe guard, the watchdog sweep, startup reconcile and the sessions UI).
  */
 export function isSessionRowAlive(
-  row: { pid: number | null; startedAt: number | null },
+  row: { id?: string; pid: number | null; startedAt: number | null },
   probe: LivenessProbe = REAL_PROBE,
 ): boolean {
+  // An SDK run has no pid; the in-process registry is authoritative for it.
+  if (row.id && isInProcessRunAlive(row.id)) return true;
   if (row.pid != null) return isRunPidAlive(row.pid, row.startedAt, probe);
   return probe.now() - (row.startedAt ?? 0) < PRE_SPAWN_GRACE_MS;
 }

@@ -608,14 +608,22 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
     for (const a of ctx.approvals.list()) {
       const t = a.taskId ? getTask(ctx.db, a.taskId) : null;
+      // A live question reads like one ("Where should it live?"), not like a tool id.
+      const isAsk = a.toolName === "AskUserQuestion";
+      const firstQuestion = isAsk
+        ? ((a.input as { questions?: Array<{ question?: string }> } | null)?.questions?.[0]
+            ?.question ?? "")
+        : "";
       items.push({
         id: `tool_approval:${a.id}`,
         kind: "tool_approval",
         taskId: a.taskId ?? undefined,
         approvalId: a.id,
-        title: a.toolName,
-        summary: "Tool action awaiting approval (Manual mode)",
-        actionLabel: "Review action",
+        title: isAsk ? firstQuestion || "An agent is asking you" : a.toolName,
+        summary: isAsk
+          ? "An agent paused mid-run to ask — it continues when you answer"
+          : "Tool action awaiting approval (Manual mode)",
+        actionLabel: isAsk ? "Answer" : "Review action",
         projectId: t?.projectId ?? null,
         priority: t?.priority ?? null,
         urgency: Number.MAX_SAFE_INTEGER, // a live agent is blocked — top priority
@@ -1161,6 +1169,9 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const ok = ctx.approvals.resolve(approvalResolveMatch[1] as string, {
       allow: body.allow,
       reason: body.reason,
+      // Answers to an AskUserQuestion request (keyed by question text) — fed back
+      // into the live run via the SDK ask-gate so the agent continues with them.
+      ...(body.answers && typeof body.answers === "object" ? { answers: body.answers } : {}),
     });
     return ok ? Response.json({ resolved: true }) : notFound(pathname);
   }
@@ -1333,8 +1344,9 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
         /** Date/time patterns (6.3.d); blank/null resets a key to the default. */
         formats?: { date?: string | null; dateTime?: string | null };
-        /** Operations knobs (6.3.e); null/invalid resets a key to the built-in default. */
-        operations?: Record<string, number | null>;
+        /** Operations knobs (6.3.e); null/invalid resets a key to the built-in default.
+         *  Numeric limits plus the string runnerBackend ("sdk" | "cli"). */
+        operations?: Record<string, number | string | null>;
         /** Review settings (6.5.h). */
         review?: { strictness?: string | null };
         /** Persisted UI flags (e.g. quickstartSeen); null/false clears a flag. */
@@ -1382,14 +1394,20 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         "implementStageTimeoutMinutes",
         "maxStageAttemptsPer24h",
         "maxConcurrentAgents",
+        "askWaitMinutes",
       ] as const;
-      const operations = { ...(current.operations ?? {}) } as Record<string, number>;
+      const operations = { ...(current.operations ?? {}) } as Record<string, number | string>;
       for (const key of OPS_KEYS) {
         if (patch.operations && key in patch.operations) {
           const v = patch.operations[key];
           if (typeof v === "number" && Number.isFinite(v) && v > 0) operations[key] = v;
           else delete operations[key];
         }
+      }
+      // The one string knob: the agent engine. "cli" persists; anything else = default (sdk).
+      if (patch.operations && "runnerBackend" in patch.operations) {
+        if (patch.operations.runnerBackend === "cli") operations.runnerBackend = "cli";
+        else delete operations.runnerBackend;
       }
       // Review settings (§6.5.h): strictness allowlist; invalid/null clears to default.
       const review = { ...(current.review ?? {}) };

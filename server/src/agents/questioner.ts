@@ -78,12 +78,11 @@ export async function runQuestioner(
     }),
   );
 
-  // The run itself stopped to ask (AskUserQuestion) — the recording wrapper already
-  // turned that into Q&A cards + Needs-input, which is this stage's job anyway.
-  if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
-
   const j = (result.json ?? null) as QuestionerJson | null;
   if (!j || !Array.isArray(j.questions)) {
+    // No output because the run itself stopped to ask (AskUserQuestion) — the recording
+    // wrapper already turned that into Q&A cards + Needs-input, this stage's job anyway.
+    if (result.asks?.length) return { ran: true, status: "needs_feedback", askedUser: true };
     // Don't strand the task in Refining — surface it so the user can review the spec, add context, or
     // run it manually (same never-stuck contract as Discovery).
     updateTask(db, taskId, { status: "needs_feedback" });

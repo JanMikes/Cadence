@@ -471,29 +471,41 @@ const OPS_FIELDS: Array<{ key: string; label: string; help: string; fallback: nu
     help: "Global cap on simultaneously-running background agents (the money valve).",
     fallback: 4,
   },
+  {
+    key: "askWaitMinutes",
+    label: "Wait for your answer (minutes)",
+    help: "When an agent asks you something mid-run, the run pauses this long for your answer (the stage timeout clock pauses too); then it continues on its own stated assumptions.",
+    fallback: 10,
+  },
 ];
 
 function OperationsSection() {
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const [values, setValues] = useState<Record<string, string>>({});
+  const [backend, setBackend] = useState<string>("");
 
   useEffect(() => {
-    const ops = (settings.data?.operations ?? {}) as Record<string, number | undefined>;
+    const ops = (settings.data?.operations ?? {}) as Record<string, number | string | undefined>;
     setValues(Object.fromEntries(OPS_FIELDS.map((f) => [f.key, ops[f.key]?.toString() ?? ""])));
+    setBackend(typeof ops.runnerBackend === "string" ? ops.runnerBackend : "");
   }, [settings.data]);
 
   const save = useMutation({
     mutationFn: () =>
       updateSettings({
-        operations: Object.fromEntries(
-          OPS_FIELDS.map((f) => {
-            const n = Number(values[f.key]);
-            // blank or the default → clear (keep only real customizations)
-            const customized = values[f.key]?.trim() && Number.isFinite(n) && n > 0 && n !== f.fallback;
-            return [f.key, customized ? n : null];
-          }),
-        ),
+        operations: {
+          ...Object.fromEntries(
+            OPS_FIELDS.map((f) => {
+              const n = Number(values[f.key]);
+              // blank or the default → clear (keep only real customizations)
+              const customized = values[f.key]?.trim() && Number.isFinite(n) && n > 0 && n !== f.fallback;
+              return [f.key, customized ? n : null];
+            }),
+          ),
+          // "sdk" is the default — persist only a real override.
+          runnerBackend: backend === "cli" ? "cli" : null,
+        },
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["settings"] }),
   });
@@ -518,6 +530,17 @@ function OperationsSection() {
           <span className="text-[11px]">{f.help}</span>
         </label>
       ))}
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Agent engine
+        <select value={backend} onChange={(e) => setBackend(e.target.value)} className={FIELD}>
+          <option value="">Agent SDK — live questions (default)</option>
+          <option value="cli">Raw claude CLI — questions pause the task instead</option>
+        </select>
+        <span className="text-[11px]">
+          The Agent SDK lets a running agent ask you questions in the app and continue with your
+          answer. The raw CLI can’t answer mid-run; use it only if the SDK misbehaves.
+        </span>
+      </label>
       <div className="flex items-center justify-end gap-3">
         {save.isSuccess ? (
           <span className="inline-flex items-center gap-1 text-xs text-green-500">

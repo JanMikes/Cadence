@@ -296,11 +296,15 @@ export function getAttention(): Promise<AttentionResponse> {
   return fetch("/api/attention").then(json<AttentionResponse>);
 }
 
-export function resolveApproval(id: string, allow: boolean): Promise<{ resolved: boolean }> {
+export function resolveApproval(
+  id: string,
+  allow: boolean,
+  answers?: Record<string, string | string[]>,
+): Promise<{ resolved: boolean }> {
   return fetch(`/api/approvals/${id}/resolve`, {
     method: "POST",
     headers: JSON_HEADERS,
-    body: JSON.stringify({ allow }),
+    body: JSON.stringify(answers ? { allow, answers } : { allow }),
   }).then(json<{ resolved: boolean }>);
 }
 
@@ -584,8 +588,9 @@ export function updateSettings(
     agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
     /** Date/time patterns (§6.3.d); blank/null resets a key to the default. */
     formats?: { date?: string | null; dateTime?: string | null };
-    /** Operations knobs (§6.3.e); null resets a key to the built-in default. */
-    operations?: Record<string, number | null>;
+    /** Operations knobs (§6.3.e); null resets a key to the built-in default.
+     *  Numeric limits plus the string runnerBackend ("sdk" | "cli"). */
+    operations?: Record<string, number | string | null>;
     /** Review settings (§6.5.h). */
     review?: { strictness?: string | null };
     /** Persisted UI flags; null clears a flag (re-opens Quickstart on next launch). */

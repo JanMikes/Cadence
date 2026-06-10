@@ -9,6 +9,8 @@ import {
   type ServerMessage,
 } from "@cadence/shared";
 import { ActivityTracker } from "./activity";
+import { makeAskGate } from "./agents/ask-gate";
+import { makeBackendRunner } from "./agents/backend";
 import { makeRecordingRunner } from "./agents/recording-runner";
 import { startGitContextSweep } from "./git-context";
 import { healStuckTasks } from "./heal";
@@ -90,11 +92,16 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   // Tracks in-flight autonomy work (triage/discovery/questioner) → WS events → board/task spinner.
   const activity = new ActivityTracker((name, payload) => hub.broadcast({ type: "event", name, payload }));
 
+  // Live ask-gate: an agent's mid-run question/permission request parks in the
+  // approvals registry (→ attention modal in the web UI) while the run waits; the
+  // answer feeds back into the run via the SDK's canUseTool. The default runner is
+  // backend-dispatched (SDK with the gate, CLI fallback/override).
+  const askGate = makeAskGate({ approvals, hub, db });
   // Record every task-linked agent stage (triage…delivery) as a first-class oneshot Session with its
   // transcript, so each stage's full output shows up in the Sessions list. An injected
   // runner (tests) is wrapped too — recording (sessions + run reports) is gateway
   // behavior, not an implementation detail of the real claude runner.
-  const runAgentImpl = makeRecordingRunner({ db, hub, base: opts.runAgent });
+  const runAgentImpl = makeRecordingRunner({ db, hub, base: opts.runAgent ?? makeBackendRunner({ askGate }) });
 
   let watcher: WatcherHandle | undefined;
   if (opts.startWatcher !== false) {
