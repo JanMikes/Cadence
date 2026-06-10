@@ -18,7 +18,6 @@ import {
   updateProject,
 } from "../../lib/api";
 import { formatDateTime, useDateFormats } from "../../lib/datetime";
-import { useServerMessages } from "../../lib/ws";
 import { ImportProjects } from "./ImportProjects";
 
 const PERMISSION_LABELS: Record<string, string> = {
@@ -380,40 +379,20 @@ const SEVERITY_STYLES: Record<string, string> = {
 /**
  * "Ask Claude to check" panel (§9, propose-don't-impose): a read-only run inspects the
  * repo for worktree blockers; the persisted verdict informs the Git worktrees toggle —
- * the human flips it. Live data comes from the shared ["projects"] query (the WS
- * project:updated invalidation refreshes it when the check lands).
+ * the human flips it. The whole lifecycle (running/failed + last verdict) is persisted
+ * server-side and arrives via the shared ["projects"] query (project:updated → WS
+ * invalidation), so closing and reopening this panel never loses a check's state.
  */
 function WorktreeReadiness({ project }: { project: Project }) {
   const projects = useQuery({ queryKey: ["projects"], queryFn: getProjects });
+  const fmts = useDateFormats();
   const live = projects.data?.find((p) => p.slug === project.slug) ?? project;
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const check = useMutation({
-    mutationFn: () => checkWorktreeReadiness(project.slug),
-    onMutate: () => {
-      setChecking(true);
-      setError(null);
-    },
-    onError: () => {
-      setChecking(false);
-      setError("Couldn’t start the check — is the gateway running?");
-    },
-  });
+  const check = useMutation({ mutationFn: () => checkWorktreeReadiness(project.slug) });
 
-  // The check is fire-and-forget on the server; its outcome arrives over WS.
-  useServerMessages((msg) => {
-    if (msg.type !== "event") return;
-    if (msg.name === "project:updated" && msg.payload === project.slug) setChecking(false);
-    if (msg.name === "project:worktree-check-failed") {
-      const p = msg.payload as { slug?: string; reason?: string };
-      if (p?.slug === project.slug) {
-        setChecking(false);
-        setError(p.reason ?? "Check failed.");
-      }
-    }
-  });
-
+  const run = live.worktreeCheckRun;
+  // isPending bridges the moment between clicking and the persisted "running" state landing.
+  const checking = check.isPending || run?.status === "running";
   const result = live.worktreeCheck;
   return (
     <section className="mt-6 rounded-lg border border-border bg-card/40 p-4">
@@ -427,7 +406,7 @@ function WorktreeReadiness({ project }: { project: Project }) {
         </div>
         <LabeledIconButton
           icon={<Sparkles />}
-          label={checking ? "Checking…" : "Ask Claude to check"}
+          label={checking ? "Checking…" : result || run ? "Check again" : "Ask Claude to check"}
           variant="ghost"
           size="sm"
           onClick={() => check.mutate()}
@@ -437,7 +416,21 @@ function WorktreeReadiness({ project }: { project: Project }) {
       {!live.rootPath ? (
         <p className="mt-2 text-xs text-muted-foreground">Set a rootPath first.</p>
       ) : null}
-      {error ? <p className="mt-2 text-xs text-red-400">{error}</p> : null}
+      {check.isError ? (
+        <p className="mt-2 text-xs text-red-400">Couldn’t start the check — is the gateway running?</p>
+      ) : null}
+      {run?.status === "running" ? (
+        <p className="mt-2 text-xs text-muted-foreground" role="status">
+          <span className="mr-1.5 inline-block size-2 animate-pulse rounded-full bg-sky-400 align-middle" />
+          Claude is inspecting the repo… started {formatDateTime(run.startedAt, fmts)}. You can close
+          this panel — the result is saved here.
+        </p>
+      ) : null}
+      {run?.status === "failed" ? (
+        <p className="mt-2 text-xs text-red-400">
+          Check from {formatDateTime(run.startedAt, fmts)} failed — {run.reason ?? "unknown reason"}.
+        </p>
+      ) : null}
       {result ? <WorktreeCheckCard check={result} /> : null}
     </section>
   );

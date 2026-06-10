@@ -655,10 +655,14 @@ test("POST /api/projects/:slug/worktree-check runs the readiness check and persi
       await new Promise((r) => setTimeout(r, 20));
       const p = (await fetch(`${gw.url}/api/projects/${project.slug}`).then((r) => r.json())) as {
         worktreeCheck: CheckShape;
+        worktreeCheckRun: { status: string } | null;
         worktreesEnabled: boolean;
       };
       check = p.worktreeCheck;
-      if (check) expect(p.worktreesEnabled).toBe(false); // propose, don't impose
+      if (check) {
+        expect(p.worktreesEnabled).toBe(false); // propose, don't impose
+        expect(p.worktreeCheckRun).toBeNull(); // the verdict cleared the persisted lifecycle
+      }
     }
     expect(check?.verdict).toBe("blockers");
     expect(check?.blockers).toHaveLength(1);

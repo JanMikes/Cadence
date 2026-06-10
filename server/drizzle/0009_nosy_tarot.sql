@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `worktree_check_run` text;

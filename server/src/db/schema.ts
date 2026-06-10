@@ -45,6 +45,9 @@ export const projects = sqliteTable("projects", {
   worktreesEnabled: integer("worktrees_enabled", { mode: "boolean" }).notNull().default(false),
   // last worktree-readiness check (JSON WorktreeCheck; null = never checked)
   worktreeCheck: text("worktree_check"),
+  // readiness-check lifecycle (JSON WorktreeCheckRun; null = idle) — running/failed
+  // persists so the UI never loses an in-flight or failed check when a panel closes
+  worktreeCheckRun: text("worktree_check_run"),
   systemPrompt: text("system_prompt"),
   notes: text("notes"),
   createdAt: integer("created_at").notNull().default(now),

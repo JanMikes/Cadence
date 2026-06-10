@@ -290,6 +290,16 @@ export interface WorktreeCheck {
   checkedAt: number;
 }
 
+/** Lifecycle of the readiness check, persisted so the UI never loses it (visible system
+ *  status): "running" while Claude inspects, "failed" with a reason when a run dies.
+ *  null = idle; a completed verdict lives in worktreeCheck and clears this. */
+export interface WorktreeCheckRun {
+  status: "running" | "failed";
+  startedAt: number;
+  /** Why the run failed (status "failed" only). */
+  reason: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -310,6 +320,8 @@ export interface Project {
   worktreesEnabled: boolean;
   /** Last worktree-readiness check result (null = never checked). Server-managed. */
   worktreeCheck: WorktreeCheck | null;
+  /** In-flight/failed state of the readiness check (null = idle). Server-managed. */
+  worktreeCheckRun: WorktreeCheckRun | null;
   systemPrompt: string | null;
   notes: string | null;
   createdAt: number;

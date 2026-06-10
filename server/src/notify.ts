@@ -1,4 +1,5 @@
 import type { NotifyPayload, Task } from "@cadence/shared";
+import type { WorktreeCheckOutcome } from "./agents/worktree-check";
 import type { WsHub } from "./ws";
 
 /**
@@ -24,5 +25,36 @@ export function notifyOnTransition(
   }
 
   if (payload) hub.broadcast({ type: "event", name: "notify", payload });
+  return payload;
+}
+
+/**
+ * Notify when a worktree-readiness check finishes (it's fire-and-forget and can take a
+ * while — the user may long since have closed the panel that started it). The verdict
+ * itself is persisted on the project; this just makes sure it isn't missed.
+ */
+export function notifyWorktreeCheck(
+  hub: WsHub,
+  projectName: string,
+  out: WorktreeCheckOutcome,
+): NotifyPayload {
+  let payload: NotifyPayload;
+  if (!out.ran || !out.check) {
+    payload = {
+      kind: "info",
+      title: "Worktree check failed",
+      message: `${projectName}: ${out.reason ?? "unknown reason"}`,
+    };
+  } else if (out.check.verdict === "ready") {
+    payload = { kind: "info", title: "Worktree check finished", message: `${projectName}: ready for worktrees` };
+  } else {
+    const n = out.check.blockers.length;
+    payload = {
+      kind: "info",
+      title: "Worktree check finished",
+      message: `${projectName}: ${n} blocker${n === 1 ? "" : "s"} found`,
+    };
+  }
+  hub.broadcast({ type: "event", name: "notify", payload });
   return payload;
 }

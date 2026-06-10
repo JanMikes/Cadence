@@ -64,6 +64,7 @@ const PROJECTS = [
     autonomy: null,
     worktreesEnabled: false,
     worktreeCheck: null,
+    worktreeCheckRun: null,
     systemPrompt: null,
     notes: null,
     createdAt: 0,

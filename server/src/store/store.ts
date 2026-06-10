@@ -385,6 +385,7 @@ export function reindexProject(db: Db, slug: string): void {
     autonomy: data.autonomy ?? null,
     worktreesEnabled: data.worktreesEnabled ?? false,
     worktreeCheck: data.worktreeCheck ? JSON.stringify(data.worktreeCheck) : null,
+    worktreeCheckRun: data.worktreeCheckRun ? JSON.stringify(data.worktreeCheckRun) : null,
     systemPrompt: body || null,
     notes: data.notes ?? null,
   };

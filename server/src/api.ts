@@ -70,7 +70,7 @@ import { computeSelfMonitor } from "./selfmonitor";
 import { runSweep } from "./sweep";
 import { searchTranscripts } from "./transcript-search";
 import { allowedTransitions, canTransition, isValidStatus } from "./lifecycle";
-import { notifyOnTransition } from "./notify";
+import { notifyOnTransition, notifyWorktreeCheck } from "./notify";
 import { mergeTask, taskDiff } from "./review";
 import {
   createProject,
@@ -1403,8 +1403,9 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   }
 
   // Worktree-readiness check (§9, propose-don't-impose): a read-only Claude run inspects
-  // the repo for worktree blockers (.env files, docker ports, install steps…) and the
-  // verdict is persisted on the project. Fire-and-forget — the result arrives over WS.
+  // the repo for worktree blockers (.env files, docker ports, install steps…). The whole
+  // lifecycle (running → verdict/failed) is persisted on the project, so a closed panel
+  // never loses it. Fire-and-forget — each transition lands as a project:updated event.
   const worktreeCheckMatch = pathname.match(/^\/api\/projects\/([^/]+)\/worktree-check$/);
   if (worktreeCheckMatch) {
     if (method !== "POST") return methodNotAllowed();
@@ -1414,17 +1415,15 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     if (!project.rootPath) return conflict("project has no rootPath — set one first");
     void runWorktreeCheck(ctx.db, slug, ctx.runAgent)
       .then((out) => {
-        if (out.ran) {
-          ctx.hub.broadcast({ type: "event", name: "project:updated", payload: slug });
-        } else {
-          ctx.hub.broadcast({
-            type: "event",
-            name: "project:worktree-check-failed",
-            payload: { slug, reason: out.reason ?? "check failed" },
-          });
-        }
+        ctx.hub.broadcast({ type: "event", name: "project:updated", payload: slug });
+        // The check can take minutes — surface the outcome (in-app + OS banner) so it
+        // isn't missed when the panel that started it is long closed.
+        notifyWorktreeCheck(ctx.hub, project.name, out);
       })
       .catch((err) => console.error(`[cadence] worktree check failed for ${slug}:`, err));
+    // runWorktreeCheck persists "running" synchronously before its first await, so this
+    // broadcast (and the 202) already reflect an in-flight check.
+    ctx.hub.broadcast({ type: "event", name: "project:updated", payload: slug });
     return Response.json({ started: true }, { status: 202 });
   }
 

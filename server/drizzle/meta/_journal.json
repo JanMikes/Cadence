@@ -64,6 +64,13 @@
       "when": 1781053624102,
       "tag": "0008_dazzling_ma_gnuci",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1781072679566,
+      "tag": "0009_nosy_tarot",
+      "breakpoints": true
     }
   ]
 }

@@ -5,6 +5,7 @@ import { APP_NAME, APP_TAGLINE, SCHEMA_VERSION, type ServerMessage } from "@cade
 import { ActivityTracker } from "./activity";
 import { makeRecordingRunner } from "./agents/recording-runner";
 import { healStuckTasks } from "./heal";
+import { failStaleWorktreeCheckRuns } from "./projects";
 import { reconcileOrphans, startSessionWatchdog } from "./watchdog";
 import { ApprovalRegistry } from "./approvals";
 import { emitProposals } from "./proposals";
@@ -106,6 +107,9 @@ export function startGateway(opts: GatewayOptions = {}): Gateway {
   if (opts.startWatcher !== false) {
     const orphans = reconcileOrphans(db, hub);
     if (orphans) console.log(`[cadence] reconciled ${orphans} orphaned session(s) from a previous run`);
+    // A readiness check left "running" by the old process would show "Checking…" forever.
+    const staleChecks = failStaleWorktreeCheckRuns(db);
+    if (staleChecks) console.log(`[cadence] marked ${staleChecks} interrupted worktree check(s) failed`);
   }
 
   // Self-heal tasks left in "refining" by a previous run (crash/restart). Background, autonomy-only,

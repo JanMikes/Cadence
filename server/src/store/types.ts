@@ -41,6 +41,7 @@ export interface ProjectFrontmatter {
   autonomy?: boolean | null; // per-project autonomy override (null = inherit global)
   worktreesEnabled?: boolean; // opt-in worktree isolation (default false → in-place, serialized)
   worktreeCheck?: import("@cadence/shared").WorktreeCheck | null; // last readiness check
+  worktreeCheckRun?: import("@cadence/shared").WorktreeCheckRun | null; // running/failed check lifecycle
   notes?: string | null;
   // The markdown BODY is the project's systemPrompt context layer (spec §4/§7.1).
 }

@@ -1,4 +1,10 @@
-import type { CreateProjectInput, Project, UpdateProjectInput, WorktreeCheck } from "@cadence/shared";
+import type {
+  CreateProjectInput,
+  Project,
+  UpdateProjectInput,
+  WorktreeCheck,
+  WorktreeCheckRun,
+} from "@cadence/shared";
 import { asc, eq } from "drizzle-orm";
 import { existsSync } from "node:fs";
 import type { Db } from "./db/client";
@@ -107,13 +113,41 @@ export function updateProject(db: Db, slug: string, patch: UpdateProjectInput): 
   return getProject(db, slug);
 }
 
-/** Persist a worktree-readiness check result (server-managed — not part of the PATCH API). */
+/** Persist a worktree-readiness check result (server-managed — not part of the PATCH API).
+ *  A completed verdict also clears the run lifecycle (the check is no longer running/failed). */
 export function setProjectWorktreeCheck(db: Db, slug: string, check: WorktreeCheck): Project | null {
   if (!existsSync(paths.projectFile(slug))) return null;
   const { data, body } = readProject(slug);
-  writeProject({ ...data, slug, worktreeCheck: check }, body);
+  writeProject({ ...data, slug, worktreeCheck: check, worktreeCheckRun: null }, body);
   reindexProject(db, slug);
   return getProject(db, slug);
+}
+
+/** Persist the readiness-check lifecycle (running/failed; null = idle) so the UI can show
+ *  it any time — a closed panel must never lose an in-flight or failed check. */
+export function setProjectWorktreeCheckRun(db: Db, slug: string, run: WorktreeCheckRun | null): Project | null {
+  if (!existsSync(paths.projectFile(slug))) return null;
+  const { data, body } = readProject(slug);
+  writeProject({ ...data, slug, worktreeCheckRun: run }, body);
+  reindexProject(db, slug);
+  return getProject(db, slug);
+}
+
+/** Boot-time recovery: a check left "running" by a dead gateway would spin forever —
+ *  mark it failed so the panel says what happened instead of lying. Returns # fixed. */
+export function failStaleWorktreeCheckRuns(db: Db): number {
+  let fixed = 0;
+  for (const project of listProjects(db)) {
+    const run = project.worktreeCheckRun;
+    if (run?.status !== "running") continue;
+    setProjectWorktreeCheckRun(db, project.slug, {
+      status: "failed",
+      startedAt: run.startedAt,
+      reason: "the gateway restarted mid-check — run it again",
+    });
+    fixed++;
+  }
+  return fixed;
 }
 
 function toProject(row: typeof projects.$inferSelect): Project {
@@ -130,17 +164,18 @@ function toProject(row: typeof projects.$inferSelect): Project {
     defaultDeliveryMode: row.defaultDeliveryMode,
     autonomy: row.autonomy ?? null,
     worktreesEnabled: row.worktreesEnabled,
-    worktreeCheck: parseWorktreeCheck(row.worktreeCheck),
+    worktreeCheck: parseJsonCell<WorktreeCheck>(row.worktreeCheck),
+    worktreeCheckRun: parseJsonCell<WorktreeCheckRun>(row.worktreeCheckRun),
     systemPrompt: row.systemPrompt,
     notes: row.notes,
     createdAt: row.createdAt,
   };
 }
 
-function parseWorktreeCheck(raw: string | null): WorktreeCheck | null {
+function parseJsonCell<T>(raw: string | null): T | null {
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as WorktreeCheck;
+    return JSON.parse(raw) as T;
   } catch {
     return null; // tolerate a corrupt cell rather than break project listing
   }
