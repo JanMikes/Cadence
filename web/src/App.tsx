@@ -24,6 +24,7 @@ import { AddTaskButton, AddTaskModal } from "./features/task/AddTaskModal";
 import { TaskDetail } from "./features/task/TaskDetail";
 import { UsageBar } from "./features/usage/UsageBar";
 import { getSettings, updateSettings } from "./lib/api";
+import { useHashRoute } from "./lib/hashRoute";
 import { ATTENTION_SHORTCUT } from "./lib/shortcuts";
 import { useTauriBridge } from "./lib/tauri";
 import { cn } from "./lib/utils";
@@ -48,8 +49,13 @@ const ATTENTION_EVENTS = new Set([
 ]);
 
 export function App() {
-  const [view, setView] = useState<ViewId>("today");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Routable state (view + open task) lives in the URL hash — survives refresh,
+  // supports back/forward. See lib/hashRoute.ts.
+  const [route, navigate] = useHashRoute();
+  const view = route.view;
+  const selectedId = route.taskId;
+  const setView = (v: ViewId) => navigate({ view: v, taskId: null });
+  const setSelectedId = (id: string | null) => navigate({ taskId: id });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionDetailId, setSessionDetailId] = useState<string | null>(null);
   const [addTaskOpen, setAddTaskOpen] = useState(false);
@@ -107,7 +113,7 @@ export function App() {
   // Native global hotkey / tray "Quick capture" → open the capture modal (inert in a plain browser).
   useTauriBridge(() => setAddTaskOpen(true));
 
-  // In-app shortcut: ⌘⇧A toggles the "needs you" Attention Center (shown on the pill).
+  // In-app shortcut: A toggles the "needs you" Attention Center (shown on the pill).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (ATTENTION_SHORTCUT.matches(e)) {
@@ -146,10 +152,7 @@ export function App() {
     <>
       <AppShell
         activeView={view}
-        onNavigate={(v) => {
-          setView(v);
-          setSelectedId(null);
-        }}
+        onNavigate={setView}
         topBar={
           <div className="flex items-center gap-3 border-b border-border bg-card/30 px-4 py-1.5">
             <div className="min-w-0 flex-1">
@@ -180,13 +183,7 @@ export function App() {
         {view === "notifications" ? <NotificationsView onOpenTask={setSelectedId} /> : null}
         {view === "settings" ? <SettingsView /> : null}
         {view === "quickstart" ? (
-          <Quickstart
-            onNavigate={(v) => {
-              setView(v);
-              setSelectedId(null);
-            }}
-            onAddTask={() => setAddTaskOpen(true)}
-          />
+          <Quickstart onNavigate={setView} onAddTask={() => setAddTaskOpen(true)} />
         ) : null}
       </AppShell>
 
@@ -228,10 +225,7 @@ export function App() {
 
       <CommandPalette
         onOpenTask={setSelectedId}
-        onNavigate={(v) => {
-          setView(v);
-          setSelectedId(null);
-        }}
+        onNavigate={setView}
         onAddTask={() => setAddTaskOpen(true)}
         onOpenAttention={() => setAttentionOpen(true)}
       />
