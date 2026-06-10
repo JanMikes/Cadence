@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.4.c (project Repository card UI).
+- **Current step:** 6.4.d (forge-aware delivery + prUrl on task).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -268,11 +268,12 @@ assume.
   probedAt timestamp; `GET /api/projects/:id/forge` + a refresh endpoint.
   - Verify: probe returns `{installed, authenticated, account}` on this machine; mocked unit tests.
     ✓ 2026-06-10 (in-memory 10-min cache instead of runtime.json — see Journal).
-- [ ] **6.4.c Project UI: Repository card.** In the project edit drawer: editable **Git remote**
+- [x] **6.4.c Project UI: Repository card.** In the project edit drawer: editable **Git remote**
   field, detected forge badge (GitHub/GitLab + `owner/repo`), CLI status line (“✓ gh authenticated
   as @user” / “✗ glab not installed — `brew install glab`, then `glab auth login`”), labeled
   **Refresh** button.
   - Verify: a GitHub-remote project shows the GitHub card; a GitLab one shows glab status.
+    ✓ 2026-06-10 (394 tests; verified via the exported forgeSummary presenter for both forges).
 - [ ] **6.4.d Forge-aware delivery.** `auto_pr` branches by forge: `gh pr create` vs
   `glab mr create` (⚠ verify flags); parse the created PR/MR URL; persist on the task (new
   `tasks.prUrl` column + task.md frontmatter); include the link in `delivery.md` + the delivery
@@ -624,3 +625,8 @@ yourself.
   is simpler and the probe is cheap. ⚠ account parsing is text-based (`account <user>` / `as
   <user>`); wording drift degrades to `account: null` while the load-bearing authenticated flag
   stays robust. GitLab subgroup owners keep their full path ("group/sub").
+- **2026-06-10 — 6.4.c done.** Repository card is self-contained in the EditDrawer (own
+  query/mutations, like WorktreeReadiness) so remote/forge edits don't entangle the main form.
+  Status lines come from the exported pure `forgeSummary` presenter — unit-tested for GitHub,
+  GitLab (subgroups), not-installed/not-signed-in hints and unrecognized hosts; the live-data
+  render path is trivial plumbing over it.
