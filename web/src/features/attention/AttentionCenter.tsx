@@ -174,12 +174,11 @@ function ListModal({
                   >
                     <Icon className={cn("size-4 shrink-0", meta.tint)} />
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium">{item.title}</span>
-                        {item.priority ? <PriorityBadge priority={item.priority} /> : null}
-                      </span>
-                      <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="block truncate text-sm font-medium">{item.title}</span>
+                      {/* Meta row sized like the board card's ([11px]): summary · priority · project. */}
+                      <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
                         <span className="truncate">{item.summary}</span>
+                        {item.priority ? <PriorityBadge priority={item.priority} /> : null}
                         {project ? <ProjectChip project={project} /> : null}
                       </span>
                     </span>
