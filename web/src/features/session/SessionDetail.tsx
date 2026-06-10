@@ -12,6 +12,7 @@ import {
   stopSession,
   updateSession,
 } from "../../lib/api";
+import { formatDateTime, useDateFormats } from "../../lib/datetime";
 import { cn } from "../../lib/utils";
 import { HandoffButtons } from "./HandoffButtons";
 import { LiveTranscript } from "./LiveTranscript";
@@ -66,6 +67,7 @@ export function SessionDetail({
   /** Jump to the linked task's detail. */
   onOpenTask: (taskId: string) => void;
 }) {
+  const fmts = useDateFormats();
   const qc = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -214,7 +216,7 @@ export function SessionDetail({
               <dd className="font-mono">{s.pid ?? "—"}</dd>
 
               <dt className="text-muted-foreground">Started</dt>
-              <dd>{s.startedAt ? new Date(s.startedAt).toLocaleString() : "—"}</dd>
+              <dd>{formatDateTime(s.startedAt, fmts)}</dd>
 
               <dt className="text-muted-foreground">Duration</dt>
               <dd>

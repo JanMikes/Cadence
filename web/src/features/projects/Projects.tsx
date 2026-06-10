@@ -10,6 +10,7 @@ import { CheckCircle2, FolderGit2, Plus, Save, Sparkles, TriangleAlert, X } from
 import { type FormEvent, type ReactNode, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { checkWorktreeReadiness, createProject, getProjects, updateProject } from "../../lib/api";
+import { formatDateTime, useDateFormats } from "../../lib/datetime";
 import { useServerMessages } from "../../lib/ws";
 import { ImportProjects } from "./ImportProjects";
 
@@ -262,6 +263,7 @@ function WorktreeReadiness({ project }: { project: Project }) {
 }
 
 function WorktreeCheckCard({ check }: { check: WorktreeCheck }) {
+  const fmts = useDateFormats();
   const ready = check.verdict === "ready";
   return (
     <div className="mt-3 rounded-md border border-border bg-background/60 p-3">
@@ -280,7 +282,7 @@ function WorktreeCheckCard({ check }: { check: WorktreeCheck }) {
           </>
         )}
         <span className="ml-auto text-[11px] font-normal text-muted-foreground">
-          {new Date(check.checkedAt).toLocaleString()}
+          {formatDateTime(check.checkedAt, fmts)}
         </span>
       </div>
       <p className="mt-1.5 text-xs text-foreground/80">{check.summary}</p>

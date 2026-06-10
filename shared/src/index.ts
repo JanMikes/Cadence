@@ -528,6 +528,9 @@ export interface GlobalSettings {
   /** Per-agent prompt/model overrides keyed by registry role (e.g. "discovery", "subagent:explorer").
    *  Only customized agents appear here (6.3.b). */
   agents?: Record<string, AgentOverride>;
+  /** Date/time display patterns (PHP-style tokens, 6.3.d). Absent = the defaults
+   *  (`d.m.Y` / `d.m.Y H:i:s`); the literal "SYSTEM" defers to the browser locale. */
+  formats?: { date?: string; dateTime?: string };
 }
 
 /** Wire shape of one agent's prompt definition + current override (GET /api/agents/prompts, 6.3.c). */

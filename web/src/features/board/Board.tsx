@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronsUp, ChevronUp, Equal, ListFilter } from "lucide-react";
 import { type DragEvent, useEffect, useMemo, useState } from "react";
 import { useActivity, stageLabel } from "../../lib/activity";
+import { formatDate, useDateFormats } from "../../lib/datetime";
 import { getProjects, getTasks, updateTask } from "../../lib/api";
 import { BOARD_COLUMNS, type StatusColumn } from "../../lib/status";
 import { cn } from "../../lib/utils";
@@ -390,6 +391,7 @@ function BoardCard({
   project?: Project;
   onOpen: (id: string) => void;
 }) {
+  const fmts = useDateFormats();
   const onDragStart = (e: DragEvent) => e.dataTransfer.setData("text/plain", task.id);
   const badge = task.urgencyTier ? URGENCY_BADGE[task.urgencyTier] : undefined;
   const attention = ATTENTION_BADGE[task.status];
@@ -427,7 +429,7 @@ function BoardCard({
           <span className={cn("rounded px-1.5 py-0.5 font-medium", badge.className)}>{badge.label}</span>
         ) : null}
         {task.priority ? <PriorityBadge priority={task.priority} /> : null}
-        {task.deadline ? <span>⏷ {new Date(task.deadline).toLocaleDateString()}</span> : null}
+        {task.deadline ? <span>⏷ {formatDate(task.deadline, fmts)}</span> : null}
         {project ? (
           // Quiet provenance, not a shout: a dot in the project's color + its name.
           <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-border/70 bg-background/50 px-1.5 py-0.5 text-[10px]">

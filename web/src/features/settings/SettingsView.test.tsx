@@ -37,3 +37,13 @@ test("SettingsView has section navigation incl. Agents & Prompts (§6.3.c)", () 
   // the global-vs-per-agent distinction is explained inline (clarity over confusion)
   expect(html).toContain("context layer");
 });
+
+test("SettingsView nav includes the Formats section (§6.3.d)", () => {
+  const qc = new QueryClient();
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <SettingsView />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("Formats");
+});

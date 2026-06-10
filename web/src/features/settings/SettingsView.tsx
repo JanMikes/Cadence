@@ -1,22 +1,24 @@
 import type { AgentPromptInfo } from "@cadence/shared";
 import { DELIVERY_MODES, PERMISSION_MODES, TERMINAL_APPS } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Check, Save, Settings2 } from "lucide-react";
+import { Bot, CalendarClock, Check, Save, Settings2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { getAgentPrompts, getSettings, updateSettings } from "../../lib/api";
+import { DEFAULT_FORMATS, formatTimestamp, SYSTEM_FORMAT } from "../../lib/datetime";
 import { getAutostart, isTauri, setAutostart } from "../../lib/tauri";
 import { cn } from "../../lib/utils";
 
 const FIELD =
   "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-type SectionId = "general" | "agents";
+type SectionId = "general" | "agents" | "formats";
 
-// Sections grow with the phase: Formats (6.3.d) and Operations (6.3.e) join when they land.
+// Sections grow with the phase: Operations (6.3.e) joins when it lands.
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Settings2 }> = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "agents", label: "Agents & Prompts", icon: Bot },
+  { id: "formats", label: "Formats", icon: CalendarClock },
 ];
 
 export function SettingsView() {
@@ -50,6 +52,7 @@ export function SettingsView() {
         <div className="min-w-0 flex-1">
           {section === "general" ? <GeneralSection /> : null}
           {section === "agents" ? <AgentsPromptsSection /> : null}
+          {section === "formats" ? <FormatsSection /> : null}
         </div>
       </div>
     </div>
@@ -251,6 +254,104 @@ function Toggle({
           }`}
         />
       </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Formats (6.3.d)
+
+const FORMAT_PRESETS: Array<{ label: string; date: string; dateTime: string }> = [
+  { label: "Czech", date: "d.m.Y", dateTime: "d.m.Y H:i:s" },
+  { label: "ISO", date: "Y-m-d", dateTime: "Y-m-d H:i" },
+  { label: "US", date: "n/j/Y", dateTime: "n/j/Y H:i" },
+  { label: "System locale", date: SYSTEM_FORMAT, dateTime: SYSTEM_FORMAT },
+];
+
+function FormatsSection() {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const [date, setDate] = useState(DEFAULT_FORMATS.date);
+  const [dateTime, setDateTime] = useState(DEFAULT_FORMATS.dateTime);
+
+  useEffect(() => {
+    const f = settings.data?.formats;
+    setDate(f?.date || DEFAULT_FORMATS.date);
+    setDateTime(f?.dateTime || DEFAULT_FORMATS.dateTime);
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateSettings({
+        formats: {
+          // Persist only real customizations — the default stays implicit.
+          date: date.trim() && date.trim() !== DEFAULT_FORMATS.date ? date.trim() : null,
+          dateTime:
+            dateTime.trim() && dateTime.trim() !== DEFAULT_FORMATS.dateTime ? dateTime.trim() : null,
+        },
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  const now = Date.now();
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
+        How dates and times render everywhere in Cadence. Patterns use PHP-style tokens:{" "}
+        <code className="rounded bg-muted px-1 font-mono">d m Y H i s</code> (padded) ·{" "}
+        <code className="rounded bg-muted px-1 font-mono">j n G y</code> (plain). Default is Czech:{" "}
+        <code className="rounded bg-muted px-1 font-mono">d.m.Y H:i:s</code>.
+      </p>
+
+      <div className="flex flex-wrap gap-1.5">
+        {FORMAT_PRESETS.map((p) => (
+          <button
+            key={p.label}
+            type="button"
+            onClick={() => {
+              setDate(p.date);
+              setDateTime(p.dateTime);
+            }}
+            className={cn(
+              "rounded-md border px-2 py-0.5 text-xs transition-colors",
+              date === p.date && dateTime === p.dateTime
+                ? "border-primary/50 bg-primary/10 text-foreground"
+                : "border-border text-muted-foreground hover:border-primary/40",
+            )}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Date format (deadlines, calendar)
+        <input value={date} onChange={(e) => setDate(e.target.value)} className={cn(FIELD, "font-mono")} />
+        <span className="text-[11px]">Preview: {formatTimestamp(now, date, "date")}</span>
+      </label>
+
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Date &amp; time format (timelines, sessions)
+        <input
+          value={dateTime}
+          onChange={(e) => setDateTime(e.target.value)}
+          className={cn(FIELD, "font-mono")}
+        />
+        <span className="text-[11px]">Preview: {formatTimestamp(now, dateTime, "dateTime")}</span>
+      </label>
+
+      <div className="flex items-center justify-end gap-3">
+        {save.isSuccess ? (
+          <span className="inline-flex items-center gap-1 text-xs text-green-500">
+            <Check className="size-3.5" /> Saved
+          </span>
+        ) : null}
+        <LabeledIconButton
+          icon={<Save />}
+          label="Save formats"
+          disabled={save.isPending}
+          onClick={() => save.mutate()}
+        />
+      </div>
     </div>
   );
 }

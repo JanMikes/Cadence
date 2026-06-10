@@ -470,6 +470,8 @@ export function updateSettings(
     global?: Partial<GlobalSettings["global"]>;
     /** Per-agent overrides; null clears a field / resets a role (deep-merged server-side, §6.3.b). */
     agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
+    /** Date/time patterns (§6.3.d); blank/null resets a key to the default. */
+    formats?: { date?: string | null; dateTime?: string | null };
   },
 ): Promise<GlobalSettings> {
   return fetch("/api/settings", {

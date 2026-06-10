@@ -872,6 +872,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         global?: Record<string, unknown>;
         /** Per-agent overrides; a role mapped to null (or with all fields cleared) resets it. */
         agents?: Record<string, { prompt?: string | null; model?: string | null } | null>;
+        /** Date/time patterns (6.3.d); blank/null resets a key to the default. */
+        formats?: { date?: string | null; dateTime?: string | null };
       };
       try {
         patch = (await req.json()) as typeof patch;
@@ -899,6 +901,15 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         if (Object.keys(merged).length > 0) agents[role] = merged;
         else delete agents[role];
       }
+      // Date/time patterns (§6.3.d): set per key; blank/null clears back to the default.
+      const formats = { ...(current.formats ?? {}) };
+      for (const key of ["date", "dateTime"] as const) {
+        if (patch.formats && key in patch.formats) {
+          const v = patch.formats[key];
+          if (v?.trim()) formats[key] = v.trim();
+          else delete formats[key];
+        }
+      }
       const next = {
         ...current,
         ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
@@ -907,6 +918,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
           : {}),
         global: { ...current.global, ...(patch.global ?? {}) },
         ...(patch.agents || current.agents ? { agents } : {}),
+        ...(patch.formats || current.formats ? { formats } : {}),
       };
       writeSettings(next);
       applyClaudeBinEnv(next); // export CADENCE_CLAUDE_BIN so agent spawns pick up the change

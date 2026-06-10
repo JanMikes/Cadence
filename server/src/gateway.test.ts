@@ -1364,3 +1364,22 @@ test("GET /api/agents/prompts serves the registry with overrides merged (§6.3.c
     body: JSON.stringify({ agents: { questioner: null } }),
   });
 });
+
+test("PATCH /api/settings stores date/time format patterns and clears them (§6.3.d)", async () => {
+  let res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ formats: { dateTime: "Y-m-d H:i" } }),
+  });
+  let s = (await res.json()) as { formats?: { date?: string; dateTime?: string } };
+  expect(s.formats?.dateTime).toBe("Y-m-d H:i");
+  expect(s.formats?.date).toBeUndefined(); // untouched key stays default-implicit
+
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ formats: { dateTime: null } }),
+  });
+  s = (await res.json()) as typeof s;
+  expect(s.formats?.dateTime).toBeUndefined(); // cleared → Czech default applies client-side
+});

@@ -21,6 +21,7 @@ import {
   spawnSession,
   updateTask,
 } from "../../lib/api";
+import { formatDate, useDateFormats } from "../../lib/datetime";
 import { roleLabel, statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
@@ -50,6 +51,7 @@ export function TaskDetail({
   /** Called after a resolve action here (answer/approve/merge) — drives the flow's advance. */
   onResolved?: () => void;
 }) {
+  const fmts = useDateFormats();
   const qc = useQueryClient();
   const [note, setNote] = useState("");
   const [confirmDangerous, setConfirmDangerous] = useState(false);
@@ -274,7 +276,7 @@ export function TaskDetail({
               <dd>{task.priority ?? "—"}</dd>
 
               <dt className="text-muted-foreground">Deadline</dt>
-              <dd>{task.deadline ? new Date(task.deadline).toLocaleDateString() : "—"}</dd>
+              <dd>{formatDate(task.deadline, fmts)}</dd>
 
               <dt className="text-muted-foreground">Estimate</dt>
               <dd>{task.estimate != null ? `${task.estimate} min` : "—"}</dd>

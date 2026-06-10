@@ -2,6 +2,7 @@ import type { TaskEvent } from "@cadence/shared";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight } from "lucide-react";
 import { getTimeline } from "../../lib/api";
+import { formatDateTime, useDateFormats } from "../../lib/datetime";
 import { statusLabel } from "../../lib/status";
 
 interface StatusChangePayload {
@@ -23,6 +24,7 @@ function isStatusChange(e: TaskEvent): e is TaskEvent & { payload: StatusChangeP
  * lifecycle transitions, refetched whenever the task is invalidated.
  */
 export function StatusTimeline({ taskId }: { taskId: string }) {
+  const fmts = useDateFormats();
   const timeline = useQuery({
     queryKey: ["task", taskId, "timeline"],
     queryFn: () => getTimeline(taskId),
@@ -38,7 +40,7 @@ export function StatusTimeline({ taskId }: { taskId: string }) {
         {changes.map((e) => (
           <li key={e.id} className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="font-mono text-[10px] text-muted-foreground/70">
-              {new Date(e.createdAt).toLocaleString()}
+              {formatDateTime(e.createdAt, fmts)}
             </span>
             {e.payload.from ? (
               <span className="flex items-center gap-1.5">
