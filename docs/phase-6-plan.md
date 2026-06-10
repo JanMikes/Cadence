@@ -8,7 +8,7 @@
 > propose-don't-impose call and record it in the Journal under *Decisions*.
 
 ## Status snapshot  ← the building agent keeps this current
-- **Current step:** 6.3.b (override storage in settings).
+- **Current step:** 6.3.c (Settings UI restructure: sections + Agents & Prompts editor).
 - **Blockers:** none.
 - **⚠️ STANDING HAZARD until 6.1 lands:** global `autonomy: true` + dev gateway under `bun --watch`
   means **every server/shared file save restarts the gateway → `healStuckTasks` → may spawn a real
@@ -207,10 +207,11 @@ global→project→fleet→task context, violating the “compose into every age
   agent’s variables). Include the 6 library subagents as editable entries too.
   - Verify: snapshot tests prove **byte-identical prompts** vs. before when no override is set.
     ✓ 2026-06-10 (`9532027`, 24/24 frozen fixtures match, 360 tests total).
-- [ ] **6.3.b Override storage.** `GlobalSettings.agents?: Record<role, {prompt?, model?}>` — only
+- [x] **6.3.b Override storage.** `GlobalSettings.agents?: Record<role, {prompt?, model?}>` — only
   overrides persisted; PATCH deep-merges; `getAgentConfig(role)` = override ?? default. Runner uses
   it for model resolution (replacing direct `modelForRole` calls).
   - Verify: round-trip + reset tests; an overridden model reaches the spawn args (mock runner).
+    ✓ 2026-06-10 (`7f2c253`, 366 tests; lazy subagent resolution per the 6.3.a journal note).
 - [ ] **6.3.c Settings UI restructure.** Left sub-nav sections within Settings: **General**
   (existing fields) · **Agents & Prompts** · **Formats** · **Operations**. *Agents & Prompts*: agent
   list (label, model chip, “customized” dot) → editor pane: description, variables legend (chips),
@@ -576,3 +577,11 @@ yourself.
   library.ts. ⚠ Note for 6.3.b: `AGENT_LIBRARY` resolves prompts at module load — override
   resolution must make that lookup lazy (per `agentsJson()` call) or overrides won't reach
   subagents.
+- **2026-06-10 — 6.3.b done** (`7f2c253`). **Decision:** `modelForRole` moved INTO prompts.ts
+  (re-exported from runner for compat) — the override-aware `getAgentModel` lives beside the
+  registry and runner→prompts stays one-directional (no cycle). Subagent lazy-resolution note from
+  6.3.a closed: `agentsJson()`/`listAgents()` overlay live prompts per call. Model resolution chain
+  everywhere: `opts.model > settings override > role default` (runner spawn args + recorded session
+  row). Whitespace-only prompt overrides fall back to the default — an agent can never run with an
+  empty prompt. PATCH deep-merge semantics: per-field set/clear, role removed when emptied,
+  `agents: {role: null}` resets wholesale.
