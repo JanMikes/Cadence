@@ -43,6 +43,7 @@ import {
   uploadRecurringAttachments,
 } from "../../lib/api";
 import { formatAgo, formatDateTime, formatUntil, useDateFormats } from "../../lib/datetime";
+import { PriorityBadge } from "../board/Board";
 import { cn } from "../../lib/utils";
 import {
   eventFiles,
@@ -240,7 +241,7 @@ export function RecurringView({ onOpenTask }: { onOpenTask: (taskId: string) => 
                       {project.name}
                     </span>
                   ) : null}
-                  {r.priority ? <span>Priority {r.priority}</span> : null}
+                  {r.priority ? <PriorityBadge priority={r.priority} /> : null}
                   {r.lastTriggeredAt != null && r.lastTaskId ? (
                     <button
                       type="button"

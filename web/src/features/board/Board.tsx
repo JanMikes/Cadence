@@ -350,23 +350,32 @@ const ATTENTION_BADGE: Record<string, { label: string; className: string }> = {
   review: { label: "Review & merge", className: "bg-rose-500/20 text-rose-300" },
 };
 
-// Jira-style priority glyphs: arrows + color instead of a cryptic "P1" string.
-const PRIORITY_GLYPHS: Record<string, { node: React.ReactNode; label: string }> = {
+// Jira-style priority marks: arrow + color + plain word instead of a cryptic "P1" string.
+// Words match the Add-task / Recurring pickers ("Critical (P0)" …) — one vocabulary app-wide.
+const PRIORITY_GLYPHS: Record<string, { node: React.ReactNode; text: string; label: string; tint: string }> = {
   p0: {
-    node: <ChevronsUp className="size-3.5 text-red-400" strokeWidth={3} aria-hidden />,
-    label: "Highest (P0)",
+    node: <ChevronsUp className="size-3.5" strokeWidth={3} aria-hidden />,
+    text: "Critical",
+    label: "Critical (P0)",
+    tint: "text-red-400",
   },
   p1: {
-    node: <ChevronUp className="size-3.5 text-orange-400" strokeWidth={3} aria-hidden />,
+    node: <ChevronUp className="size-3.5" strokeWidth={3} aria-hidden />,
+    text: "High",
     label: "High (P1)",
+    tint: "text-orange-400",
   },
   p2: {
-    node: <Equal className="size-3.5 text-amber-300" strokeWidth={3} aria-hidden />,
-    label: "Medium (P2)",
+    node: <Equal className="size-3.5" strokeWidth={3} aria-hidden />,
+    text: "Normal",
+    label: "Normal (P2)",
+    tint: "text-amber-300",
   },
   p3: {
-    node: <ChevronDown className="size-3.5 text-sky-400" strokeWidth={3} aria-hidden />,
+    node: <ChevronDown className="size-3.5" strokeWidth={3} aria-hidden />,
+    text: "Low",
     label: "Low (P3)",
+    tint: "text-sky-400",
   },
 };
 
@@ -383,7 +392,7 @@ const PRIORITY_ALIASES: Record<string, string> = {
   lowest: "p3",
 };
 
-/** Jira-style priority marker (arrow + color + tooltip); falls back to the raw text. */
+/** Jira-style priority marker (arrow + color + plain word); falls back to the raw text. */
 export function PriorityBadge({ priority }: { priority: string }) {
   const key = priority.trim().toLowerCase();
   const glyph = PRIORITY_GLYPHS[key] ?? PRIORITY_GLYPHS[PRIORITY_ALIASES[key] ?? ""];
@@ -392,9 +401,10 @@ export function PriorityBadge({ priority }: { priority: string }) {
     <span
       title={`Priority: ${glyph.label}`}
       aria-label={`Priority: ${glyph.label}`}
-      className="inline-flex items-center"
+      className={cn("inline-flex items-center gap-0.5 font-medium", glyph.tint)}
     >
       {glyph.node}
+      {glyph.text}
     </span>
   );
 }

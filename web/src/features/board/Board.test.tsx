@@ -94,11 +94,12 @@ test("ProjectFilter dropdown lists checkboxes per project + No project + Clear",
   expect(html).toContain(">Clear<"); // the small inline Clear next to the trigger
 });
 
-test("PriorityBadge renders Jira-style arrows + colors (and falls back to raw text)", () => {
+test("PriorityBadge renders Jira-style arrows + colors + plain words (and falls back to raw text)", () => {
   const p0 = renderToStaticMarkup(<PriorityBadge priority="P0" />);
-  expect(p0).toContain("text-red-400"); // highest: red double-up
-  expect(p0).toContain("Priority: Highest (P0)");
-  expect(p0).not.toContain(">P0<"); // the cryptic code is gone, the tooltip explains
+  expect(p0).toContain("text-red-400"); // critical: red double-up
+  expect(p0).toContain("Priority: Critical (P0)");
+  expect(p0).toContain("Critical"); // the word is visible, not tooltip-only
+  expect(p0).not.toContain(">P0<"); // the cryptic code is gone, the word explains
 
   const p1 = renderToStaticMarkup(<PriorityBadge priority="P1" />);
   expect(p1).toContain("text-orange-400");

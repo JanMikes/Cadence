@@ -28,6 +28,7 @@ import { formatDate, formatDateTime, useDateFormats } from "../../lib/datetime";
 import { gitStateLabel, gitStateTone } from "../../lib/git";
 import { roleLabel, statusLabel } from "../../lib/status";
 import { AttachmentsSection, eventFiles, useAttachmentUpload } from "./Attachments";
+import { PriorityBadge } from "../board/Board";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
 import { ReviewWorkspace } from "../review/ReviewWorkspace";
@@ -377,7 +378,7 @@ export function TaskDetail({
               </dd>
 
               <dt className="text-muted-foreground">Priority</dt>
-              <dd>{task.priority ?? "—"}</dd>
+              <dd>{task.priority ? <PriorityBadge priority={task.priority} /> : "—"}</dd>
 
               <dt className="text-muted-foreground">Deadline</dt>
               <dd>{formatDate(task.deadline, fmts)}</dd>
