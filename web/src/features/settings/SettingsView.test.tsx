@@ -57,3 +57,13 @@ test("SettingsView nav includes the Operations section (§6.3.e)", () => {
   );
   expect(html).toContain("Operations");
 });
+
+test("SettingsView nav includes the Code review section (§6.5.h)", () => {
+  const qc = new QueryClient();
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <SettingsView />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("Code review");
+});

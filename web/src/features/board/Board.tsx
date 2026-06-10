@@ -41,6 +41,8 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
 
   // Project filter: empty selection (the initial state) = all projects.
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  // Type filter (§6.5.g): reviews flow the same board; this narrows when needed.
+  const [typeFilter, setTypeFilter] = useState<"all" | "standard" | "code_review">("all");
   const toggle = (key: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -60,10 +62,15 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
   });
 
   const visible = useMemo(() => {
-    const all = tasks.data ?? [];
+    let all = tasks.data ?? [];
+    if (typeFilter !== "all") {
+      all = all.filter((t) =>
+        typeFilter === "code_review" ? t.taskType === "code_review" : t.taskType !== "code_review",
+      );
+    }
     if (selected.size === 0) return all;
     return all.filter((t) => selected.has(t.projectId ?? NO_PROJECT));
-  }, [tasks.data, selected]);
+  }, [tasks.data, selected, typeFilter]);
 
   const byStatus = (status: string) => visible.filter((t) => t.status === status);
 
@@ -76,14 +83,39 @@ export function Board({ onOpen }: { onOpen: (id: string) => void }) {
             Drag a card to change its status. Click a card to open it.
           </p>
         </div>
-        <ProjectFilter
-          projects={projects.data ?? []}
-          selected={selected}
-          onToggle={toggle}
-          onClear={() => setSelected(new Set())}
-          shown={visible.length}
-          total={tasks.data?.length ?? 0}
-        />
+        <div className="flex items-center gap-2">
+          <div role="group" aria-label="Task type" className="flex overflow-hidden rounded-md border border-border text-xs">
+            {(
+              [
+                ["all", "All"],
+                ["standard", "Tasks"],
+                ["code_review", "Reviews"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTypeFilter(id)}
+                className={cn(
+                  "px-2.5 py-1 transition-colors",
+                  typeFilter === id
+                    ? "bg-primary/15 font-medium text-foreground"
+                    : "text-muted-foreground hover:bg-card",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <ProjectFilter
+            projects={projects.data ?? []}
+            selected={selected}
+            onToggle={toggle}
+            onClear={() => setSelected(new Set())}
+            shown={visible.length}
+            total={tasks.data?.length ?? 0}
+          />
+        </div>
       </div>
 
       {tasks.isError ? (
@@ -427,6 +459,18 @@ function BoardCard({
         ) : null}
         {badge ? (
           <span className={cn("rounded px-1.5 py-0.5 font-medium", badge.className)}>{badge.label}</span>
+        ) : null}
+        {task.taskType === "code_review" ? (
+          <span
+            title={
+              task.reviewDirection === "address"
+                ? "Code review — addressing feedback on my PR/MR"
+                : "Code review — reviewing their PR/MR"
+            }
+            className="rounded bg-violet-500/15 px-1.5 py-0.5 font-medium text-violet-300"
+          >
+            ⇄ Review
+          </span>
         ) : null}
         {task.priority ? <PriorityBadge priority={task.priority} /> : null}
         {task.deadline ? <span>⏷ {formatDate(task.deadline, fmts)}</span> : null}

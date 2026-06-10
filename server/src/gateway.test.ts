@@ -1604,3 +1604,21 @@ test("review replies endpoint (§6.5.f): posts non-skipped replies, resolves, �
   const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
   expect(after.status).toBe("done");
 });
+
+test("PATCH /api/settings stores review strictness; invalid clears (§6.5.h)", async () => {
+  let res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ review: { strictness: "strict" } }),
+  });
+  let s = (await res.json()) as { review?: { strictness?: string } };
+  expect(s.review?.strictness).toBe("strict");
+
+  res = await fetch(`${gw.url}/api/settings`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ review: { strictness: "bananas" } }),
+  });
+  s = (await res.json()) as typeof s;
+  expect(s.review?.strictness).toBeUndefined(); // invalid → back to default
+});

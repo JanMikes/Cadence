@@ -185,3 +185,20 @@ test("responder apply: accepted fixes run the agent and stamp appliedAt; skip-on
   expect(ran).toBe(false);
   expect(o2.status).toBe("review");
 });
+
+test("strictness setting reaches the reviewer prompt (§6.5.h)", async () => {
+  const { readSettings, writeSettings } = await import("../store/store");
+  writeSettings({ ...readSettings(), review: { strictness: "strict" } });
+  const id = reviewTask("perform");
+  let prompt = "";
+  await runReviewer(
+    db,
+    id,
+    async (opts) => {
+      prompt = opts.prompt;
+      return ok({ summary: "s", verdictSuggestion: "comment", findings: [] });
+    },
+    fakeApi(),
+  );
+  expect(prompt).toContain("Strictness: strict");
+});

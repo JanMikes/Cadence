@@ -1,7 +1,7 @@
 import type { AgentPromptInfo } from "@cadence/shared";
 import { DELIVERY_MODES, PERMISSION_MODES, TERMINAL_APPS } from "@cadence/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CalendarClock, Check, Gauge, Save, Settings2 } from "lucide-react";
+import { Bot, CalendarClock, Check, Gauge, GitPullRequest, Save, Settings2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { LabeledIconButton } from "../../components/LabeledIconButton";
 import { getAgentPrompts, getSettings, updateSettings } from "../../lib/api";
@@ -12,13 +12,14 @@ import { cn } from "../../lib/utils";
 const FIELD =
   "rounded-md border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-type SectionId = "general" | "agents" | "formats" | "operations";
+type SectionId = "general" | "agents" | "formats" | "operations" | "review";
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Settings2 }> = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "agents", label: "Agents & Prompts", icon: Bot },
   { id: "formats", label: "Formats", icon: CalendarClock },
   { id: "operations", label: "Operations", icon: Gauge },
+  { id: "review", label: "Code review", icon: GitPullRequest },
 ];
 
 export function SettingsView() {
@@ -54,6 +55,7 @@ export function SettingsView() {
           {section === "agents" ? <AgentsPromptsSection /> : null}
           {section === "formats" ? <FormatsSection /> : null}
           {section === "operations" ? <OperationsSection /> : null}
+          {section === "review" ? <ReviewSection /> : null}
         </div>
       </div>
     </div>
@@ -349,6 +351,80 @@ function FormatsSection() {
         <LabeledIconButton
           icon={<Save />}
           label="Save formats"
+          disabled={save.isPending}
+          onClick={() => save.mutate()}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Code review (6.5.h)
+
+const STRICTNESS_OPTIONS = [
+  { value: "lenient", label: "Lenient", help: "Blockers and majors only — quick passes." },
+  { value: "standard", label: "Standard", help: "Skips style nits a formatter would catch. (Default)" },
+  { value: "strict", label: "Strict", help: "Everything, including minor issues and nits." },
+];
+
+function ReviewSection() {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const [strictness, setStrictness] = useState("standard");
+
+  useEffect(() => {
+    setStrictness(settings.data?.review?.strictness ?? "standard");
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateSettings({
+        review: { strictness: strictness !== "standard" ? strictness : null },
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
+        How the <strong>Code reviewer</strong> agent behaves (perform direction). Publishing is
+        always an explicit click in the Review Workspace — nothing ever auto-posts. The agent
+        prompts themselves are editable under <strong>Agents &amp; Prompts</strong>.
+      </p>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="text-xs text-muted-foreground">Review strictness</legend>
+        {STRICTNESS_OPTIONS.map((o) => (
+          <label
+            key={o.value}
+            className={cn(
+              "flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors",
+              strictness === o.value ? "border-primary/50 bg-primary/5" : "border-border bg-card/40",
+            )}
+          >
+            <input
+              type="radio"
+              name="strictness"
+              value={o.value}
+              checked={strictness === o.value}
+              onChange={() => setStrictness(o.value)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="font-medium">{o.label}</span>
+              <span className="block text-xs text-muted-foreground">{o.help}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <div className="flex items-center justify-end gap-3">
+        {save.isSuccess ? (
+          <span className="inline-flex items-center gap-1 text-xs text-green-500">
+            <Check className="size-3.5" /> Saved
+          </span>
+        ) : null}
+        <LabeledIconButton
+          icon={<Save />}
+          label="Save review settings"
           disabled={save.isPending}
           onClick={() => save.mutate()}
         />

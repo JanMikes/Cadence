@@ -69,7 +69,14 @@ const getSnapshot = (): Record<string, string> => busy;
 /** Human label for an autonomy stage, for the spinner caption. */
 export function stageLabel(stage: string): string {
   return (
-    { triage: "Triaging…", discovery: "Refining…", refine: "Refining…", questioner: "Preparing questions…" }[
+    {
+      triage: "Triaging…",
+      discovery: "Refining…",
+      refine: "Refining…",
+      questioner: "Preparing questions…",
+      reviewer: "Reviewing…",
+      review_responder: "Addressing feedback…",
+    }[
       stage
     ] ?? "Working…"
   );

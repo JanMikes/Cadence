@@ -1104,6 +1104,8 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         formats?: { date?: string | null; dateTime?: string | null };
         /** Operations knobs (6.3.e); null/invalid resets a key to the built-in default. */
         operations?: Record<string, number | null>;
+        /** Review settings (6.5.h). */
+        review?: { strictness?: string | null };
       };
       try {
         patch = (await req.json()) as typeof patch;
@@ -1156,6 +1158,13 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
           else delete operations[key];
         }
       }
+      // Review settings (§6.5.h): strictness allowlist; invalid/null clears to default.
+      const review = { ...(current.review ?? {}) };
+      if (patch.review && "strictness" in patch.review) {
+        const v = patch.review.strictness;
+        if (v === "lenient" || v === "standard" || v === "strict") review.strictness = v;
+        else delete review.strictness;
+      }
       const next = {
         ...current,
         ...(patch.preferredTerminal ? { preferredTerminal: patch.preferredTerminal } : {}),
@@ -1166,6 +1175,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         ...(patch.agents || current.agents ? { agents } : {}),
         ...(patch.formats || current.formats ? { formats } : {}),
         ...(patch.operations || current.operations ? { operations } : {}),
+        ...(patch.review || current.review ? { review } : {}),
       };
       writeSettings(next);
       applyClaudeBinEnv(next); // export CADENCE_CLAUDE_BIN so agent spawns pick up the change

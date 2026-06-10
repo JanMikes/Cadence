@@ -478,6 +478,8 @@ export function updateSettings(
     formats?: { date?: string | null; dateTime?: string | null };
     /** Operations knobs (§6.3.e); null resets a key to the built-in default. */
     operations?: Record<string, number | null>;
+    /** Review settings (§6.5.h). */
+    review?: { strictness?: string | null };
   },
 ): Promise<GlobalSettings> {
   return fetch("/api/settings", {

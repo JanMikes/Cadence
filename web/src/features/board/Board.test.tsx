@@ -111,3 +111,37 @@ test("PriorityBadge renders Jira-style arrows + colors (and falls back to raw te
   const raw = renderToStaticMarkup(<PriorityBadge priority="someday" />);
   expect(raw).toContain("someday"); // unknown values stay visible as-is
 });
+
+test("Board has the type filter and review cards carry the Review badge (§6.5.g)", () => {
+  const qc = new QueryClient();
+  qc.setQueryData(["tasks", "all", "urgency"], [
+    {
+      id: "r1",
+      title: "Review the widget PR",
+      body: "",
+      status: "ready",
+      priority: null,
+      projectId: null,
+      fleetId: null,
+      deadline: null,
+      estimate: null,
+      deliveryMode: null,
+      permissionMode: null,
+      prUrl: null,
+      taskType: "code_review",
+      reviewDirection: "perform",
+      reviewRef: "https://github.com/acme/widget/pull/1",
+      parentTaskId: null,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ]);
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={qc}>
+      <Board onOpen={() => {}} />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("Reviews"); // the segmented type filter
+  expect(html).toContain("⇄ Review"); // the card badge
+  expect(html).toContain("reviewing their PR/MR"); // direction-aware tooltip
+});
