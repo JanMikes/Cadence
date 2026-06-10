@@ -605,6 +605,47 @@ export interface ReviewInspectResult {
   direction: ReviewDirection;
 }
 
+// ----------------------------------------------------- code review (6.5.b)
+
+/** PR/MR metadata for the Review Workspace header. */
+export interface ReviewMeta {
+  title: string;
+  author: string | null;
+  state: string;
+  baseBranch: string | null;
+  headBranch: string | null;
+  url: string;
+  body: string;
+  /** Rolled-up CI verdict when available: success | failure | pending | null. */
+  ciStatus: string | null;
+}
+
+export interface ReviewThreadComment {
+  author: string | null;
+  body: string;
+  createdAt: string | null;
+}
+
+/** One review discussion thread on a PR/MR. */
+export interface ReviewThread {
+  id: string;
+  resolved: boolean;
+  resolvable: boolean;
+  file: string | null;
+  line: number | null;
+  comments: ReviewThreadComment[];
+}
+
+/** An inline comment queued for publishing (perform direction). */
+export interface ReviewDraftComment {
+  file: string;
+  line: number;
+  body: string;
+}
+
+export const REVIEW_VERDICTS = ["comment", "approve", "request_changes"] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+
 /** Git forge kinds Cadence understands (6.4). */
 export type ForgeKind = "github" | "gitlab";
 

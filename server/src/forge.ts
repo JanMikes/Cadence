@@ -131,12 +131,17 @@ export function inferDirection(author: string | null, account: string | null): "
 
 // ---------------------------------------------------------------- CLI probing
 
-/** Shell-out seam, injectable for deterministic tests. Returns stdout+stderr or throws. */
-export type CliExec = (cmd: string, args: string[]) => string;
+/** Shell-out seam, injectable for deterministic tests. Returns stdout+stderr or throws.
+ *  `input`, when given, is piped to stdin (used for JSON request bodies, 6.5.b). */
+export type CliExec = (cmd: string, args: string[], input?: string) => string;
 
-const realExec: CliExec = (cmd, args) => {
+const realExec: CliExec = (cmd, args, input) => {
   try {
-    return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return execFileSync(cmd, args, {
+      encoding: "utf8",
+      ...(input != null ? { input } : {}),
+      stdio: [input != null ? "pipe" : "ignore", "pipe", "pipe"],
+    });
   } catch (err) {
     // `gh auth status` exits 1 when unauthenticated but still prints useful output —
     // surface it instead of throwing, and rethrow only when the binary is missing.
@@ -145,6 +150,9 @@ const realExec: CliExec = (cmd, args) => {
     return `${e.stdout ?? ""}\n${e.stderr ?? ""}`;
   }
 };
+
+/** The real shell-out (default seam for forge-review, 6.5.b). */
+export const forgeCliExec: CliExec = realExec;
 
 /** Probe one CLI: installed (version), authenticated, account login when detectable. */
 export function probeCli(cli: "gh" | "glab", host?: string, exec: CliExec = realExec): ForgeCliStatus {
