@@ -432,32 +432,39 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     const task = getTask(ctx.db, taskId);
     if (!task) return notFound(pathname);
     if (task.status !== "review") return conflict(`merge requires a task in review (currently ${task.status})`, { status: task.status });
-    // Merging mutates the project working dir — refuse while an in-place execution
-    // holds it (another task implementing in this project right now).
+    // Merging mutates the project working dir — HOLD the write slot for the whole
+    // merge, don't just probe it: with a probe, a queued execution could be granted
+    // the lock while `git merge` runs (the check-then-act race). tryAcquireWrite
+    // never waits — busy means an honest 409, not a stalled HTTP request.
+    let releaseMerge: (() => void) | null = null;
     if (task.projectId) {
       const project = getProjectById(ctx.db, task.projectId);
-      const busy =
-        project?.rootPath &&
-        projectLocks.isWriteBusy(project.id, {
+      if (project?.rootPath) {
+        releaseMerge = projectLocks.tryAcquireWrite(project.id, {
           db: ctx.db,
           rootPath: project.rootPath,
           excludeTaskId: taskId,
         });
-      if (busy) {
-        return conflict("another task is executing in this project's working dir — try again when it finishes", {
-          merged: false,
-        });
+        if (!releaseMerge) {
+          return conflict("another task is executing in this project's working dir — try again when it finishes", {
+            merged: false,
+          });
+        }
       }
     }
-    const result = mergeTask(ctx.db, taskId);
-    if (!result.ok) return conflict(result.message, { merged: false });
-    // Done = no execution leftovers: clear execution.json on every successful merge
-    // (mergeTask only clears it for the in-place-branch path; apply_in_place runs
-    // whose delivery couldn't finalize would otherwise leak a stale baseBranch).
-    clearExecutionState(taskId);
-    const updated = updateTask(ctx.db, taskId, { status: "done" });
-    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-    return Response.json({ merged: true, message: result.message, task: updated });
+    try {
+      const result = mergeTask(ctx.db, taskId);
+      if (!result.ok) return conflict(result.message, { merged: false });
+      // Done = no execution leftovers: clear execution.json on every successful merge
+      // (mergeTask only clears it for the in-place-branch path; apply_in_place runs
+      // whose delivery couldn't finalize would otherwise leak a stale baseBranch).
+      clearExecutionState(taskId);
+      const updated = updateTask(ctx.db, taskId, { status: "done" });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      return Response.json({ merged: true, message: result.message, task: updated });
+    } finally {
+      releaseMerge?.();
+    }
   }
 
   const requestChangesMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review\/request-changes$/);
@@ -957,6 +964,23 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
         return badRequest("invalid JSON body");
       }
       const task = getTask(ctx.db, taskId);
+      // In-place project dirs are single-writer: refuse to open an interactive
+      // session while an autonomous execution is running there (it would edit
+      // under the agent's feet — the same hazard the write lock exists for).
+      // Worktree-enabled projects spawn freely: executions never touch rootPath.
+      const sessionLockTarget = executionLockTarget(ctx.db, taskId);
+      if (
+        sessionLockTarget &&
+        projectLocks.isWriteBusy(sessionLockTarget.projectId, {
+          db: ctx.db,
+          rootPath: sessionLockTarget.rootPath,
+        })
+      ) {
+        return conflict(
+          "a task is executing in this project's working dir right now — wait for it to finish (or enable worktrees) before opening a session here",
+          { projectId: sessionLockTarget.projectId },
+        );
+      }
       const appendSystemPrompt = composeContext(ctx.db, {
         taskId,
         projectId: task?.projectId ?? null,
@@ -1916,16 +1940,28 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
   try {
     const lockTarget = executionLockTarget(ctx.db, taskId);
     if (lockTarget) {
+      // exclusive: the run mutates the dir, so it waits out EVERY live occupant —
+      // other executions, warm chat sessions, even claude processes outside Cadence.
       release = await projectLocks.acquireWrite(lockTarget.projectId, {
-        guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId },
-        onQueued: () => {
-          // Visible queueing (§10: never lie about state): the project dir is busy with
-          // another in-place run — note it on the timeline and let the card spin as "queued".
+        guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId, exclusive: true },
+        onQueued: (blockers) => {
+          // Visible queueing (§10: never lie about state): the project dir is busy —
+          // note WHO holds it on the timeline and let the card spin as "queued".
           recordEvent(ctx.db, {
             taskId,
             type: "execution_queued",
-            payload: { projectId: lockTarget.projectId },
+            payload: { projectId: lockTarget.projectId, blockers: blockers.map((b) => b.label) },
           });
+          // A wait on a chat session or an external claude process can last as long
+          // as the human keeps it open — say so, or the queue looks like a hang.
+          const occupants = blockers.filter((b) => b.kind !== "execution");
+          if (occupants.length > 0) {
+            appendContext(
+              taskId,
+              `Execution queued: the project dir is in use by ${occupants.map((b) => b.label).join(", ")} — it starts when that ends.`,
+            );
+            ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
+          }
           ctx.activity.start(taskId, "queued");
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },
@@ -2022,9 +2058,19 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
   try {
     const lockTarget = executionLockTarget(ctx.db, taskId);
     if (lockTarget) {
+      // exclusive, same as runExecutionChain: the apply mutates the dir, so every
+      // live occupant (chat session, external claude) blocks it — visibly.
       release = await projectLocks.acquireWrite(lockTarget.projectId, {
-        guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId },
-        onQueued: () => {
+        guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId, exclusive: true },
+        onQueued: (blockers) => {
+          const occupants = blockers.filter((b) => b.kind !== "execution");
+          if (occupants.length > 0) {
+            appendContext(
+              taskId,
+              `Review apply queued: the project dir is in use by ${occupants.map((b) => b.label).join(", ")} — it starts when that ends.`,
+            );
+            ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
+          }
           ctx.activity.start(taskId, "queued");
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },

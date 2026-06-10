@@ -285,6 +285,17 @@ export function beginInPlaceExecution(db: Db, taskId: string): ExecutionTarget {
     );
   }
 
+  // A live index.lock means some other git process (a user command, an editor's
+  // git integration, another tool) is mutating the repo RIGHT NOW — checking out
+  // over it corrupts both. Refuse with an actionable message; a crashed git
+  // leaves a stale lock the user removes once.
+  if (existsSync(join(root, ".git", "index.lock"))) {
+    throw new Error(
+      `in-place execution: ${root}/.git/index.lock exists — another git process is ` +
+        "working in this repo (or crashed and left a stale lock; delete the file if so)",
+    );
+  }
+
   const dirty = statusLines(root, { tracked: true });
   if (dirty.length > 0) {
     throw new Error(
@@ -318,7 +329,20 @@ export function commitInPlaceChanges(
   rootPath: string,
   taskId: string,
   message: string,
-): { committed: boolean } {
+  /** When set, refuse unless the repo is still ON this branch — the user (or an
+   *  external actor) may have switched branches mid-run, and committing there
+   *  would write the task's work into someone else's history. */
+  expectedBranch?: string,
+): { committed: boolean; reason?: string } {
+  if (expectedBranch) {
+    const current = currentBranch(rootPath);
+    if (current !== expectedBranch) {
+      return {
+        committed: false,
+        reason: `repo is on ${current}, not ${expectedBranch} — refusing to commit the task's work onto another branch`,
+      };
+    }
+  }
   const before = new Set(readExecutionState(taskId)?.untrackedBefore ?? []);
   git(["add", "-u"], rootPath);
   for (const p of untrackedPaths(rootPath)) {

@@ -1,5 +1,6 @@
 import type { WorktreeCheck, WorktreeCheckBlocker } from "@cadence/shared";
 import type { Db } from "../db/client";
+import { projectLocks } from "../project-locks";
 import { getProject, setProjectWorktreeCheck, setProjectWorktreeCheckRun } from "../projects";
 import { isGitRepo } from "../worktree";
 import { getAgentPrompt, projectPromptLayer } from "./prompts";
@@ -64,12 +65,23 @@ export async function runWorktreeCheck(
 
   let result: Awaited<ReturnType<AgentRunner>>;
   try {
-    result = await run({
-      cwd: project.rootPath,
-      role: "worktree_check",
-      prompt: buildWorktreeCheckPrompt(project),
-      permissionMode: "plan",
+    // Read lock: project-scoped (no task), so it doesn't go through withReadAccess —
+    // but it still must queue behind an in-place execution, or it would judge a
+    // half-written task branch instead of the repo's normal state.
+    const release = await projectLocks.acquireRead(project.id, {
+      db,
+      rootPath: project.rootPath,
     });
+    try {
+      result = await run({
+        cwd: project.rootPath,
+        role: "worktree_check",
+        prompt: buildWorktreeCheckPrompt(project),
+        permissionMode: "plan",
+      });
+    } finally {
+      release();
+    }
   } catch (err) {
     return fail(`readiness check crashed: ${err instanceof Error ? err.message : String(err)}`);
   }

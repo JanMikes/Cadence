@@ -776,6 +776,47 @@ test("in-place execution slice (worktrees off — the default): branch in the ma
   }
 });
 
+test("POST /api/tasks/:id/sessions refuses while an execution is live in the in-place project dir", async () => {
+  const repo = mkdtempSync(join(tmpdir(), "cadence-gw-spawn409-"));
+  try {
+    const project = (await fetch(`${gw.url}/api/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "GW Spawn409", rootPath: repo }), // worktrees OFF
+    }).then((r) => r.json())) as { slug: string };
+    const task = await createViaApi("Chat during an execution");
+    const runningTask = await createViaApi("The one executing");
+    await fetch(`${gw.url}/api/tasks/${task.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project: project.slug }),
+    });
+    // another task's implementer is live in that dir — exactly what the lock sees
+    db.insert(sessions)
+      .values({
+        id: "gw-live-exec",
+        taskId: runningTask.id,
+        role: "implementer",
+        kind: "oneshot",
+        status: "running",
+        cwd: repo,
+      })
+      .run();
+
+    const res = await fetch(`${gw.url}/api/tasks/${task.id}/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { message: string };
+    expect(body.message).toContain("executing in this project's working dir");
+  } finally {
+    db.delete(sessions).where(eq(sessions.id, "gw-live-exec")).run();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("POST /api/projects/:slug/worktree-check runs the readiness check and persists the verdict", async () => {
   const repo = mkdtempSync(join(tmpdir(), "cadence-gw-check-"));
   const g = (args: string[]) => Bun.spawnSync(["git", ...args], { cwd: repo });

@@ -1,8 +1,10 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import type { LiveSession } from "@cadence/shared";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
 import { getProjectById } from "./projects";
 import { getTask } from "./tasks";
+import { readLiveSessions } from "./transcripts";
 
 /**
  * Per-project readers-writer lock (§9): coordinates who may use a project's
@@ -14,10 +16,15 @@ import { getTask } from "./tasks";
  * executions never take the write lock, so they stay fully parallel.
  *
  * In-memory (all stage runs live in this process) with writer preference, so a
- * queued execution isn't starved by a stream of captures. A DB guard catches
- * the one cross-process case: claude children can outlive a gateway restart
- * (watchdog keeps their session rows honest), so acquisition also waits for
- * live in-place execution sessions recorded by a previous process.
+ * queued execution isn't starved by a stream of captures. The memory lock only
+ * sees THIS process, so acquisition also waits out everything it can't own:
+ *  - execution sessions left live by a previous gateway process (claude
+ *    children outlive a restart; the watchdog keeps their rows honest),
+ *  - and, for EXCLUSIVE acquisitions (guard.exclusive), every other live
+ *    occupant of the working dir: warm chat sessions Cadence spawned there and
+ *    external claude processes from the ~/.claude liveness oracle. An
+ *    autonomous run must never mutate a dir someone else is working in — not
+ *    even someone outside Cadence.
  */
 
 export type Release = () => void;
@@ -33,22 +40,46 @@ interface LockState {
   queue: Waiter[];
 }
 
-/** DB guard inputs: how to recognize a live in-place execution from a previous process. */
+/** DB/oracle guard inputs: how to recognize live occupants of the project dir. */
 export interface SurvivorGuard {
   db: Db;
-  /** The project's rootPath — in-place execution sessions run exactly there. */
+  /** The project's rootPath — in-place sessions run exactly there. */
   rootPath: string;
-  /** Our own task's runs don't block us (re-entry after a failed verify, resume). */
+  /** Our own task's pipeline runs don't block us (re-entry after a failed
+   *  verify, resume). Only oneshot stage rows are excluded — a live warm chat,
+   *  even on the same task, is a real occupant. */
   excludeTaskId?: string;
+  /** The acquirer will MUTATE the dir: block on ANY live occupant (warm chat
+   *  sessions, external claude processes), not just execution survivors. Read
+   *  stages leave this unset — they only queue behind executions. */
+  exclusive?: boolean;
+}
+
+/** A reason the project dir is occupied — shown to the user, never swallowed. */
+export interface LockBlocker {
+  kind: "execution" | "session" | "external";
+  label: string;
 }
 
 const EXECUTION_ROLES = ["implementer", "verifier", "delivery"];
 const LIVE_STATUSES = ["spawning", "running"];
 
+/** Is `cwd` the project root or inside it? (Worktrees live in a SIBLING
+ *  `.cadence-worktrees` dir, so isolated runs never match.) */
+function withinRoot(cwd: string, rootPath: string): boolean {
+  if (!cwd || !rootPath) return false;
+  const root = rootPath.endsWith("/") ? rootPath.slice(0, -1) : rootPath;
+  return cwd === root || cwd.startsWith(`${root}/`);
+}
+
 export class ProjectLocks {
   private readonly locks = new Map<string, LockState>();
 
-  constructor(private readonly pollMs: number = 2_000) {}
+  constructor(
+    private readonly pollMs: number = 2_000,
+    /** Injectable for tests: the ~/.claude liveness oracle (external sessions). */
+    private readonly oracle: () => LiveSession[] = readLiveSessions,
+  ) {}
 
   /** Shared access for read-only stages. Resolves immediately when no execution holds
    *  (or awaits) the project; a null projectId is a no-op (nothing to protect). */
@@ -64,24 +95,25 @@ export class ProjectLocks {
         s.queue.push({ kind: "read", resolve });
       }
     });
-    if (guard) await this.awaitNoSurvivors(guard, projectId);
+    if (guard) await this.awaitNoBlockers(guard);
     return release;
   }
 
   /** Exclusive access for an in-place execution. Waits for active readers to drain and
-   *  blocks new ones (writer preference). With a guard, also waits out any in-place
-   *  execution session left live by a previous gateway process. `onQueued` fires once
-   *  if the lock isn't immediately available — the caller surfaces the wait. */
+   *  blocks new ones (writer preference). With a guard, also waits out every live
+   *  occupant of the working dir (see SurvivorGuard.exclusive). `onQueued` fires once
+   *  if the lock isn't immediately available — the caller surfaces the wait, including
+   *  WHO is blocking (no silent queueing). */
   async acquireWrite(
     projectId: string | null | undefined,
-    opts: { guard?: SurvivorGuard; onQueued?: () => void } = {},
+    opts: { guard?: SurvivorGuard; onQueued?: (blockers: LockBlocker[]) => void } = {},
   ): Promise<Release> {
     if (!projectId) return () => {};
     let queued = false;
-    const notifyQueued = (): void => {
+    const notifyQueued = (blockers: LockBlocker[]): void => {
       if (!queued) {
         queued = true;
-        opts.onQueued?.();
+        opts.onQueued?.(blockers);
       }
     };
     const release = await new Promise<Release>((resolve) => {
@@ -90,22 +122,44 @@ export class ProjectLocks {
         s.writer = true;
         resolve(this.writeRelease(projectId));
       } else {
-        notifyQueued();
+        notifyQueued([{ kind: "execution", label: "another task is executing in this project" }]);
         s.queue.push({ kind: "write", resolve });
       }
     });
     if (opts.guard) {
-      if (this.liveSurvivors(opts.guard, projectId).length > 0) notifyQueued();
-      await this.awaitNoSurvivors(opts.guard, projectId);
+      const blockers = this.listBlockers(opts.guard);
+      if (blockers.length > 0) notifyQueued(blockers);
+      await this.awaitNoBlockers(opts.guard);
     }
     return release;
+  }
+
+  /** Grab the write slot only if it's free RIGHT NOW (no waiting) — for short
+   *  user-driven mutations like merge, so they can't race a granted execution
+   *  (the probe-then-act TOCTOU). Tolerates active READERS by design: read
+   *  stages have always coexisted with user-driven tree changes, and blocking a
+   *  merge on a minutes-long investigation would be a regression. Returns null
+   *  when an execution holds, awaits, or survives on the project. */
+  tryAcquireWrite(projectId: string | null | undefined, guard?: SurvivorGuard): Release | null {
+    if (!projectId) return () => {};
+    const s = this.locks.get(projectId);
+    if (s?.writer || s?.queue.some((w) => w.kind === "write")) return null;
+    if (guard && this.listBlockers(guard).length > 0) return null;
+    const state = this.state(projectId);
+    state.writer = true;
+    return this.writeRelease(projectId);
   }
 
   /** Is an in-place execution holding (in-memory) or surviving (DB) this project? */
   isWriteBusy(projectId: string, guard?: SurvivorGuard): boolean {
     const s = this.locks.get(projectId);
     if (s?.writer) return true;
-    return guard ? this.liveSurvivors(guard).length > 0 : false;
+    return guard ? this.listBlockers(guard).length > 0 : false;
+  }
+
+  /** The current occupants a guard would wait for — for actionable messages. */
+  blockersFor(guard: SurvivorGuard): LockBlocker[] {
+    return this.listBlockers(guard);
   }
 
   // ----------------------------------------------------------------- internals
@@ -163,28 +217,59 @@ export class ProjectLocks {
     if (!s.writer && s.readers === 0 && s.queue.length === 0) this.locks.delete(projectId);
   }
 
-  /** Live in-place execution sessions (oneshot implementer/verifier/delivery running in
-   *  the project rootPath) that don't belong to `excludeTaskId`. */
-  private liveSurvivors(guard: SurvivorGuard, projectId?: string): { id: string }[] {
-    const conditions = [
-      eq(sessions.kind, "oneshot"),
-      inArray(sessions.role, EXECUTION_ROLES),
-      inArray(sessions.status, LIVE_STATUSES),
-      eq(sessions.cwd, guard.rootPath),
-    ];
-    if (projectId) conditions.push(eq(sessions.projectId, projectId));
-    if (guard.excludeTaskId) conditions.push(ne(sessions.taskId, guard.excludeTaskId));
-    return guard.db
-      .select({ id: sessions.id })
+  /**
+   * Every live occupant of the project dir this guard must wait for:
+   *  - Cadence session rows (DB) that are live in the rootPath — execution
+   *    survivors always count; with `exclusive`, ANY live session counts
+   *    (a warm chat editing under an implementer is the same hazard as a
+   *    second implementer). Exclusion (re-entry) is applied in JS, not SQL:
+   *    `ne(taskId, x)` silently drops NULL-taskId rows in three-valued logic.
+   *  - with `exclusive`, alive external claude processes (the ~/.claude
+   *    liveness oracle) whose cwd is the rootPath or inside it, unless the
+   *    session id is one of ours (its DB row already speaks for it).
+   */
+  private listBlockers(guard: SurvivorGuard): LockBlocker[] {
+    const rows = guard.db
+      .select({ id: sessions.id, taskId: sessions.taskId, kind: sessions.kind, role: sessions.role })
       .from(sessions)
-      .where(and(...conditions))
+      .where(and(inArray(sessions.status, LIVE_STATUSES), eq(sessions.cwd, guard.rootPath)))
       .all();
+    const blockers: LockBlocker[] = [];
+    for (const r of rows) {
+      if (guard.excludeTaskId && r.taskId === guard.excludeTaskId && r.kind === "oneshot") continue;
+      const isExecution = r.kind === "oneshot" && EXECUTION_ROLES.includes(r.role ?? "");
+      if (isExecution) {
+        blockers.push({ kind: "execution", label: `a ${r.role} run (session ${r.id.slice(0, 8)})` });
+      } else if (guard.exclusive) {
+        blockers.push({ kind: "session", label: `a live ${r.role ?? "chat"} session (${r.id.slice(0, 8)})` });
+      }
+    }
+    if (guard.exclusive) {
+      const knownIds = new Set(
+        guard.db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .all()
+          .map((r) => r.id),
+      );
+      for (const ls of this.oracle()) {
+        if (!ls.alive) continue;
+        if (!withinRoot(ls.cwd, guard.rootPath)) continue;
+        if (ls.sessionId && knownIds.has(ls.sessionId)) continue;
+        blockers.push({
+          kind: "external",
+          label: `a Claude Code session outside Cadence (pid ${ls.pid}, ${ls.cwd})`,
+        });
+      }
+    }
+    return blockers;
   }
 
-  /** Poll until no survivor session is live. The watchdog ends dead-pid rows within its
-   *  tick, and a genuinely-alive survivor is exactly what we must wait for. */
-  private async awaitNoSurvivors(guard: SurvivorGuard, projectId: string): Promise<void> {
-    while (this.liveSurvivors(guard, projectId).length > 0) {
+  /** Poll until no occupant is live. The watchdog ends dead-pid rows within its tick,
+   *  the oracle drops files when external sessions exit, and a genuinely-alive
+   *  occupant is exactly what we must wait for. */
+  private async awaitNoBlockers(guard: SurvivorGuard): Promise<void> {
+    while (this.listBlockers(guard).length > 0) {
       await new Promise((r) => setTimeout(r, this.pollMs));
     }
   }

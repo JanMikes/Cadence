@@ -195,7 +195,7 @@ export function restoreAbandonedExecutions(db: Db, hub: WsHub): number {
     // Interrupted-but-real work must survive the restore: commit it onto the task
     // branch (deterministic, snapshot-safe). A no-op when the run committed everything
     // or never changed anything.
-    const secured = commitInPlaceChanges(rootPath, taskId, `cadence: secure interrupted work — ${task.title}`);
+    const secured = commitInPlaceChanges(rootPath, taskId, `cadence: secure interrupted work — ${task.title}`, branch);
     const fin = finalizeInPlaceExecution(db, taskId);
     if (fin.restored) {
       restored += 1;

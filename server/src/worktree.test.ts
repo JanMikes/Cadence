@@ -205,6 +205,25 @@ test("finalizeInPlaceExecution refuses while tracked changes remain (nothing los
   expect(currentBranch()).toBe(branchName(task)); // left in place for inspection
 });
 
+test("beginInPlaceExecution refuses while another git process holds .git/index.lock", () => {
+  const { task } = projectTask();
+  writeFileSync(join(repo, ".git", "index.lock"), "");
+  expect(() => beginInPlaceExecution(db, task.id)).toThrow(/index\.lock/);
+  expect(currentBranch()).toBe("main"); // refused before any checkout
+});
+
+test("commitInPlaceChanges refuses when the repo was switched off the task branch mid-run", () => {
+  const { task } = projectTask();
+  beginInPlaceExecution(db, task.id);
+  writeFileSync(join(repo, "feature.txt"), "new\n");
+  git(["checkout", "main"], repo); // the user (or an external actor) switches mid-run
+
+  const r = commitInPlaceChanges(repo, task.id, "cadence: stray", branchName(task));
+  expect(r.committed).toBe(false);
+  expect(r.reason).toMatch(/refusing to commit/);
+  expect(git(["log", "-1", "--pretty=%s"], repo)).toBe("init"); // main's history untouched
+});
+
 test("contamination guard: a new in-place run refuses to start from another task's branch", () => {
   const { task } = projectTask();
   beginInPlaceExecution(db, task.id); // repo now on task A's branch (crash leaves it there)

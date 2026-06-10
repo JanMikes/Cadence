@@ -205,7 +205,10 @@ export async function runDelivery(
       // onto the task branch — the pre-execution untracked snapshot (.env, scratch files)
       // never gets swallowed — then restore the base branch so the working dir is back to
       // normal for the user and the queued read stages.
-      commitInPlaceChanges(target.cwd, taskId, `cadence: ${task.title}`);
+      const committed = commitInPlaceChanges(target.cwd, taskId, `cadence: ${task.title}`, target.branch);
+      if (committed.reason) {
+        appendContext(taskId, `Delivery couldn't commit: ${committed.reason}.`);
+      }
       if (mode === "auto_pr") attemptPr(target.cwd);
       const fin = finalizeInPlaceExecution(db, taskId);
       if (!fin.restored) {
