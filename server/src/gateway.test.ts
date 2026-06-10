@@ -14,6 +14,8 @@ let db: Db;
 let webDir: string;
 let home: string;
 const terminalLaunches: Array<{ app: string; command: string }> = [];
+const publishedReviews: Array<{ verdict: string; comments: number }> = [];
+const postedReplies: number[] = [];
 /** Per-test hook: lets a test make the mock Implementer touch files / sleep in its cwd. */
 let implementerSideEffect: ((opts: { cwd: string }) => Promise<void> | void) | null = null;
 
@@ -35,6 +37,28 @@ beforeAll(() => {
     openTerminal: (app, command) => terminalLaunches.push({ app, command }),
     enrich: async (cwd) => ({ description: `mock description for ${cwd}`, stack: "bun" }),
     prAuthor: () => "octocat", // deterministic review-direction input (no real gh/glab)
+    reviewApi: () => ({
+      fetchMeta: () => ({
+        title: "Fix login",
+        author: "octocat",
+        state: "open",
+        baseBranch: "main",
+        headBranch: "fix/login",
+        url: "https://github.com/acme/widget/pull/42",
+        body: "desc",
+        ciStatus: "success",
+      }),
+      fetchDiff: () => "diff --git a/x b/x\n+1\n",
+      fetchThreads: () => [],
+      publishReview: (_ref, verdict, _summary, comments) => {
+        publishedReviews.push({ verdict, comments: comments.length });
+        return { url: "https://github.com/acme/widget/pull/42#review-1" };
+      },
+      replyToThread: () => {
+        postedReplies.push(1);
+      },
+      resolveThread: () => true,
+    }),
     // Role-aware mock so the autonomy pipeline runs a realistic refinement loop.
     runAgent: async (opts) => {
       let json: object;
@@ -1485,4 +1509,98 @@ test("POST /api/review/inspect parses the URL, matches the project, infers direc
   }).then((x) => x.json())) as { ref: null; direction: string };
   expect(none.ref).toBeNull();
   expect(none.direction).toBe("perform");
+});
+
+test("review workspace endpoints (§6.5.e): findings round-trip, publish filters dismissed → done", async () => {
+  const task = (await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "Review widget PR",
+      taskType: "code_review",
+      reviewDirection: "perform",
+      reviewRef: "https://github.com/acme/widget/pull/42",
+    }),
+  }).then((r) => r.json())) as Task;
+
+  const findings = {
+    summary: "One blocker, one nit.",
+    verdictSuggestion: "request_changes",
+    generatedAt: Date.now(),
+    findings: [
+      { severity: "blocker", file: "x.ts", line: 3, title: "Races", body: "B" },
+      { severity: "nit", file: "y.ts", line: 9, title: "Naming", body: "N", decision: "dismiss" },
+    ],
+  };
+  const put = await fetch(`${gw.url}/api/tasks/${task.id}/review-findings`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(findings),
+  });
+  expect(put.status).toBe(200);
+  const got = (await fetch(`${gw.url}/api/tasks/${task.id}/review-findings`).then((r) => r.json())) as {
+    findings: Array<{ decision?: string }>;
+  };
+  expect(got.findings).toHaveLength(2);
+
+  // move to review (where publishing happens), then publish
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "review" }),
+  });
+  const before = publishedReviews.length;
+  const pub = (await fetch(`${gw.url}/api/tasks/${task.id}/review/publish`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ verdict: "request_changes" }),
+  }).then((r) => r.json())) as { published: boolean; comments: number; url: string | null };
+  expect(pub.published).toBe(true);
+  expect(pub.comments).toBe(1); // the dismissed nit never left the machine
+  expect(publishedReviews.length).toBe(before + 1);
+  expect(publishedReviews.at(-1)).toEqual({ verdict: "request_changes", comments: 1 });
+
+  const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
+  expect(after.status).toBe("done");
+});
+
+test("review replies endpoint (§6.5.f): posts non-skipped replies, resolves, → done", async () => {
+  const task = (await fetch(`${gw.url}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "Address feedback",
+      taskType: "code_review",
+      reviewDirection: "address",
+      reviewRef: "https://github.com/acme/widget/pull/43",
+    }),
+  }).then((r) => r.json())) as Task;
+
+  await fetch(`${gw.url}/api/tasks/${task.id}/review-proposal`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      generatedAt: Date.now(),
+      overallNote: "",
+      threads: [
+        { threadId: "RT_1", classification: "must_fix", reply: "Fixed in abc.", resolves: true },
+        { threadId: "RT_2", classification: "question", reply: "skipped", resolves: false, decision: "skip" },
+      ],
+    }),
+  });
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "review" }),
+  });
+
+  const before = postedReplies.length;
+  const res = (await fetch(`${gw.url}/api/tasks/${task.id}/review/replies`, { method: "POST" }).then((r) =>
+    r.json(),
+  )) as { posted: number; resolved: number; failed: number };
+  expect(res).toEqual({ posted: 1, resolved: 1, failed: 0 });
+  expect(postedReplies.length).toBe(before + 1);
+
+  const after = (await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task;
+  expect(after.status).toBe("done");
 });

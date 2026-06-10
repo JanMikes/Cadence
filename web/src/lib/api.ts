@@ -21,7 +21,9 @@ import type {
   OpenTerminalResult,
   Project,
   ProjectForgeStatus,
+  ReviewFindings,
   ReviewInspectResult,
+  ReviewProposal,
   Proposal,
   QAChannel,
   SavedSearch,
@@ -497,6 +499,50 @@ export function inspectReviewUrl(url: string): Promise<ReviewInspectResult> {
     headers: JSON_HEADERS,
     body: JSON.stringify({ url }),
   }).then(json<ReviewInspectResult>);
+}
+
+/** Review Workspace artifacts + actions (§6.5.e/f). */
+export function getReviewFindings(taskId: string): Promise<ReviewFindings | null> {
+  return fetch(`/api/tasks/${taskId}/review-findings`).then(json<ReviewFindings | null>);
+}
+
+export function saveReviewFindings(taskId: string, findings: ReviewFindings): Promise<ReviewFindings> {
+  return fetch(`/api/tasks/${taskId}/review-findings`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(findings),
+  }).then(json<ReviewFindings>);
+}
+
+export function getReviewProposal(taskId: string): Promise<ReviewProposal | null> {
+  return fetch(`/api/tasks/${taskId}/review-proposal`).then(json<ReviewProposal | null>);
+}
+
+export function saveReviewProposal(taskId: string, proposal: ReviewProposal): Promise<ReviewProposal> {
+  return fetch(`/api/tasks/${taskId}/review-proposal`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify(proposal),
+  }).then(json<ReviewProposal>);
+}
+
+export function publishReview(
+  taskId: string,
+  verdict: string,
+): Promise<{ published: boolean; url: string | null; comments: number; verdict: string }> {
+  return fetch(`/api/tasks/${taskId}/review/publish`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ verdict }),
+  }).then(json<{ published: boolean; url: string | null; comments: number; verdict: string }>);
+}
+
+export function postReviewReplies(
+  taskId: string,
+): Promise<{ posted: number; resolved: number; failed: number }> {
+  return fetch(`/api/tasks/${taskId}/review/replies`, { method: "POST" }).then(
+    json<{ posted: number; resolved: number; failed: number }>,
+  );
 }
 
 /** A project's forge status: parsed remote + matching CLI capability (§6.4). */

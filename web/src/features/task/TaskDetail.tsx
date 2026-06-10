@@ -25,6 +25,7 @@ import { formatDate, useDateFormats } from "../../lib/datetime";
 import { roleLabel, statusLabel } from "../../lib/status";
 import { QACards } from "../qa/QACards";
 import { SuggestionList } from "../suggestions/SuggestionControl";
+import { ReviewWorkspace } from "../review/ReviewWorkspace";
 import { PlanView } from "./PlanView";
 import { RelationsPanel } from "./RelationsPanel";
 import { ReviewPanel } from "./ReviewPanel";
@@ -186,14 +187,21 @@ export function TaskDetail({
 
             {/* State's primary action first (importance + context): a task in Review surfaces
                 Merge / Request-changes above the now-reference Plan; an approving/executing task
-                surfaces its Plan. The reference metadata grid follows below. */}
-            {task.status === "review" ? (
-              <ReviewPanel taskId={taskId} onChanged={resolved} />
-            ) : null}
+                surfaces its Plan. The reference metadata grid follows below. Code-review tasks
+                get the Review Workspace instead of the plan/merge machinery (§6.5.e/f). */}
+            {task.taskType === "code_review" ? (
+              <ReviewWorkspace task={task} />
+            ) : (
+              <>
+                {task.status === "review" ? (
+                  <ReviewPanel taskId={taskId} onChanged={resolved} />
+                ) : null}
 
-            {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
-              <PlanView taskId={taskId} onResolved={resolved} />
-            ) : null}
+                {["plan_review", "implementing", "verifying", "review", "done"].includes(task.status) ? (
+                  <PlanView taskId={taskId} onResolved={resolved} />
+                ) : null}
+              </>
+            )}
 
             <dl className="mt-5 grid grid-cols-[6rem_1fr] items-center gap-y-3 text-sm">
               <dt className="text-muted-foreground">Status</dt>

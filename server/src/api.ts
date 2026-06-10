@@ -87,8 +87,12 @@ import {
   readDelivery,
   readPlan,
   readQa,
+  readReviewFindings,
+  readReviewProposal,
   readSettings,
   readVerify,
+  writeReviewFindings,
+  writeReviewProposal,
   writeSettings,
 } from "./store/store";
 import {
@@ -514,6 +518,135 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
 
     items.sort((x, y) => y.urgency - x.urgency || x.createdAt - y.createdAt);
     return Response.json({ items, count: items.length } satisfies AttentionResponse);
+  }
+
+  // ---- Review Workspace (§6.5.e/f) ------------------------------------------
+
+  // Findings artifact: GET for the workspace, PUT to persist include/dismiss/edit decisions.
+  const findingsMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review-findings$/);
+  if (findingsMatch) {
+    const taskId = findingsMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    if (method === "GET") return Response.json(readReviewFindings(taskId));
+    if (method === "PUT") {
+      let body: import("@cadence/shared").ReviewFindings;
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (!Array.isArray(body?.findings)) return badRequest("findings array is required");
+      writeReviewFindings(taskId, body);
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      return Response.json(body);
+    }
+    return methodNotAllowed();
+  }
+
+  // Proposal artifact: GET for the workspace, PUT to persist apply/skip/edited replies.
+  const proposalMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review-proposal$/);
+  if (proposalMatch) {
+    const taskId = proposalMatch[1] as string;
+    if (!getTask(ctx.db, taskId)) return notFound(pathname);
+    if (method === "GET") return Response.json(readReviewProposal(taskId));
+    if (method === "PUT") {
+      let body: import("@cadence/shared").ReviewProposal;
+      try {
+        body = (await req.json()) as typeof body;
+      } catch {
+        return badRequest("invalid JSON body");
+      }
+      if (!Array.isArray(body?.threads)) return badRequest("threads array is required");
+      writeReviewProposal(taskId, body);
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      return Response.json(body);
+    }
+    return methodNotAllowed();
+  }
+
+  // Publish the triaged review to the forge (perform direction) — ALWAYS an explicit
+  // user action (§6.5 locked decision #4); dismissed findings never leave the machine.
+  const publishMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review\/publish$/);
+  if (publishMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = publishMatch[1] as string;
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
+    const findings = readReviewFindings(taskId);
+    const ref = task.reviewRef ? parsePrUrl(task.reviewRef) : null;
+    if (!findings || !ref) return conflict("no findings to publish (run the review first)");
+    let body: { verdict?: string };
+    try {
+      body = (await req.json().catch(() => ({}))) as typeof body;
+    } catch {
+      return badRequest("invalid JSON body");
+    }
+    const verdict = (
+      ["approve", "comment", "request_changes"].includes(body?.verdict ?? "")
+        ? body.verdict
+        : findings.verdictSuggestion
+    ) as import("@cadence/shared").ReviewVerdict;
+    const included = findings.findings.filter((f) => f.decision !== "dismiss");
+    const comments = included.map((f) => ({
+      file: f.file,
+      line: f.line,
+      body:
+        (f.editedBody ?? f.body) +
+        (f.suggestedPatch ? `\n\nSuggested fix:\n\`\`\`\n${f.suggestedPatch}\n\`\`\`` : ""),
+    }));
+    try {
+      const out = (ctx.reviewApi ?? forgeReviewApi)(ref.forge).publishReview(
+        ref,
+        verdict,
+        findings.summary,
+        comments,
+      );
+      writeReviewFindings(taskId, {
+        ...findings,
+        published: { at: Date.now(), url: out.url, verdict },
+      });
+      const updated = updateTask(ctx.db, taskId, { status: "done" });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      if (updated) notifyOnTransition(ctx.hub, "review", updated);
+      return Response.json({ published: true, url: out.url, comments: comments.length, verdict });
+    } catch (err) {
+      return conflict(`publish failed: ${(err as Error).message.slice(0, 300)}`);
+    }
+  }
+
+  // Post the approved replies + resolve threads (address direction) — explicit action.
+  const repliesMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/review\/replies$/);
+  if (repliesMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = repliesMatch[1] as string;
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
+    const proposal = readReviewProposal(taskId);
+    const ref = task.reviewRef ? parsePrUrl(task.reviewRef) : null;
+    if (!proposal || !ref) return conflict("no proposal to reply from");
+    const api = (ctx.reviewApi ?? forgeReviewApi)(ref.forge);
+    let posted = 0;
+    let resolved = 0;
+    const failures: string[] = [];
+    for (const t of proposal.threads) {
+      if (t.decision === "skip") continue;
+      const reply = (t.editedReply ?? t.reply).trim();
+      try {
+        if (reply) {
+          api.replyToThread(ref, t.threadId, reply);
+          posted += 1;
+        }
+        if (t.resolves && api.resolveThread(ref, t.threadId)) resolved += 1;
+      } catch (err) {
+        failures.push(`${t.threadId}: ${(err as Error).message.slice(0, 120)}`);
+      }
+    }
+    writeReviewProposal(taskId, { ...proposal, repliedAt: Date.now() });
+    if (failures.length) appendContext(taskId, `Review replies: ${failures.length} failed — ${failures.join("; ")}`);
+    const updated = updateTask(ctx.db, taskId, { status: "done" });
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    if (updated) notifyOnTransition(ctx.hub, "review", updated);
+    return Response.json({ posted, resolved, failed: failures.length });
   }
 
   const refineMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/refine$/);
