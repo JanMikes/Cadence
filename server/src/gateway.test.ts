@@ -470,6 +470,58 @@ test("PLAY runs the Planner (mock) → an approvable plan that POST approve conf
   expect(approved.steps.length).toBe(2); // steps preserved through approval
 });
 
+test("POST plan/revise sends the plan back to the Planner: feedback on the context channel, fresh unapproved plan", async () => {
+  const task = await createViaApi("Revise my plan");
+  await fetch(`${gw.url}/api/tasks/${task.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ status: "ready" }),
+  });
+
+  // not in Plan review yet → 409
+  const tooEarly = await fetch(`${gw.url}/api/tasks/${task.id}/plan/revise`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ note: "too early" }),
+  });
+  expect(tooEarly.status).toBe(409);
+
+  await fetch(`${gw.url}/api/tasks/${task.id}/play`, { method: "POST" });
+  let status = "";
+  for (let i = 0; i < 80 && status !== "plan_review"; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
+  }
+  expect(status).toBe("plan_review");
+
+  const revised = await fetch(`${gw.url}/api/tasks/${task.id}/plan/revise`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ note: "skip the second step — do it client-side" }),
+  });
+  expect(revised.status).toBe(200);
+
+  // the feedback is on the context channel (it composes into the Planner's re-run)
+  const ctxChannel = (await fetch(`${gw.url}/api/tasks/${task.id}/context`).then((r) => r.json())) as {
+    content: string;
+  };
+  expect(ctxChannel.content).toContain("skip the second step");
+
+  // the Planner re-runs and parks the task back in Plan review with an UNAPPROVED plan
+  status = "";
+  for (let i = 0; i < 80 && status !== "plan_review"; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    status = ((await fetch(`${gw.url}/api/tasks/${task.id}`).then((r) => r.json())) as Task).status;
+  }
+  expect(status).toBe("plan_review");
+  const plan = (await fetch(`${gw.url}/api/tasks/${task.id}/plan`).then((r) => r.json())) as {
+    steps: Array<{ title: string }>;
+    approved: boolean;
+  };
+  expect(plan.approved).toBe(false);
+  expect(plan.steps.length).toBeGreaterThan(0);
+});
+
 test("double plan-approve starts ONE execution chain; the second POST gets 409 (§6.1.f)", async () => {
   // A real repo-backed project so the implementer actually runs (a project-less task bails).
   const repo = mkdtempSync(join(tmpdir(), "cadence-gw-dup-"));
@@ -1333,6 +1385,71 @@ test("transcript route returns [] (not 404) when nothing is on disk yet", async 
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual([]);
   rmSync(cwd, { recursive: true, force: true });
+});
+
+test("an EXTERNAL claude session (no DB row) resolves read-only via the oracle — detail + transcript", async () => {
+  // A queued task's blocker can be the user's own claude terminal; its "View
+  // session" deep-link must open something real, not 404.
+  const prevClaudeDir = process.env.CADENCE_CLAUDE_DIR;
+  const claudeHome = mkdtempSync(join(tmpdir(), "cadence-ext-claude-"));
+  const extCwd = mkdtempSync(join(tmpdir(), "cadence-ext-cwd-"));
+  process.env.CADENCE_CLAUDE_DIR = claudeHome;
+  try {
+    const { mkdirSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    const { transcriptPathFor } = await import("./transcripts");
+    mkdirSync(join(claudeHome, "sessions"), { recursive: true });
+    writeFileSync(
+      join(claudeHome, "sessions", `${process.pid}.json`),
+      JSON.stringify({
+        pid: process.pid, // our own pid → alive
+        sessionId: "ext-oracle-1",
+        cwd: extCwd,
+        status: "busy",
+        kind: "interactive",
+      }),
+    );
+    const tPath = transcriptPathFor(extCwd, "ext-oracle-1");
+    mkdirSync(dirname(tPath), { recursive: true });
+    writeFileSync(
+      tPath,
+      `${JSON.stringify({ type: "assistant", uuid: "u1", message: { role: "assistant", content: "hi from outside" } })}\n`,
+    );
+
+    const detail = await fetch(`${gw.url}/api/sessions/ext-oracle-1`);
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      id: "ext-oracle-1",
+      external: true,
+      role: "external",
+      status: "busy",
+      pid: process.pid,
+      cwd: extCwd,
+      isLive: true,
+      canChat: false,
+    });
+
+    const transcript = await fetch(`${gw.url}/api/sessions/ext-oracle-1/transcript`);
+    expect(transcript.status).toBe(200);
+    expect((await transcript.json()) as Array<{ text: string }>).toMatchObject([
+      { text: "hi from outside" },
+    ]);
+
+    // strictly read-only: mutations still 404 (there is no Cadence row to touch)
+    const patch = await fetch(`${gw.url}/api/sessions/ext-oracle-1`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ taskId: null }),
+    });
+    expect(patch.status).toBe(404);
+    // and an id the oracle doesn't know stays a plain 404
+    expect((await fetch(`${gw.url}/api/sessions/never-existed`)).status).toBe(404);
+  } finally {
+    if (prevClaudeDir === undefined) delete process.env.CADENCE_CLAUDE_DIR;
+    else process.env.CADENCE_CLAUDE_DIR = prevClaudeDir;
+    rmSync(claudeHome, { recursive: true, force: true });
+    rmSync(extCwd, { recursive: true, force: true });
+  }
 });
 
 test("task context channel: POST appends, GET reads", async () => {

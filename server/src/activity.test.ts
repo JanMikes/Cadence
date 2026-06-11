@@ -45,6 +45,23 @@ test("start() carries an optional detail (who a queued execution waits for) thro
   expect(a.list().at(-1)).toEqual({ taskId: "t2", stage: "triage", startedAt: 1000 });
 });
 
+test("start() carries structured blockers (ids for deep-linking) through list + broadcast", () => {
+  const events: Array<{ name: string; payload: Record<string, unknown> }> = [];
+  const a = new ActivityTracker((name, payload) => events.push({ name, payload }), () => 1000);
+
+  const blockers = [
+    { kind: "execution" as const, label: "the task “Fix login” (implementer)", taskId: "t-9", sessionId: "s-9" },
+    { kind: "external" as const, label: "a Claude Code session outside Cadence (pid 7, /p)", pid: 7, cwd: "/p", sessionId: "ext-1" },
+  ];
+  a.start("t1", "queued", "the task “Fix login” (implementer), a Claude Code session…", blockers);
+  expect(a.list()[0]?.blockers).toEqual(blockers);
+  expect((events[0]?.payload as { blockers?: unknown }).blockers).toEqual(blockers);
+
+  // an empty blockers array keeps the entry's exact shape (no stray key)
+  a.start("t2", "queued", "someone", []);
+  expect(a.list().at(-1)).toEqual({ taskId: "t2", stage: "queued", startedAt: 1000, detail: "someone" });
+});
+
 test("track() clears + emits end even when fn throws", async () => {
   const events: string[] = [];
   const a = new ActivityTracker((name) => events.push(name));

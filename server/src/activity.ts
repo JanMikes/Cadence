@@ -8,6 +8,8 @@
  * overwrote the first and the first `end()` deleted the survivor's entry, corrupting both the
  * spinner and every `isActive` guard built on it.
  */
+import type { LockBlocker } from "@cadence/shared";
+
 export type AgentStage = "triage" | "discovery" | "questioner" | "refine" | (string & {});
 
 export interface ActivityEntry {
@@ -17,6 +19,9 @@ export interface ActivityEntry {
   /** Human context for the stage — e.g. WHO a "queued" execution is waiting for.
    *  Rides the WS payload and GET /api/activity so the board can say it. */
   detail?: string;
+  /** Structured "who's blocking" for a "queued" stage — same facts as `detail`
+   *  but with ids, so the UI can open the blocking task/session, not just name it. */
+  blockers?: LockBlocker[];
 }
 
 type Broadcast = (
@@ -27,6 +32,7 @@ type Broadcast = (
     next?: AgentStage | null;
     startedAt?: number;
     detail?: string;
+    blockers?: LockBlocker[];
   },
 ) => void;
 
@@ -39,13 +45,17 @@ export class ActivityTracker {
     private readonly now: () => number = Date.now,
   ) {}
 
-  start(taskId: string, stage: AgentStage, detail?: string): void {
+  start(taskId: string, stage: AgentStage, detail?: string, blockers?: LockBlocker[]): void {
     const list = this.active.get(taskId) ?? [];
     const startedAt = this.now();
-    // `detail` is added conditionally so detail-less entries keep their exact shape.
-    list.push({ taskId, stage, startedAt, ...(detail ? { detail } : {}) });
+    // `detail`/`blockers` are added conditionally so plain entries keep their exact shape.
+    const extra = {
+      ...(detail ? { detail } : {}),
+      ...(blockers?.length ? { blockers } : {}),
+    };
+    list.push({ taskId, stage, startedAt, ...extra });
     this.active.set(taskId, list);
-    this.broadcast("activity:start", { taskId, stage, startedAt, ...(detail ? { detail } : {}) });
+    this.broadcast("activity:start", { taskId, stage, startedAt, ...extra });
   }
 
   /**

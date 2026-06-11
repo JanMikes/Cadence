@@ -706,6 +706,9 @@ export interface SessionDetail extends Session {
   isLive: boolean;
   /** True if Cadence holds a warm stdin handle — "Continue chat" only works then. */
   canChat: boolean;
+  /** True when this isn't a Cadence-tracked session at all but a Claude Code process
+   *  outside Cadence (from the liveness oracle) — read-only: no stop/kill/organize. */
+  external?: boolean;
 }
 
 /** Patch to re-organize a session — assign it to a task/project/fleet (null clears). */
@@ -1057,6 +1060,26 @@ export interface LiveSession {
   updatedAt: number | null;
   /** Whether the pid is actually alive (a crash can leave a stale file). */
   alive: boolean;
+}
+
+/**
+ * A reason a project dir is occupied — why an execution is queued instead of
+ * running. Carries ids alongside the human label so the UI can deep-link the
+ * blocker (open the task / the session detail), not just name it.
+ */
+export interface LockBlocker {
+  /** execution = another Cadence task's run · session = a live Cadence chat
+   *  session · external = a Claude Code process outside Cadence (the user's own). */
+  kind: "execution" | "session" | "external";
+  /** Human sentence — always present, the fallback rendering. */
+  label: string;
+  /** The Cadence task holding the dir (open its detail). */
+  taskId?: string;
+  /** The Cadence session id (open the session-detail drawer). */
+  sessionId?: string;
+  /** External process info (kind "external"). */
+  pid?: number;
+  cwd?: string;
 }
 
 /** One rendered line of a past transcript (the parentUuid DAG, flattened). */

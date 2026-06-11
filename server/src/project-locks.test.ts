@@ -246,9 +246,9 @@ test("exclusive guard: an alive claude process OUTSIDE Cadence blocks an executi
   expect(locks.isWriteBusy(project.id, guard)).toBe(false);
 });
 
-test("a queued writer is told WHO holds the slot (the holder's label)", async () => {
+test("a queued writer is told WHO holds the slot (label + the holder's taskId)", async () => {
   const locks = new ProjectLocks(15, () => []);
-  const w1 = await locks.acquireWrite("p1", { label: "the task “First”" });
+  const w1 = await locks.acquireWrite("p1", { label: "the task “First”", taskId: "task-first" });
 
   let blockers: LockBlocker[] = [];
   const w2 = locks.acquireWrite("p1", {
@@ -256,12 +256,14 @@ test("a queued writer is told WHO holds the slot (the holder's label)", async ()
     onQueued: (b) => (blockers = b),
   });
   await tick();
-  expect(blockers).toEqual([{ kind: "execution", label: "the task “First”" }]);
+  expect(blockers).toEqual([
+    { kind: "execution", label: "the task “First”", taskId: "task-first" },
+  ]);
 
   w1();
   (await w2)();
 
-  // DB blockers name the running task too, not a session hash
+  // DB blockers name the running task too — and carry its ids for deep-linking
   const project = createProject(db, { name: "P", rootPath: "/tmp/p-root" });
   const running = createTask(db, { title: "Fix login" });
   db.insert(sessions)
@@ -276,7 +278,28 @@ test("a queued writer is told WHO holds the slot (the holder's label)", async ()
     })
     .run();
   expect(locks.blockersFor({ db, rootPath: "/tmp/p-root" })).toEqual([
-    { kind: "execution", label: "the task “Fix login” (implementer)" },
+    {
+      kind: "execution",
+      label: "the task “Fix login” (implementer)",
+      sessionId: "exec-named",
+      taskId: running.id,
+    },
+  ]);
+});
+
+test("external blockers carry pid/cwd/sessionId so the UI can open the session", async () => {
+  const oracle: LiveSession[] = [externalSession({ sessionId: "ext-abc", pid: 777 })];
+  const locks = new ProjectLocks(15, () => oracle);
+  createProject(db, { name: "P", rootPath: "/tmp/p-root" });
+  const blockers = locks.blockersFor({ db, rootPath: "/tmp/p-root", exclusive: true });
+  expect(blockers).toEqual([
+    {
+      kind: "external",
+      label: "a Claude Code session outside Cadence (pid 777, /tmp/p-root)",
+      pid: 777,
+      cwd: "/tmp/p-root",
+      sessionId: "ext-abc",
+    },
   ]);
 });
 

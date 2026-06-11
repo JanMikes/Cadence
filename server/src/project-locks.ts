@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import type { LiveSession } from "@cadence/shared";
+import type { LiveSession, LockBlocker } from "@cadence/shared";
 import type { Db } from "./db/client";
 import { sessions } from "./db/schema";
 import { getProjectById } from "./projects";
@@ -34,6 +34,8 @@ interface Waiter {
   resolve: (release: Release) => void;
   /** Who this waiter is (writers only) — becomes `writerLabel` when admitted. */
   label?: string;
+  /** The waiter's task — becomes `writerTaskId` when admitted. */
+  taskId?: string;
 }
 
 interface LockState {
@@ -42,6 +44,8 @@ interface LockState {
   queue: Waiter[];
   /** Who holds the writer slot — so a queued task can be told WHAT it waits for. */
   writerLabel?: string;
+  /** The holder's task id — so the queued task's UI can link straight to it. */
+  writerTaskId?: string;
 }
 
 /** DB/oracle guard inputs: how to recognize live occupants of the project dir. */
@@ -59,11 +63,9 @@ export interface SurvivorGuard {
   exclusive?: boolean;
 }
 
-/** A reason the project dir is occupied — shown to the user, never swallowed. */
-export interface LockBlocker {
-  kind: "execution" | "session" | "external";
-  label: string;
-}
+/** A reason the project dir is occupied — shown to the user, never swallowed.
+ *  Shared with the web (shared/src/index.ts): label + ids for deep-linking. */
+export type { LockBlocker };
 
 const EXECUTION_ROLES = ["implementer", "verifier", "delivery"];
 const LIVE_STATUSES = ["spawning", "running"];
@@ -115,6 +117,8 @@ export class ProjectLocks {
       onQueued?: (blockers: LockBlocker[]) => void;
       /** Who we are (e.g. `the task “Fix login”`) — told to whoever queues behind us. */
       label?: string;
+      /** Our task id — lets whoever queues behind us link straight to the task. */
+      taskId?: string;
     } = {},
   ): Promise<Release> {
     if (!projectId) return () => {};
@@ -130,10 +134,11 @@ export class ProjectLocks {
       if (!s.writer && s.readers === 0) {
         s.writer = true;
         s.writerLabel = opts.label;
+        s.writerTaskId = opts.taskId;
         resolve(this.writeRelease(projectId));
       } else {
         notifyQueued([this.holderBlocker(s)]);
-        s.queue.push({ kind: "write", resolve, label: opts.label });
+        s.queue.push({ kind: "write", resolve, label: opts.label, taskId: opts.taskId });
       }
     });
     if (opts.guard) {
@@ -162,6 +167,7 @@ export class ProjectLocks {
     const state = this.state(projectId);
     state.writer = true;
     state.writerLabel = label;
+    state.writerTaskId = undefined;
     return this.writeRelease(projectId);
   }
 
@@ -207,6 +213,7 @@ export class ProjectLocks {
       const s = this.state(projectId);
       s.writer = false;
       s.writerLabel = undefined;
+      s.writerTaskId = undefined;
       this.drain(projectId);
     };
   }
@@ -214,7 +221,11 @@ export class ProjectLocks {
   /** Why an in-memory acquisition can't be granted right now, as a blocker. */
   private holderBlocker(s: LockState): LockBlocker {
     if (s.writer) {
-      return { kind: "execution", label: s.writerLabel ?? "another task executing in this project" };
+      return {
+        kind: "execution",
+        label: s.writerLabel ?? "another task executing in this project",
+        ...(s.writerTaskId ? { taskId: s.writerTaskId } : {}),
+      };
     }
     return { kind: "execution", label: "investigation stages reading the project dir" };
   }
@@ -231,6 +242,7 @@ export class ProjectLocks {
         s.queue.shift();
         s.writer = true;
         s.writerLabel = head.label;
+        s.writerTaskId = head.taskId;
         head.resolve(this.writeRelease(projectId));
         break; // exclusive — nothing else can be admitted
       }
@@ -266,10 +278,13 @@ export class ProjectLocks {
       // Name the task, not the session id — "waiting for the task “Fix login”" is
       // something the user can act on; a session hash is not.
       const title = r.taskId ? getTask(guard.db, r.taskId)?.title : null;
+      // Ids ride along with the label so the UI can open the blocker, not just name it.
+      const ids = { sessionId: r.id, ...(r.taskId ? { taskId: r.taskId } : {}) };
       if (isExecution) {
         blockers.push({
           kind: "execution",
           label: title ? `the task “${title}” (${r.role})` : `a ${r.role} run (session ${r.id.slice(0, 8)})`,
+          ...ids,
         });
       } else if (guard.exclusive) {
         blockers.push({
@@ -277,6 +292,7 @@ export class ProjectLocks {
           label: title
             ? `a live ${r.role ?? "chat"} session on “${title}”`
             : `a live ${r.role ?? "chat"} session (${r.id.slice(0, 8)})`,
+          ...ids,
         });
       }
     }
@@ -295,6 +311,9 @@ export class ProjectLocks {
         blockers.push({
           kind: "external",
           label: `a Claude Code session outside Cadence (pid ${ls.pid}, ${ls.cwd})`,
+          pid: ls.pid,
+          cwd: ls.cwd,
+          ...(ls.sessionId ? { sessionId: ls.sessionId } : {}),
         });
       }
     }

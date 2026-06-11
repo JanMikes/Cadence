@@ -160,6 +160,14 @@ export function approvePlan(id: string): Promise<TaskPlan> {
   return fetch(`/api/tasks/${id}/plan/approve`, { method: "POST" }).then(json<TaskPlan>);
 }
 
+export function revisePlan(id: string, note: string): Promise<{ ok: boolean }> {
+  return fetch(`/api/tasks/${id}/plan/revise`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ note }),
+  }).then(json<{ ok: boolean }>);
+}
+
 export function getContext(id: string): Promise<ContextChannel> {
   return fetch(`/api/tasks/${id}/context`).then(json<ContextChannel>);
 }

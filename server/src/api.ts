@@ -122,6 +122,7 @@ import {
   readRunReports,
   readSettings,
   readVerify,
+  writePlan,
   writeReviewFindings,
   writeReviewProposal,
   writeSettings,
@@ -142,7 +143,7 @@ import {
 } from "./sessions";
 import { createSuggestion, listSuggestions, resolveSuggestion } from "./suggestions";
 import { buildResumeCommand } from "./terminal";
-import { readLiveSessions, readTranscript, resolveTranscriptPath } from "./transcripts";
+import { findTranscriptPath, readLiveSessions, readTranscript, resolveTranscriptPath } from "./transcripts";
 import { fetchClaudeWindows, readUsageStats } from "./usage";
 import {
   createTask,
@@ -340,35 +341,7 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
     // "waiting on you" state rather than sitting silently in "In progress".
     // Activity-tracked so the card spins while the Planner drafts. The Implementer
     // (3.4) runs only after approval.
-    void ctx.activity
-      .track(taskId, "planner", () => runPlanner(ctx.db, taskId, ctx.runAgent))
-      .then((p) => {
-        if (!p.ran) {
-          // The Planner stopped to ask the user — the task is already parked in
-          // Needs-input with Q&A cards + a notification. Answering moves it back to
-          // Ready; PLAY then re-runs the Planner with the answers in its context.
-          if (p.askedUser) {
-            ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-            return;
-          }
-          // No plan came back (agent produced no JSON): don't strand the task in
-          // Implementing with nothing running — put it back on PLAY and say why.
-          recoverFailedPlay(ctx, taskId, "the Planner produced no plan");
-          return;
-        }
-        const planned = updateTask(ctx.db, taskId, { status: "plan_review" });
-        ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
-        ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
-        if (planned) notifyOnTransition(ctx.hub, "implementing", planned);
-      })
-      .catch((err) => {
-        console.error(`[cadence] planner failed for ${taskId}:`, err);
-        // Another live run owns this task → leave it alone; anything else (cap
-        // full, runner crash) → same visible recovery as the no-plan path.
-        if (!(err instanceof StageConflictError)) {
-          recoverFailedPlay(ctx, taskId, `the Planner failed: ${(err as Error).message}`);
-        }
-      });
+    startPlannerChain(ctx, taskId);
     return Response.json(updated);
   }
 
@@ -548,6 +521,51 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
       void runExecutionChain(ctx, taskId);
     }
     return Response.json(plan);
+  }
+
+  // Plan review's second exit (§7.4): instead of approving, send the plan back to
+  // the Planner with feedback. The note lands on the context channel (which composes
+  // into every agent run), the Planner re-drafts, and the new plan parks back in
+  // Plan review unapproved. Without this, the only way to change a plan was to
+  // approve work you didn't want — a dead end dressed as a gate.
+  const planReviseMatch = pathname.match(/^\/api\/tasks\/([^/]+)\/plan\/revise$/);
+  if (planReviseMatch) {
+    if (method !== "POST") return methodNotAllowed();
+    const taskId = planReviseMatch[1] as string;
+    const task = getTask(ctx.db, taskId);
+    if (!task) return notFound(pathname);
+    if (task.taskType === "code_review") {
+      return conflict("review proposals aren't re-planned — adjust them in the Review Workspace", {
+        taskType: task.taskType,
+      });
+    }
+    if (task.status !== "plan_review") {
+      return conflict(`plan revision requires a task in Plan review (currently ${task.status})`, {
+        status: task.status,
+      });
+    }
+    if (ctx.activity.isActive(taskId)) {
+      return conflict("a run is already active for this task", { status: task.status });
+    }
+    let body: { note?: string } | null = null;
+    try {
+      body = (await req.json().catch(() => null)) as { note?: string } | null;
+    } catch {
+      body = null;
+    }
+    const note = body?.note?.trim();
+    if (note) {
+      appendContext(taskId, `Plan feedback: ${note}`);
+      ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
+    }
+    // The current plan is superseded — drop any approval NOW so a crash mid-redraft
+    // can never recover into "approved" and run steps the user just asked to change.
+    writePlan(taskId, { ...readPlan(taskId), approved: false });
+    ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+    updateTask(ctx.db, taskId, { status: "implementing" });
+    ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+    startPlannerChain(ctx, taskId);
+    return Response.json({ ok: true });
   }
 
   // In-flight autonomy work (drives the board/task spinner); hydrates on a fresh page load.
@@ -1476,7 +1494,15 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   if (sessionMatch) {
     const id = sessionMatch[1] as string;
     const session = getSession(ctx.db, id);
-    if (!session) return notFound(pathname);
+    if (!session) {
+      // Not a Cadence row — maybe the user's own claude process (a queued task's
+      // blocker deep-links here). Readable from the oracle, strictly read-only.
+      if (method === "GET") {
+        const ext = externalSessionDetail(id);
+        if (ext) return Response.json(ext);
+      }
+      return notFound(pathname);
+    }
     const withLive = (s: typeof session): SessionDetail => ({
       ...s,
       ...sessionRunState(ctx.spawn, s),
@@ -1565,8 +1591,17 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
   const transcriptMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/transcript$/);
   if (transcriptMatch) {
     if (method !== "GET") return methodNotAllowed();
-    const session = getSession(ctx.db, transcriptMatch[1] as string);
-    if (!session) return notFound(pathname);
+    const id = transcriptMatch[1] as string;
+    const session = getSession(ctx.db, id);
+    if (!session) {
+      // External claude process (see the session-detail fallback above): its
+      // transcript lives in ~/.claude/projects/ like any other — find it by id.
+      const ext = readLiveSessions().find((s) => s.sessionId === id);
+      if (!ext) return notFound(pathname);
+      const path = findTranscriptPath(id, ext.cwd);
+      const limit = Number(url.searchParams.get("limit")) || undefined;
+      return Response.json(path ? readTranscript(path, { limit }) : []);
+    }
     // Resolve (and self-heal) where claude actually wrote the file — never 404 a
     // session that simply hasn't produced output yet; the UI renders the empty state.
     const path = resolveTranscriptPath(session, (fixed) => recordTranscriptPath(ctx.db, session.id, fixed));
@@ -1990,6 +2025,76 @@ export async function handleApi(req: Request, url: URL, ctx: ApiContext): Promis
  * strand the task in Implementing — move it back to Ready (PLAY reappears), note
  * why on the context channel, and notify. Never silent (§10).
  */
+/**
+ * Run the Planner in the background and park the task in Plan review (or recover
+ * visibly when it asks/fails). Shared by PLAY (first draft) and plan revision
+ * (re-draft with the user's feedback on the context channel).
+ */
+function startPlannerChain(ctx: ApiContext, taskId: string): void {
+  void ctx.activity
+    .track(taskId, "planner", () => runPlanner(ctx.db, taskId, ctx.runAgent))
+    .then((p) => {
+      if (!p.ran) {
+        // The Planner stopped to ask the user — the task is already parked in
+        // Needs-input with Q&A cards + a notification. Answering moves it back to
+        // Ready; PLAY then re-runs the Planner with the answers in its context.
+        if (p.askedUser) {
+          ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+          return;
+        }
+        // No plan came back (agent produced no JSON): don't strand the task in
+        // Implementing with nothing running — put it back on PLAY and say why.
+        recoverFailedPlay(ctx, taskId, "the Planner produced no plan");
+        return;
+      }
+      const planned = updateTask(ctx.db, taskId, { status: "plan_review" });
+      ctx.hub.broadcast({ type: "event", name: "task:plan", payload: taskId });
+      ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
+      if (planned) notifyOnTransition(ctx.hub, "implementing", planned);
+    })
+    .catch((err) => {
+      console.error(`[cadence] planner failed for ${taskId}:`, err);
+      // Another live run owns this task → leave it alone; anything else (cap
+      // full, runner crash) → same visible recovery as the no-plan path.
+      if (!(err instanceof StageConflictError)) {
+        recoverFailedPlay(ctx, taskId, `the Planner failed: ${(err as Error).message}`);
+      }
+    });
+}
+
+/**
+ * A read-only SessionDetail for a claude process OUTSIDE Cadence (no DB row),
+ * built from the ~/.claude liveness oracle. Lets the session-detail drawer open
+ * a queued task's external blocker — the user sees what's occupying the project
+ * dir (status, pid, cwd, transcript) instead of an opaque "in use".
+ */
+function externalSessionDetail(sessionId: string): SessionDetail | null {
+  const ls = readLiveSessions().find((s) => s.sessionId === sessionId);
+  if (!ls) return null;
+  return {
+    id: sessionId,
+    taskId: null,
+    projectId: null,
+    fleetId: null,
+    role: "external",
+    kind: "external",
+    status: ls.status, // busy | idle | shell — the oracle's vocabulary, not ours
+    cwd: ls.cwd,
+    branch: null,
+    worktreePath: null,
+    pid: ls.pid,
+    model: null,
+    permissionMode: null,
+    costUsd: 0,
+    startedAt: ls.startedAt,
+    endedAt: null,
+    transcriptPath: null,
+    isLive: ls.alive,
+    canChat: false,
+    external: true,
+  };
+}
+
 function recoverFailedPlay(ctx: ApiContext, taskId: string, reason: string): void {
   appendContext(taskId, `PLAY didn't start: ${reason} — task moved back to Ready; press PLAY to retry.`);
   const reverted = updateTask(ctx.db, taskId, { status: "ready" });
@@ -2014,6 +2119,7 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
       const ownTitle = getTask(ctx.db, taskId)?.title;
       release = await projectLocks.acquireWrite(lockTarget.projectId, {
         label: ownTitle ? `the task “${ownTitle}”` : undefined,
+        taskId,
         guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId, exclusive: true },
         onQueued: (blockers) => {
           // Visible queueing (§10: never lie about state): the project dir is busy —
@@ -2029,12 +2135,14 @@ async function runExecutionChain(ctx: ApiContext, taskId: string): Promise<void>
           if (occupants.length > 0) {
             appendContext(
               taskId,
-              `Execution queued: the project dir is in use by ${occupants.map((b) => b.label).join(", ")} — it starts when that ends.`,
+              `Execution queued: the project dir is in use by ${occupants.map((b) => b.label).join(", ")} — it starts automatically when that ends. ` +
+                `If that's your own terminal session, exit it (or enable worktrees for this project in Settings so executions run isolated and never wait).`,
             );
             ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
           }
-          // detail = WHO we're waiting for; the board card shows it next to "Waiting…".
-          ctx.activity.start(taskId, "queued", blockers.map((b) => b.label).join(", "));
+          // detail = WHO we're waiting for (board caption); blockers = the same facts
+          // with ids, so the task detail can link to the blocking task/session.
+          ctx.activity.start(taskId, "queued", blockers.map((b) => b.label).join(", "), blockers);
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },
       });
@@ -2143,6 +2251,7 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
       // live occupant (chat session, external claude) blocks it — visibly.
       release = await projectLocks.acquireWrite(lockTarget.projectId, {
         label: task?.title ? `the task “${task.title}”` : undefined,
+        taskId,
         guard: { db: ctx.db, rootPath: lockTarget.rootPath, excludeTaskId: taskId, exclusive: true },
         onQueued: (blockers) => {
           const occupants = blockers.filter((b) => b.kind !== "execution");
@@ -2153,7 +2262,7 @@ async function runReviewApplyChain(ctx: ApiContext, taskId: string): Promise<voi
             );
             ctx.hub.broadcast({ type: "event", name: "task:context", payload: taskId });
           }
-          ctx.activity.start(taskId, "queued", blockers.map((b) => b.label).join(", "));
+          ctx.activity.start(taskId, "queued", blockers.map((b) => b.label).join(", "), blockers);
           ctx.hub.broadcast({ type: "event", name: "task:updated", payload: taskId });
         },
       });

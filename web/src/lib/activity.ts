@@ -1,3 +1,4 @@
+import type { LockBlocker } from "@cadence/shared";
 import { useSyncExternalStore } from "react";
 import { onReconnect, subscribe as subscribeWs, subscribeConnection, getConnectionStatus } from "./ws";
 
@@ -13,6 +14,9 @@ export interface ActivityInfo {
   startedAt: number;
   /** Human context for the stage — e.g. WHO a "queued" execution is waiting for. */
   detail?: string | null;
+  /** Structured blockers for a "queued" stage — same facts as `detail`, with ids
+   *  so the task detail can open the blocking task/session, not just name it. */
+  blockers?: LockBlocker[] | null;
 }
 
 let busy: Record<string, ActivityInfo> = {};
@@ -23,7 +27,13 @@ function emit(): void {
   for (const l of listeners) l();
 }
 
-function setBusy(taskId: string, stage: string | null, startedAt?: number, detail?: string | null): void {
+function setBusy(
+  taskId: string,
+  stage: string | null,
+  startedAt?: number,
+  detail?: string | null,
+  blockers?: LockBlocker[] | null,
+): void {
   if (stage === null) {
     if (!(taskId in busy)) return;
     const { [taskId]: _drop, ...rest } = busy;
@@ -32,7 +42,12 @@ function setBusy(taskId: string, stage: string | null, startedAt?: number, detai
     if (busy[taskId]?.stage === stage && (busy[taskId]?.detail ?? null) === (detail ?? null)) return;
     busy = {
       ...busy,
-      [taskId]: { stage, startedAt: startedAt ?? Date.now(), ...(detail ? { detail } : {}) },
+      [taskId]: {
+        stage,
+        startedAt: startedAt ?? Date.now(),
+        ...(detail ? { detail } : {}),
+        ...(blockers?.length ? { blockers } : {}),
+      },
     };
   }
   emit();
@@ -45,6 +60,7 @@ async function hydrate(): Promise<void> {
       stage: string;
       startedAt?: number;
       detail?: string | null;
+      blockers?: LockBlocker[] | null;
     }>;
     const next: Record<string, ActivityInfo> = {};
     for (const e of list) {
@@ -52,6 +68,7 @@ async function hydrate(): Promise<void> {
         stage: e.stage,
         startedAt: e.startedAt ?? Date.now(),
         ...(e.detail ? { detail: e.detail } : {}),
+        ...(e.blockers?.length ? { blockers: e.blockers } : {}),
       };
     }
     busy = next;
@@ -77,8 +94,14 @@ function wire(): void {
   subscribeWs((m) => {
     if (m.type !== "event") return;
     if (m.name === "activity:start") {
-      const p = m.payload as { taskId: string; stage: string; startedAt?: number; detail?: string | null };
-      setBusy(p.taskId, p.stage, p.startedAt, p.detail);
+      const p = m.payload as {
+        taskId: string;
+        stage: string;
+        startedAt?: number;
+        detail?: string | null;
+        blockers?: LockBlocker[] | null;
+      };
+      setBusy(p.taskId, p.stage, p.startedAt, p.detail, p.blockers);
     } else if (m.name === "activity:end") {
       // `next` = a stage still working the task (concurrent stages, §6.1.f) — fall
       // back to it instead of going dark while work continues.
@@ -166,8 +189,13 @@ export function _resetActivity(): void {
 }
 
 /** Test-only: inject an activity entry (what an activity:start event would do). */
-export function _setActivity(taskId: string, stage: string | null): void {
-  setBusy(taskId, stage);
+export function _setActivity(
+  taskId: string,
+  stage: string | null,
+  detail?: string | null,
+  blockers?: LockBlocker[] | null,
+): void {
+  setBusy(taskId, stage, undefined, detail, blockers);
 }
 
 /** Test-only: subscribe (wires the WS handlers) without a React render. */

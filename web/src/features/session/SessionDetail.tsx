@@ -30,17 +30,19 @@ const PERMISSION_LABELS: Record<string, string> = {
 
 function statusDot(status: string, isLive: boolean): string {
   // Running but the process isn't responding → amber, not a lying green pulse.
-  if (status === "running" || status === "spawning")
+  if (status === "running" || status === "spawning" || status === "busy")
     return isLive ? "bg-green-500 animate-pulse" : "bg-amber-500";
   if (status === "awaiting_feedback") return "bg-yellow-500";
   if (status === "failed") return "bg-red-500";
   if (status === "killed") return "bg-red-400";
+  if (status === "shell") return "bg-blue-400";
   if (status === "idle") return isLive ? "bg-green-500" : "bg-muted-foreground";
   return "bg-muted-foreground"; // done
 }
 
 function isRunning(status: string): boolean {
-  return status === "running" || status === "spawning";
+  // "busy" is the liveness oracle's word for it (external claude sessions).
+  return status === "running" || status === "spawning" || status === "busy";
 }
 
 function formatDuration(start: number | null, end: number | null): string {
@@ -115,7 +117,14 @@ export function SessionDetail({
             <div className="flex items-center gap-2 text-sm font-semibold">
               {s ? <span className={cn("size-2 shrink-0 rounded-full", statusDot(s.status, s.isLive))} /> : null}
               Session · <span className="font-mono">{sessionId.slice(0, 8)}</span>
-              {s ? (
+              {s?.external ? (
+                <span
+                  title="A Claude Code session you run yourself — Cadence shows it read-only"
+                  className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] font-normal text-violet-300"
+                >
+                  outside Cadence
+                </span>
+              ) : s ? (
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
                   {s.role}
                 </span>
@@ -132,47 +141,56 @@ export function SessionDetail({
           </div>
         ) : (
           <div className="flex flex-1 flex-col gap-6 p-5">
-            {/* Controls */}
-            <div className="flex flex-wrap items-center gap-2">
-              {s.canChat ? (
+            {/* Controls — none for an external session: it's the user's own process,
+                Cadence only observes it (no stop/kill/organize/handoff). */}
+            {!s.external ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {s.canChat ? (
+                  <LabeledIconButton
+                    icon={<MessageSquare />}
+                    label="Continue chat"
+                    size="sm"
+                    onClick={() => onContinue(sessionId)}
+                  />
+                ) : null}
+                {s.isLive ? (
+                  <>
+                    <LabeledIconButton
+                      icon={<Square />}
+                      label="Stop"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => stop.mutate()}
+                      disabled={stop.isPending}
+                    />
+                    <LabeledIconButton
+                      icon={<Ban />}
+                      label="Kill"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => kill.mutate()}
+                      disabled={kill.isPending}
+                    />
+                  </>
+                ) : null}
+                <HandoffButtons sessionId={sessionId} cwd={s.cwd} live={s.isLive} />
                 <LabeledIconButton
-                  icon={<MessageSquare />}
-                  label="Continue chat"
+                  icon={<Trash2 />}
+                  label="Delete"
+                  variant="destructive"
                   size="sm"
-                  onClick={() => onContinue(sessionId)}
+                  onClick={() => setConfirmDelete(true)}
                 />
-              ) : null}
-              {s.isLive ? (
-                <>
-                  <LabeledIconButton
-                    icon={<Square />}
-                    label="Stop"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => stop.mutate()}
-                    disabled={stop.isPending}
-                  />
-                  <LabeledIconButton
-                    icon={<Ban />}
-                    label="Kill"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => kill.mutate()}
-                    disabled={kill.isPending}
-                  />
-                </>
-              ) : null}
-              <HandoffButtons sessionId={sessionId} cwd={s.cwd} live={s.isLive} />
-              <LabeledIconButton
-                icon={<Trash2 />}
-                label="Delete"
-                variant="destructive"
-                size="sm"
-                onClick={() => setConfirmDelete(true)}
-              />
-            </div>
+              </div>
+            ) : null}
             {/* One honest state line — never "ended" while the process is alive. */}
-            {s.isLive && isRunning(s.status) ? (
+            {s.external ? (
+              <p className="text-xs text-muted-foreground">
+                This is your own Claude Code session, running outside Cadence (most likely a
+                terminal). Cadence shows it read-only — to free the project folder for a queued
+                task, finish or exit it in its own terminal.
+              </p>
+            ) : s.isLive && isRunning(s.status) ? (
               <p className="-mt-3 text-xs text-emerald-400">
                 Running — output streams below in real time.
                 {!s.canChat
@@ -208,10 +226,14 @@ export function SessionDetail({
               <dt className="text-muted-foreground">Permission</dt>
               <dd>{s.permissionMode ? (PERMISSION_LABELS[s.permissionMode] ?? s.permissionMode) : "—"}</dd>
 
-              <dt className="text-muted-foreground">Cost</dt>
-              <dd title="Accumulated session cost — an effort signal, not a budget">
-                ${s.costUsd.toFixed(4)}
-              </dd>
+              {!s.external ? (
+                <>
+                  <dt className="text-muted-foreground">Cost</dt>
+                  <dd title="Accumulated session cost — an effort signal, not a budget">
+                    ${s.costUsd.toFixed(4)}
+                  </dd>
+                </>
+              ) : null}
 
               <dt className="text-muted-foreground">PID</dt>
               <dd className="font-mono">{s.pid ?? "—"}</dd>
@@ -229,7 +251,8 @@ export function SessionDetail({
               <dd className="truncate font-mono text-xs">{s.branch ?? "—"}</dd>
             </dl>
 
-            {/* Organization */}
+            {/* Organization — not for external sessions (there's no Cadence record to organize) */}
+            {!s.external ? (
             <section className="border-t border-border pt-5">
               <h3 className="text-sm font-medium">Organization</h3>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -289,6 +312,7 @@ export function SessionDetail({
                 </dd>
               </dl>
             </section>
+            ) : null}
 
             {/* Output — the live terminal view (history + realtime streaming) */}
             <section className="border-t border-border pt-5">

@@ -36,6 +36,7 @@ import { ReviewWorkspace } from "../review/ReviewWorkspace";
 import { DeliveryRecord } from "./DeliveryRecord";
 import { OutputsSection } from "./Outputs";
 import { PlanView } from "./PlanView";
+import { QueuedBanner } from "./QueuedBanner";
 import { RelationsPanel } from "./RelationsPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { RunReports } from "./RunReports";
@@ -237,6 +238,14 @@ export function TaskDetail({
         {task ? (
           <>
             <QACards taskId={taskId} status={task.status} onResolved={resolved} />
+
+            {/* Visible queueing: the run is in line for the project folder — say who
+                holds it and link straight to the blocker (task / session drawer). */}
+            <QueuedBanner
+              taskId={taskId}
+              onOpenTask={onOpenTask}
+              onOpenSessionDetail={onOpenSessionDetail}
+            />
 
             {task.status === "needs_feedback" ? (
               // The escape hatch for a stalled refinement (e.g. the agent failed and
